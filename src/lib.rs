@@ -1,0 +1,30 @@
+//! Treesearch: High-performance dependency tree pattern matching
+//!
+//! A toolkit for querying linguistic dependency parses at scale.
+//! Core implementation in Rust with Python bindings.
+
+// Core modules (algorithm-first approach)
+pub mod tree;      // Minimal tree data structures for testing the matcher
+pub mod pattern;   // Pattern AST and compilation
+pub mod vm;        // Virtual machine executor and instruction set
+pub mod index;     // Inverted indices for candidate lookup
+
+// Python bindings (will be implemented in Phase 1)
+#[cfg(feature = "python")]
+pub mod python;
+
+// Re-exports for convenience
+pub use tree::{Node, Tree};
+pub use pattern::{Pattern, PatternElement};
+pub use vm::{VM, Instruction};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_placeholder() {
+        // Placeholder test - will add real tests as we implement modules
+        assert!(true);
+    }
+}
