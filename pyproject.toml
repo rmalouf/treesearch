@@ -1,0 +1,44 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "treesearch"
+version = "0.1.0"
+description = "High-performance toolkit for querying linguistic dependency parses"
+authors = [
+    {name = "Rob Malouf", email = "rmalouf@sdsu.edu"}
+]
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Rust",
+    "Topic :: Text Processing :: Linguistic",
+]
+keywords = ["nlp", "linguistics", "dependency-parsing", "corpus-linguistics", "treebank"]
+
+[project.urls]
+Homepage = "https://github.com/rmalouf/treesearch"
+Repository = "https://github.com/rmalouf/treesearch"
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+module-name = "treesearch"
+python-source = "python"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
