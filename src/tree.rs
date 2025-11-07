@@ -17,8 +17,8 @@ pub struct Node {
     pub lemma: String,
     pub pos: String,
     pub deprel: String,
-    pub parent: Option<NodeId>,
-    pub children: Vec<NodeId>,
+    pub(crate) parent: Option<NodeId>,
+    pub(crate) children: Vec<NodeId>,
 }
 
 impl Node {
@@ -39,7 +39,7 @@ impl Node {
 /// A dependency tree (sentence)
 #[derive(Debug, Clone)]
 pub struct Tree {
-    pub nodes: Vec<Node>,
+    pub(crate) nodes: Vec<Node>,
     pub root_id: Option<NodeId>,
 }
 
@@ -64,17 +64,12 @@ impl Tree {
         self.nodes.get(id)
     }
 
-    /// Get a mutable reference to a node by ID
-    pub fn get_node_mut(&mut self, id: NodeId) -> Option<&mut Node> {
-        self.nodes.get_mut(id)
-    }
-
     /// Set the parent of a node
     pub fn set_parent(&mut self, child_id: NodeId, parent_id: NodeId) {
-        if let Some(child) = self.get_node_mut(child_id) {
+        if let Some(child) = self.nodes.get_mut(child_id) {
             child.parent = Some(parent_id);
         }
-        if let Some(parent) = self.get_node_mut(parent_id) {
+        if let Some(parent) = self.nodes.get_mut(parent_id) {
             parent.children.push(child_id);
         }
     }
@@ -84,7 +79,7 @@ impl Tree {
         if let Some(node) = self.get_node(node_id) {
             node.children
                 .iter()
-                .filter_map(|&id| self.get_node(id))
+                .map(|&id| &self.nodes[id])
                 .collect()
         } else {
             Vec::new()
