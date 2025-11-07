@@ -8,6 +8,7 @@ pub mod tree;      // Minimal tree data structures for testing the matcher
 pub mod pattern;   // Pattern AST and compilation
 pub mod vm;        // Virtual machine executor and instruction set
 pub mod index;     // Inverted indices for candidate lookup
+pub mod compiler;  // Pattern compilation to VM bytecode
 
 // Python bindings (will be implemented in Phase 1)
 #[cfg(feature = "python")]
