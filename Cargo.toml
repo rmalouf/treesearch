@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Rob Malouf"]
 description = "High-performance toolkit for querying linguistic dependency parses"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 
 [lib]
 name = "treesearch"
@@ -12,17 +12,14 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Python bindings
-pyo3 = { version = "0.22", features = ["extension-module"] }
+pyo3 = { version = "0.27", features = ["extension-module"] }
 
 # Parallelization
-rayon = "1.10"
-
-# Collections and utilities
-hashbrown = "0.15"
+rayon = "1.11"
 
 [dev-dependencies]
 # Testing utilities
-criterion = "0.5"
+criterion = "0.7"
 
 [profile.release]
 opt-level = 3

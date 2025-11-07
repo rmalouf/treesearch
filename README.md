@@ -45,7 +45,7 @@ treesearch/
 ### Requirements
 
 - Rust (latest stable)
-- Python 3.8+
+- Python 3.12+
 - maturin
 
 ### Building
@@ -74,4 +74,4 @@ See `plans/PROJECT_SUMMARY.md` for detailed roadmap.
 
 ## License
 
-MIT OR Apache-2.0
+MIT
