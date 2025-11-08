@@ -136,9 +136,9 @@ impl VM {
 
             match self.execute_instruction(instruction, &mut state, tree) {
                 Ok(true) => {
-                    // Match found
+                    // Match found - take ownership of bindings since we're returning
                     return Some(Match {
-                        bindings: state.bindings.clone(),
+                        bindings: std::mem::take(&mut state.bindings),
                     });
                 }
                 Ok(false) => {
