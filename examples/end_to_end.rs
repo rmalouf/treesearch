@@ -29,7 +29,7 @@ fn main() {
 
     // Step 1: Parse CoNLL-U into Tree
     println!("🔧 Step 1: Parsing CoNLL-U...");
-    let mut reader = CoNLLUReader::from_str(conllu_text);
+    let mut reader = CoNLLUReader::from_string(conllu_text);
     let tree = match reader.next() {
         Some(Ok(tree)) => tree,
         Some(Err(e)) => {
@@ -59,7 +59,10 @@ fn main() {
         } else {
             format!("({})", node.deprel)
         };
-        println!("   {}: {} [{}] {}", node.id, node.form, node.pos, parent_info);
+        println!(
+            "   {}: {} [{}] {}",
+            node.id, node.form, node.pos, parent_info
+        );
     }
     println!();
 
@@ -70,10 +73,7 @@ fn main() {
 
     // Example queries to demonstrate different features
     let queries = vec![
-        (
-            "Query 1: Find all VERB nodes",
-            r#"V [pos="VERB"];"#,
-        ),
+        ("Query 1: Find all VERB nodes", r#"V [pos="VERB"];"#),
         (
             "Query 2: Find VERB with NOUN subject",
             r#"
@@ -105,7 +105,7 @@ fn main() {
     ];
 
     // Execute each query
-    for (i, (description, query)) in queries.iter().enumerate() {
+    for (description, query) in &queries {
         println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         println!("{}", description);
         println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -131,8 +131,10 @@ fn main() {
 
                         for (pos, node_id) in bindings {
                             let node = &tree.nodes()[*node_id];
-                            println!("     Variable {}: {} (lemma: {}, pos: {})",
-                                pos, node.form, node.lemma, node.pos);
+                            println!(
+                                "     Variable {}: {} (lemma: {}, pos: {})",
+                                pos, node.form, node.lemma, node.pos
+                            );
                         }
                     }
                 }

@@ -3,8 +3,6 @@
 //! This module defines the AST for dependency tree patterns and
 //! handles compilation to VM bytecode.
 
-use crate::tree::NodeId;
-
 /// A constraint on a node's attributes
 #[derive(Debug, Clone, PartialEq)]
 pub enum Constraint {

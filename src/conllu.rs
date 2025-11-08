@@ -47,7 +47,7 @@ impl CoNLLUReader<BufReader<File>> {
 
 impl CoNLLUReader<BufReader<std::io::Cursor<String>>> {
     /// Create a reader from a string
-    pub fn from_str(text: &str) -> Self {
+    pub fn from_string(text: &str) -> Self {
         let cursor = std::io::Cursor::new(text.to_string());
         let reader = BufReader::new(cursor);
         Self {
@@ -96,9 +96,9 @@ impl<R: BufRead> Iterator for CoNLLUReader<R> {
                         continue;
                     }
 
-                    if line.starts_with('#') {
+                    if let Some(comment) = line.strip_prefix('#') {
                         // Comment/metadata line
-                        parse_comment(&line[1..], &mut metadata, &mut sentence_text);
+                        parse_comment(comment, &mut metadata, &mut sentence_text);
                         continue;
                     }
 
@@ -395,7 +395,7 @@ mod tests {
 
 "#;
 
-        let mut reader = CoNLLUReader::from_str(conllu);
+        let mut reader = CoNLLUReader::from_string(conllu);
         let tree = reader.next().unwrap().unwrap();
 
         assert_eq!(tree.nodes.len(), 4);
@@ -420,7 +420,7 @@ mod tests {
 
 "#;
 
-        let mut reader = CoNLLUReader::from_str(conllu);
+        let mut reader = CoNLLUReader::from_string(conllu);
         let tree = reader.next().unwrap().unwrap();
 
         assert_eq!(tree.nodes.len(), 2);

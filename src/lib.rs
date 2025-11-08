@@ -27,8 +27,6 @@ pub use searcher::TreeSearcher;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_placeholder() {
         // Placeholder test - will add real tests as we implement modules
