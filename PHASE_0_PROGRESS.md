@@ -1,7 +1,7 @@
 # Phase 0 Progress Notes
 
 **Date**: 2025-11-07
-**Status**: Tasks 1-4 Complete (50 tests passing)
+**Status**: Tasks 1-4 Complete + Query Parser (56 tests passing)
 
 ## Completed Tasks
 
@@ -73,10 +73,40 @@
 - End-to-end: descendant patterns
 - End-to-end: complex multi-edge patterns
 
+### ✅ Query Language Parser (Phase 1 moved earlier)
+**Implemented**:
+- Pest-based parser for query language syntax
+- Node declarations: `Name [constraint, constraint];`
+- Edge declarations: `Parent -[label]-> Child;`
+- Constraint types: lemma, pos, form, deprel
+- Multiple constraints combined with And
+- Comments support
+
+**Tests**: 56 total (+6)
+- Empty constraints
+- Single and multiple constraints
+- Edge declarations
+- Complex multi-node queries
+- All constraint types
+
+**Example query**:
+```
+Help [lemma="help"];
+To [lemma="to"];
+YHead [];
+
+Help -[xcomp]-> To;
+To -[mark]-> YHead;
+```
+
+**Rationale for early implementation**: With the VM and compiler working, adding the parser makes testing and benchmarking more natural. Instead of manually constructing Pattern objects, we can now write realistic queries as strings.
+
 ## Current Architecture
 
 ```
-Pattern AST
+Query String
+    ↓
+Parser (pest) → Pattern AST
     ↓
 Compiler (select anchor, estimate selectivity)
     ↓
@@ -112,10 +142,23 @@ Match (bindings)
 - Choice instruction itself is currently a no-op (choice points created by navigation)
 - May need explicit Choice instruction for Or constraint compilation
 
+### Query Parser
+- Currently only supports `->` arrow (child relations)
+- Future extensions: Different arrow types for parent, ancestor, descendant relations
+- Future extensions: Wildcard syntax (`...` for descendants)
+- Future extensions: Or constraints in query syntax (currently must use multiple queries)
+
 ## Next Steps (Remaining Phase 0 Tasks)
 
+**Revised Priority**: With query parser complete, we can now:
+1. Write realistic tests using query syntax (easier than manual Pattern construction)
+2. Prepare for indexing integration (Task 6) - the critical performance piece
+3. Add benchmarks with realistic queries
+
+The parser enables more natural development workflows going forward.
+
 ### Task 5: Comprehensive Test Suite (2-3 days)
-**Priority: Medium** - Current 50 tests are good coverage, but could add:
+**Priority: Medium** - Current 56 tests are good coverage, but could add:
 - Test fixtures (`tests/fixtures.rs`) with hand-coded trees
 - More edge cases: empty tree, single node, circular references
 - Complex patterns: nested wildcards, multiple wildcards, compound constraints
@@ -201,11 +244,12 @@ impl TreeSearcher {
 - ✅ Pattern compilation working
 - ✅ Backtracking with leftmost semantics
 - ✅ Wildcard search (BFS, shortest-path)
+- ✅ Query language parser (implemented early for testing convenience)
 
 **What Phase 1 needs**:
 1. **CoNLL-U parser**: Read real treebank files
 2. **Full tree representation**: All CoNLL-U fields + linear position
-3. **Query language parser**: User-friendly syntax → Pattern AST
+3. ~~**Query language parser**: User-friendly syntax → Pattern AST~~ ✅ Already done
 4. **Multi-file processing**: Rayon parallelization
 5. **Python bindings**: PyO3 wrapper for ease of use
 6. **Fix leftmost semantics**: Use actual token positions, not node IDs
@@ -250,12 +294,15 @@ Can be fixed with: `cargo fix --lib -p treesearch`
 
 ## Testing Strategy
 
-**Current**: 50 unit/integration tests, all passing
+**Current**: 56 unit/integration tests, all passing
+- 50 VM/compiler tests
+- 6 parser tests
+
 **Coverage**: Good coverage of happy paths and common edge cases
 **Missing**: Property-based testing (proptest/quickcheck) for invariants
 
 **Future considerations**:
-- Fuzz testing for pattern compilation
+- Fuzz testing for pattern compilation and query parsing
 - Property: Same pattern on same tree always returns same match
 - Property: Leftmost match is always leftmost
 - Property: Shortest-path match is always shortest
