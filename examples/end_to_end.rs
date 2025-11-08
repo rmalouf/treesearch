@@ -125,15 +125,12 @@ fn main() {
                     for (match_idx, match_result) in matches.iter().enumerate() {
                         println!("\n   Match #{}:", match_idx + 1);
 
-                        // Sort bindings by position for consistent display
-                        let mut bindings: Vec<_> = match_result.bindings.iter().collect();
-                        bindings.sort_by_key(|(pos, _)| *pos);
-
-                        for (pos, node_id) in bindings {
-                            let node = &tree.nodes()[*node_id];
+                        // Use the new iter_named() method to display bindings with names
+                        for (var_name, node_id) in match_result.iter_named() {
+                            let node = &tree.nodes()[node_id];
                             println!(
-                                "     Variable {}: {} (lemma: {}, pos: {})",
-                                pos, node.form, node.lemma, node.pos
+                                "     {}: {} (lemma: {}, pos: {})",
+                                var_name, node.form, node.lemma, node.pos
                             );
                         }
                     }

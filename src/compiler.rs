@@ -28,21 +28,16 @@ fn estimate_selectivity(constraint: &Constraint) -> Selectivity {
         Constraint::DepRel(_) => Selectivity::Medium,
         Constraint::And(constraints) => {
             // And is as selective as its most selective constraint
-            assert!(!constraints.is_empty(), "Compiler bug: empty And constraint");
-            constraints
-                .iter()
-                .map(estimate_selectivity)
-                .max()
-                .unwrap()
+            assert!(
+                !constraints.is_empty(),
+                "Compiler bug: empty And constraint"
+            );
+            constraints.iter().map(estimate_selectivity).max().unwrap()
         }
         Constraint::Or(constraints) => {
             // Or is as selective as its least selective constraint
             assert!(!constraints.is_empty(), "Compiler bug: empty Or constraint");
-            constraints
-                .iter()
-                .map(estimate_selectivity)
-                .min()
-                .unwrap()
+            constraints.iter().map(estimate_selectivity).min().unwrap()
         }
     }
 }
@@ -50,7 +45,10 @@ fn estimate_selectivity(constraint: &Constraint) -> Selectivity {
 /// Select the best anchor element for a pattern
 /// Returns the index of the most selective element
 fn select_anchor(pattern: &Pattern) -> usize {
-    assert!(!pattern.elements.is_empty(), "Compiler bug: cannot compile empty pattern");
+    assert!(
+        !pattern.elements.is_empty(),
+        "Compiler bug: cannot compile empty pattern"
+    );
 
     let mut best_idx = 0;
     let mut best_selectivity = Selectivity::Low;
@@ -134,16 +132,19 @@ fn compile_edge(
 }
 
 /// Compile a pattern into VM bytecode
-/// Returns (bytecode, anchor_index)
-pub fn compile_pattern(pattern: Pattern) -> (Vec<Instruction>, usize) {
+/// Returns (bytecode, anchor_index, var_names)
+pub fn compile_pattern(pattern: Pattern) -> (Vec<Instruction>, usize, Vec<String>) {
     if pattern.elements.is_empty() {
-        return (vec![Instruction::Match], 0);
+        return (vec![Instruction::Match], 0, Vec::new());
     }
 
     let anchor_idx = select_anchor(&pattern);
 
     // Destructure pattern to take ownership of parts
     let Pattern { elements, edges } = pattern;
+
+    // Extract variable names in position order
+    let var_names: Vec<String> = elements.iter().map(|elem| elem.var_name.clone()).collect();
 
     let mut bytecode = Vec::new();
 
@@ -157,14 +158,10 @@ pub fn compile_pattern(pattern: Pattern) -> (Vec<Instruction>, usize) {
     // Build adjacency list from edges
     let mut edges_from: HashMap<usize, Vec<(usize, PatternEdge)>> = HashMap::new();
     for edge in edges {
-        if let (Some(&from_idx), Some(&to_idx)) = (
-            name_to_idx.get(&edge.from),
-            name_to_idx.get(&edge.to),
-        ) {
-            edges_from
-                .entry(from_idx)
-                .or_default()
-                .push((to_idx, edge));
+        if let (Some(&from_idx), Some(&to_idx)) =
+            (name_to_idx.get(&edge.from), name_to_idx.get(&edge.to))
+        {
+            edges_from.entry(from_idx).or_default().push((to_idx, edge));
         }
     }
 
@@ -201,7 +198,14 @@ pub fn compile_pattern(pattern: Pattern) -> (Vec<Instruction>, usize) {
                 bytecode.extend(navigation);
 
                 // Verify target constraints (if not already in navigation)
-                if !matches!(edge.relation, RelationType::Child | RelationType::Descendant | RelationType::Ancestor | RelationType::Follows | RelationType::Precedes) {
+                if !matches!(
+                    edge.relation,
+                    RelationType::Child
+                        | RelationType::Descendant
+                        | RelationType::Ancestor
+                        | RelationType::Follows
+                        | RelationType::Precedes
+                ) {
                     bytecode.extend(compile_constraint(target_element.constraints.clone()));
                 }
 
@@ -218,13 +222,13 @@ pub fn compile_pattern(pattern: Pattern) -> (Vec<Instruction>, usize) {
     // Final match instruction
     bytecode.push(Instruction::Match);
 
-    (bytecode, anchor_idx)
+    (bytecode, anchor_idx, var_names)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pattern::{PatternElement, Pattern, PatternEdge, RelationType, Constraint};
+    use crate::pattern::{Constraint, Pattern, PatternEdge, PatternElement, RelationType};
 
     #[test]
     fn test_selectivity_estimation() {
@@ -285,7 +289,7 @@ mod tests {
             Constraint::POS("VERB".to_string()),
         ));
 
-        let (bytecode, anchor) = compile_pattern(pattern);
+        let (bytecode, anchor, _var_names) = compile_pattern(pattern);
         assert_eq!(anchor, 0);
 
         // Check exact bytecode: CheckPOS, Bind, Match
@@ -314,7 +318,7 @@ mod tests {
             label: Some("nsubj".to_string()),
         });
 
-        let (bytecode, anchor) = compile_pattern(pattern);
+        let (bytecode, anchor, _var_names) = compile_pattern(pattern);
         assert_eq!(anchor, 0); // Both have same selectivity, picks first
 
         // Check exact bytecode:
@@ -329,7 +333,10 @@ mod tests {
         assert_eq!(bytecode[0], Instruction::CheckPOS("VERB".to_string()));
         assert_eq!(bytecode[1], Instruction::Bind(0));
         assert_eq!(bytecode[2], Instruction::PushState);
-        assert_eq!(bytecode[3], Instruction::MoveToChild(Some(Constraint::POS("NOUN".to_string()))));
+        assert_eq!(
+            bytecode[3],
+            Instruction::MoveToChild(Some(Constraint::POS("NOUN".to_string())))
+        );
         assert_eq!(bytecode[4], Instruction::CheckDepRel("nsubj".to_string()));
         assert_eq!(bytecode[5], Instruction::Bind(1));
         assert_eq!(bytecode[6], Instruction::Match);
@@ -337,7 +344,7 @@ mod tests {
 
     #[test]
     fn test_compile_and_execute_simple_pattern() {
-        use crate::tree::{Tree, Node};
+        use crate::tree::{Node, Tree};
         use crate::vm::VM;
 
         // Create a simple tree: "runs" (VERB)
@@ -354,8 +361,8 @@ mod tests {
             ]),
         ));
 
-        let (bytecode, _anchor) = compile_pattern(pattern);
-        let vm = VM::new(bytecode);
+        let (bytecode, _anchor, _var_names) = compile_pattern(pattern);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_some());
@@ -365,7 +372,7 @@ mod tests {
 
     #[test]
     fn test_compile_and_execute_pattern_with_child() {
-        use crate::tree::{Tree, Node};
+        use crate::tree::{Node, Tree};
         use crate::vm::VM;
 
         // Create tree: "runs" (VERB) -> "dog" (NOUN, nsubj)
@@ -391,8 +398,8 @@ mod tests {
             label: Some("nsubj".to_string()),
         });
 
-        let (bytecode, _anchor) = compile_pattern(pattern);
-        let vm = VM::new(bytecode);
+        let (bytecode, _anchor, _var_names) = compile_pattern(pattern);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_some());
@@ -403,7 +410,7 @@ mod tests {
 
     #[test]
     fn test_compile_and_execute_descendant_pattern() {
-        use crate::tree::{Tree, Node};
+        use crate::tree::{Node, Tree};
         use crate::vm::VM;
 
         // Create tree with depth:
@@ -434,8 +441,8 @@ mod tests {
             label: None,
         });
 
-        let (bytecode, _anchor) = compile_pattern(pattern);
-        let vm = VM::new(bytecode);
+        let (bytecode, _anchor, _var_names) = compile_pattern(pattern);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_some());
@@ -458,13 +465,13 @@ mod tests {
             Constraint::Lemma("help".to_string()),
         ));
 
-        let (_bytecode, anchor) = compile_pattern(pattern);
+        let (_bytecode, anchor, _var_names) = compile_pattern(pattern);
         assert_eq!(anchor, 2); // Should select "lemma" (most selective)
     }
 
     #[test]
     fn test_compile_complex_pattern() {
-        use crate::tree::{Tree, Node};
+        use crate::tree::{Node, Tree};
         use crate::vm::VM;
 
         // Create tree: "help" (VERB) -[xcomp]-> "to" (PART) -[obj]-> "write" (VERB)
@@ -503,11 +510,11 @@ mod tests {
             label: Some("obj".to_string()),
         });
 
-        let (bytecode, anchor) = compile_pattern(pattern);
+        let (bytecode, anchor, _var_names) = compile_pattern(pattern);
         // Should anchor on "help" or "to" (both lemmas, equally selective)
         assert!(anchor == 0 || anchor == 1);
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_some());
