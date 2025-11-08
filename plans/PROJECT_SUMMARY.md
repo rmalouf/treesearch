@@ -1,254 +1,112 @@
-# Dependency Tree Query Toolkit - Project Summary
+# Treesearch - Project Summary
 
-## Project Overview
+## Overview
 
-A high-performance toolkit for querying linguistic dependency parses at scale. Core implementation in Rust with Python bindings for ease of use in corpus linguistic research workflows.
+High-performance toolkit for querying linguistic dependency parses at scale. Rust core with Python bindings for corpus linguistics research.
 
-**Primary Use Case**: Historical corpus linguistics research requiring structural pattern matching over large treebanks (500M+ tokens, 1000s of files).
+**Primary Use Case**: Structural pattern matching over large treebanks (500M+ tokens, 1000s of files).
 
-## Core Requirements
+## Core Architecture
 
-### Functionality
-- Read dependency parses from CoNLL-U format files
-- Execute structural queries to find matching patterns in dependency trees
-- Return matched tree structures to Python for custom analysis/annotation
-- Save sentences containing matches to new CoNLL-U files (subcorpus extraction)
-- Handle very large corpora (500M tokens, 1000s of files) efficiently
-- Operate without requiring a precomputed index (though optional indexing may be added later)
+**1. CoNLL-U Parsing** - Read and parse Universal Dependencies files
+**2. Pattern Matching VM** - Execute structural queries with backtracking
+**3. Index + Compile + Execute** - Two-phase strategy for efficiency
+**4. Python Bindings** (PyO3) - Pythonic API for research workflows
 
-### Performance Targets
-- Process treebanks at scale (targeting 3+ billion nodes)
-- Avoid pathological backtracking on complex wildcard patterns
-- File-level parallelization for multi-file corpora
-- Memory-efficient streaming where possible
+### Query Language
 
-### User Workflow
-1. Write structural queries in a declarative pattern language
-2. Execute queries to find matching subtrees
-3. Use Python code to extract custom annotations from matched structures
-4. Export results (e.g., to DataFrames for analysis)
-
-## Architecture
-
-### Core Components
-
-**1. Parsing Layer (Rust)**
-- CoNLL-U file readers
-- Lazy loading for large corpora
-- Sentence-by-sentence processing
-
-**2. Data Structures (Rust)**
-- Dependency tree representation
-- Token attributes (form, lemma, POS, features, deprel)
-- Efficient tree navigation (parent, children, siblings)
-
-**3. Query Engine (Rust)**
-- Two-phase matching: indexing + VM-based verification
-- Virtual machine for pattern matching execution
-- Leftmost, shortest-path match semantics (deterministic, avoids exponential search)
-- Wildcard support with bounded search
-
-**4. Python Bindings (PyO3)**
-- Pythonic API for query execution
-- Return navigable tree objects to Python
-- Iterator-based result streaming
-
-### Technology Stack
-- **Language**: Rust (latest stable)
-- **Python bindings**: PyO3 + maturin
-- **Parallelization**: rayon
-- **Query parsing**: nom or pest (TBD)
-
-## Query Language Design
-
-### Syntax Decisions
-
-```rust
-// Node declarations with constraints
+```
+# Node declarations with constraints
 Help [lemma="help"];
 To [lemma="to"];
-YHead [];
+Verb [];
 
-// Edge declarations (structural relations)
+# Edge declarations (structural relations)
 Help -[xcomp]-> To;
-To -[obj]-> YHead;
+To -[mark]-> Verb;
 ```
 
-**Key Features**:
-- No `pattern` wrapper keyword (just declarations)
-- Semicolons terminate statements
-- `Head -[deprel]-> Dependent` syntax for relations
-- Node IDs bind to match results
-- Start with literal string matching, add regex soon after
+### Matching Algorithm
 
-**Philosophy**: Use query language to find relevant structures, then use custom Python/Rust code to extract annotations. Query language doesn't need to do everything.
+1. **Index lookup**: Find candidate anchor nodes using inverted indices
+2. **VM verification**: Execute compiled bytecode to verify structural constraints
+3. **Match semantics**: Leftmost, shortest-path (deterministic results)
+4. **Bounded search**: BFS with depth limits prevents exponential blowup
 
-## Pattern Matching Algorithm
+## Current Status (Nov 2025)
 
-### Core Approach
-Virtual machine-based matcher with controlled backtracking:
+### Completed ✅
 
-1. **Index lookup**: Use inverted indices to find candidate anchor nodes
-2. **VM verification**: Execute compiled pattern instructions to verify structural constraints
-3. **Match semantics**: Leftmost, shortest-path to ensure deterministic results
+**Phase 0: Core Matching** (95% complete)
+- ✅ VM with all instructions (vm.rs: 1,436 lines, 39 tests)
+- ✅ BFS wildcard search with shortest-path guarantees
+- ✅ Full backtracking support
+- ✅ Pattern compiler with anchor selection (523 lines, 11 tests)
+- ✅ Query language parser using Pest (264 lines, 6 tests)
+- ✅ Inverted indices for fast lookup (116 lines)
+- ✅ 71 tests passing
 
-### VM Instruction Set
-- Tree navigation (parent, child, sibling, ancestor, descendant)
-- Constraint checking (labels, features, positions)
-- Wildcard expansion with BFS and early termination
-- Minimal backtracking (only where necessary)
+**Phase 1: Integration** (~90% complete)
+- ✅ Full CoNLL-U parser with error handling (conllu.rs: 444 lines)
+- ✅ Complete tree representation (all UD fields)
+- ✅ TreeSearcher end-to-end pipeline (searcher.rs: 169 lines)
+- ✅ Leftmost semantics using token positions
+- ✅ End-to-end examples
 
-### Key Optimizations
-- **Anchor selection**: Choose most selective node as starting point
-- **Bidirectional verification**: Expand from anchor in both directions
-- **Memoization**: Cache subpattern results
-- **Pre-indexing**: Build indices for common constraints (lemma, POS, deprel)
-- **Early termination**: Stop on first valid match
+### Remaining Work ⏳
 
-See `pattern_matching_vm_design.md` for detailed algorithm design.
+**Phase 1 Polish**:
+- Python bindings (PyO3)
+- Performance benchmarks
+- Comprehensive rustdoc
 
-## Current Status (Updated Nov 2025)
+**Phase 2 (Future)**:
+- Multi-file processing with rayon
+- Extended query features (regex, negation)
+- Performance optimization
 
-### Design Phase ✅ COMPLETE
-- ✅ High-level architecture defined
-- ✅ Query language syntax decided
-- ✅ Pattern matching algorithm designed
-- ✅ Project structure set up (Rust + Python)
+## Technology Stack
 
-### Phase 0: Pattern Matching VM ✅ 95% COMPLETE
-
-**Major Achievements:**
-- ✅ **Core VM Implementation** - All instructions working (vm.rs: 1,436 lines, 39 tests)
-- ✅ **Wildcard Search** - BFS with shortest-path guarantees
-- ✅ **Backtracking System** - Full support for ambiguous patterns
-- ✅ **Pattern Compiler** - Anchor selection, bytecode generation (compiler.rs: 523 lines, 11 tests)
-- ✅ **Query Parser** - Pest-based parser (BONUS: Phase 1 item completed early!)
-- ✅ **Index Implementation** - Inverted indices for fast lookup
-- ✅ **56 tests passing** - Comprehensive coverage of VM, compiler, parser
-
-**Remaining Phase 0 Items:**
-- ⏳ TreeSearcher integration (combine index + compiler + VM)
-- ⏳ Performance benchmarks (benches/ directory exists but empty)
-- ⏳ Enhanced documentation and examples
-
-**Status**: Core matching algorithm complete and tested. Ready for Phase 1 (CoNLL-U integration).
-
-**Rationale for Algorithm-First Approach**: The matching algorithm is the core of the project and the hardest part. Its implementation will guide the design of tree representations and other data structures. By building and testing the VM-based matcher first, we ensure that all other components are optimized for the matching workflow.
-
-### Implementation Phases
-
-**Phase 0: Matching Algorithm ✅ 95% COMPLETE**
-- ✅ Minimal tree data structure (just enough for testing matching)
-- ✅ Pattern AST representation
-- ✅ VM instruction set implementation (ALL instructions working)
-- ✅ VM executor with backtracking (full support)
-- ✅ Hand-coded test fixtures (56 tests passing)
-- ✅ Algorithm verification (comprehensive test coverage)
-- ✅ BONUS: Query language parser (completed early from Phase 1)
-- ⏳ Performance optimization (benchmarks pending)
-
-**Phase 1: MVP Integration (NEXT)**
-- CoNLL-U reader
-- Full tree data structures with all fields + linear position
-- ~~Simple query language parser~~ ✅ Already complete!
-- Integration: TreeSearcher combining index + compiler + VM
-- Basic Python bindings (PyO3)
-- Single-file processing
-- Fix leftmost semantics to use actual token positions
-
-**Phase 2: Scale & Performance**
-- Multi-file corpus handling
-- Parallel processing (file-level)
-- Memory optimization
-- Extended query features (precedence, siblings, more constraints)
-- Subcorpus extraction (save matching sentences to CoNLL-U files)
-
-**Phase 3: Result Handling**
-- Navigable tree objects in Python
-- Result export (DataFrame, JSON, etc.)
-- Query result caching
-
-**Phase 4: Advanced Features (Future)**
-- Optional pre-computed index for frequently-used corpora
-- Jupyter widget for result visualization
-- TUI for interactive exploration
-- Query optimization/rewriting
-
-## Example Use Case
-
-**Research Question**: Analyze "help X to Y" constructions
-
-**Query**:
-```
-Help [lemma="help"];
-To [lemma="to"];
-YHead [];
-
-Help -[xcomp]-> To;
-To -[obj]-> YHead;
-```
-
-**Python Post-Processing**:
-```python
-for match in results:
-    help_node = match['Help']
-    to_node = match['To']
-    y_head = match['YHead']
-    
-    annotations = {
-        'help_form': help_node.form,
-        'word_before_help': help_node.prev_sibling.form if help_node.prev_sibling else None,
-        'y_head_lemma': y_head.lemma,
-        'x_length': len(list(to_node.subtree)),
-        # ... more custom extraction
-    }
-```
-
-## Development Context
-
-**Developer Profile**:
-- Computational linguistics professor
-- Research focus: historical corpus linguistics
-- Experienced coder (Python, Rust)
-- Uses JupyterLab/PyCharm for development
-- Familiar with NLP tools (spaCy, treebank query tools)
-
-**Previous Approach**: 
-- Used spaCy + PhraseMatcher for coarse filtering
-- Lots of manual tree traversal code
-- Fragile and janky
-- This toolkit aims to be a robust, performant replacement
+- **Language**: Rust 2021 edition
+- **Python**: PyO3 + maturin
+- **Parser**: Pest 2.7
+- **Parallelization**: Rayon 1.11
 
 ## Key Design Principles
 
-1. **Performance matters**: Historical corpora are large; Rust core for speed
-2. **Simplicity over completeness**: Start minimal, iterate based on real usage
-3. **Python-friendly**: Researchers work in Python; bindings must be ergonomic
-4. **Deterministic results**: Leftmost, shortest-path semantics avoid surprises
-5. **Explicit error handling**: User input errors return clear `Result::Err`, internal bugs panic with descriptive messages, never silently skip errors
-6. **No pathological cases**: Careful algorithm design to avoid exponential blowup
+1. **Performance**: Rust core for 500M+ token corpora
+2. **Deterministic**: Leftmost, shortest-path semantics
+3. **Error handling**: User errors → Result::Err, bugs → panic with context
+4. **No pathological cases**: Bounded search prevents exponential blowup
+5. **Python-friendly**: Ergonomic bindings for research workflows
+
+## Example Workflow
+
+```python
+from treesearch import TreeSearcher, CoNLLUReader
+
+# Load treebank
+reader = CoNLLUReader.from_file("corpus.conllu")
+trees = list(reader)
+
+# Execute query
+searcher = TreeSearcher()
+query = """
+    Verb [pos="VERB"];
+    Subj [pos="NOUN"];
+    Verb -[nsubj]-> Subj;
+"""
+
+for tree in trees:
+    for match in searcher.search(tree, query):
+        # Custom analysis on matched structures
+        verb = match['Verb']
+        subj = match['Subj']
+        print(f"{verb.form} ← {subj.form}")
+```
 
 ## References
 
-- **Pattern matching algorithm**: See `pattern_matching_vm_design.md`
-- **Query language examples**: See design conversations
-- **CoNLL-U format**: https://universaldependencies.org/format.html
-
-## Next Steps (Algorithm-First Implementation)
-
-1. **Set up Rust project structure** with basic module layout
-2. **Define minimal tree data structures** for testing the matcher
-   - Node representation with ID, label, parent/child pointers
-   - Just enough to write test fixtures
-3. **Implement pattern AST** representation
-   - Node patterns (with constraints)
-   - Edge patterns (structural relations)
-4. **Build VM instruction set**
-   - Navigation instructions (parent, child, ancestor, descendant)
-   - Constraint checking instructions
-   - Wildcard expansion with BFS
-5. **Implement VM executor** with controlled backtracking
-6. **Create hand-coded test fixtures** to verify matching behavior
-7. **Test and optimize** the matching algorithm
-8. **Iterate on tree representation** based on algorithm needs
-9. Then proceed to Phase 1: integrate with CoNLL-U parsing and query language
+- Design details: `plans/pattern_matching_vm_design.md`
+- CoNLL-U format: https://universaldependencies.org/format.html
+- Development guide: `CLAUDE.md`
