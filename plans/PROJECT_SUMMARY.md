@@ -225,8 +225,7 @@ for match in results:
 2. **Simplicity over completeness**: Start minimal, iterate based on real usage
 3. **Python-friendly**: Researchers work in Python; bindings must be ergonomic
 4. **Deterministic results**: Leftmost, shortest-path semantics avoid surprises
-5. **Explicit error handling**: User input errors return clear `Result::Err`, internal bugs panic with descriptive messages, never silently skip errors
-6. **No pathological cases**: Careful algorithm design to avoid exponential blowup
+5. **No pathological cases**: Careful algorithm design to avoid exponential blowup
 
 ## References
 

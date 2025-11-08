@@ -35,10 +35,6 @@ The project has **successfully completed** the core pattern matching VM implemen
 2. **Deterministic match semantics**: Leftmost, shortest-path matching
 3. **Efficient wildcard handling**: Avoids exponential blowup
 4. **File-level parallelization**: Using rayon
-5. **Error handling strategy**:
-   - **User input errors** (malformed queries, invalid CoNLL-U, missing files) → `Result::Err` with clear message
-   - **Internal bugs** (invalid bytecode, violated invariants, unreachable states) → `panic!` with descriptive message
-   - **Never silently skip or provide fallback values** - all errors must be loud and visible
 
 ### Key Components
 
