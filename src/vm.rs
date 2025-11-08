@@ -8,7 +8,7 @@ use crate::pattern::Constraint;
 use std::collections::{HashMap, VecDeque, HashSet};
 
 /// VM instructions for pattern matching
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
     // Constraint checking
     CheckLemma(String),
