@@ -1,0 +1,72 @@
+//! Example demonstrating query parsing and pattern matching
+//!
+//! Run with: cargo run --example query_example
+
+use treesearch::{parse_query, Tree, Node};
+use treesearch::compiler::compile_pattern;
+use treesearch::vm::VM;
+
+fn main() {
+    // Create a test tree: "I help to write code"
+    // Structure:
+    //   help (VERB)
+    //     ├─ I (PRON, nsubj)
+    //     └─ to (PART, xcomp)
+    //          └─ write (VERB, obj)
+    //               └─ code (NOUN, obj)
+
+    let mut tree = Tree::new();
+    tree.add_node(Node::new(0, "help", "help", "VERB", "root"));
+    tree.add_node(Node::new(1, "I", "I", "PRON", "nsubj"));
+    tree.add_node(Node::new(2, "to", "to", "PART", "xcomp"));
+    tree.add_node(Node::new(3, "write", "write", "VERB", "mark"));
+    tree.add_node(Node::new(4, "code", "code", "NOUN", "obj"));
+
+    tree.set_parent(1, 0);  // I -> help
+    tree.set_parent(2, 0);  // to -> help
+    tree.set_parent(3, 2);  // write -> to
+    tree.set_parent(4, 3);  // code -> write
+
+    // Parse a query instead of manually building a Pattern!
+    let query = r#"
+        Help [lemma="help"];
+        To [lemma="to"];
+        YHead [];
+
+        Help -[xcomp]-> To;
+        To -[mark]-> YHead;
+    "#;
+
+    println!("Query:");
+    println!("{}", query);
+    println!();
+
+    // Parse the query into a Pattern
+    let pattern = parse_query(query).expect("Failed to parse query");
+    println!("Parsed pattern with {} nodes and {} edges",
+             pattern.elements.len(), pattern.edges.len());
+
+    // Compile the pattern to bytecode
+    let (bytecode, anchor) = compile_pattern(&pattern);
+    println!("Compiled to {} instructions, anchor at element {}",
+             bytecode.len(), anchor);
+    println!();
+
+    // Execute the pattern on the tree
+    let vm = VM::new(bytecode);
+    let anchor_node = 0;  // Start at "help"
+
+    match vm.execute(&tree, anchor_node) {
+        Some(result) => {
+            println!("Match found!");
+            for (pos, node_id) in &result.bindings {
+                let node = tree.get_node(*node_id).unwrap();
+                let var_name = &pattern.elements[*pos].var_name;
+                println!("  {} = {} (lemma: {})", var_name, node.form, node.lemma);
+            }
+        }
+        None => {
+            println!("No match found");
+        }
+    }
+}

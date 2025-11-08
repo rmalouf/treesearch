@@ -17,6 +17,10 @@ pyo3 = { version = "0.27", features = ["extension-module"] }
 # Parallelization
 rayon = "1.11"
 
+# Query parsing
+pest = "2.7"
+pest_derive = "2.7"
+
 [dev-dependencies]
 # Testing utilities
 criterion = "0.7"
