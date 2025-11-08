@@ -114,7 +114,11 @@ impl<R: BufRead> Iterator for CoNLLUReader<R> {
 }
 
 /// Parse a comment line (starts with #)
-fn parse_comment(comment: &str, metadata: &mut HashMap<String, String>, sentence_text: &mut Option<String>) {
+fn parse_comment(
+    comment: &str,
+    metadata: &mut HashMap<String, String>,
+    sentence_text: &mut Option<String>,
+) {
     let comment = comment.trim();
 
     // Check for key = value format
@@ -231,17 +235,8 @@ fn parse_line(line: &str, line_num: usize, node_id: NodeId) -> Result<Option<Nod
     let misc = parse_misc(fields[9])?;
 
     let mut node = Node::with_full_fields(
-        node_id,
-        node_id, // Position = node_id for now
-        token_id,
-        form,
-        lemma,
-        pos,
-        xpos,
-        feats,
-        deprel,
-        deps,
-        misc,
+        node_id, node_id, // Position = node_id for now
+        token_id, form, lemma, pos, xpos, feats, deprel, deps, misc,
     );
 
     node.parent = head;
@@ -319,11 +314,10 @@ fn parse_features(s: &str) -> Result<Features, ParseError> {
 
     let mut feats = Features::new();
     for pair in s.split('|') {
-        let (k, v) = pair.split_once('=')
-            .ok_or_else(|| ParseError {
-                line_num: 0,
-                message: format!("Invalid FEATS pair (missing '='): {}", pair),
-            })?;
+        let (k, v) = pair.split_once('=').ok_or_else(|| ParseError {
+            line_num: 0,
+            message: format!("Invalid FEATS pair (missing '='): {}", pair),
+        })?;
         feats.insert(k.to_string(), v.to_string());
     }
     Ok(feats)
@@ -371,11 +365,10 @@ fn parse_misc(s: &str) -> Result<Misc, ParseError> {
 
     let mut misc = Misc::new();
     for pair in s.split('|') {
-        let (k, v) = pair.split_once('=')
-            .ok_or_else(|| ParseError {
-                line_num: 0,
-                message: format!("Invalid MISC pair (missing '='): {}", pair),
-            })?;
+        let (k, v) = pair.split_once('=').ok_or_else(|| ParseError {
+            line_num: 0,
+            message: format!("Invalid MISC pair (missing '='): {}", pair),
+        })?;
         misc.insert(k.to_string(), v.to_string());
     }
     Ok(misc)

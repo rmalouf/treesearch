@@ -56,14 +56,14 @@ pub struct Node {
     pub token_id: TokenId,
 
     // CoNLL-U fields
-    pub form: String,          // FORM
-    pub lemma: String,         // LEMMA
-    pub pos: String,           // UPOS (universal POS)
-    pub xpos: Option<String>,  // XPOS (language-specific POS)
-    pub feats: Features,       // FEATS (morphological features)
-    pub deprel: String,        // DEPREL (dependency relation)
-    pub deps: Vec<Dep>,        // DEPS (enhanced dependencies)
-    pub misc: Misc,            // MISC (miscellaneous)
+    pub form: String,         // FORM
+    pub lemma: String,        // LEMMA
+    pub pos: String,          // UPOS (universal POS)
+    pub xpos: Option<String>, // XPOS (language-specific POS)
+    pub feats: Features,      // FEATS (morphological features)
+    pub deprel: String,       // DEPREL (dependency relation)
+    pub deps: Vec<Dep>,       // DEPS (enhanced dependencies)
+    pub misc: Misc,           // MISC (miscellaneous)
 
     // Tree structure (computed from HEAD field)
     pub(crate) parent: Option<NodeId>,
@@ -190,10 +190,7 @@ impl Tree {
     /// Get the children of a node
     pub fn children(&self, node_id: NodeId) -> Vec<&Node> {
         if let Some(node) = self.get_node(node_id) {
-            node.children
-                .iter()
-                .map(|&id| &self.nodes[id])
-                .collect()
+            node.children.iter().map(|&id| &self.nodes[id]).collect()
         } else {
             Vec::new()
         }
