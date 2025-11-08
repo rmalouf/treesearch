@@ -101,6 +101,7 @@ impl Node {
     }
 
     /// Create a new node with full CoNLL-U fields
+    #[allow(clippy::too_many_arguments)]
     pub fn with_full_fields(
         id: NodeId,
         position: usize,

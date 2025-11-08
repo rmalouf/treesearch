@@ -46,25 +46,25 @@ impl TreeIndex {
         // Index by lemma
         self.by_lemma
             .entry(node.lemma.clone())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(node.id);
 
         // Index by POS
         self.by_pos
             .entry(node.pos.clone())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(node.id);
 
         // Index by deprel
         self.by_deprel
             .entry(node.deprel.clone())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(node.id);
 
         // Index by form
         self.by_form
             .entry(node.form.clone())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(node.id);
     }
 

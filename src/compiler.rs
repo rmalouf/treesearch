@@ -163,7 +163,7 @@ pub fn compile_pattern(pattern: Pattern) -> (Vec<Instruction>, usize) {
         ) {
             edges_from
                 .entry(from_idx)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push((to_idx, edge));
         }
     }

@@ -2,9 +2,9 @@
 //!
 //! Run with: cargo run --example query_example
 
-use treesearch::{parse_query, Tree, Node};
 use treesearch::compiler::compile_pattern;
 use treesearch::vm::VM;
+use treesearch::{parse_query, Node, Tree};
 
 fn main() {
     // Create a test tree: "I help to write code"
@@ -22,10 +22,10 @@ fn main() {
     tree.add_node(Node::new(3, "write", "write", "VERB", "mark"));
     tree.add_node(Node::new(4, "code", "code", "NOUN", "obj"));
 
-    tree.set_parent(1, 0);  // I -> help
-    tree.set_parent(2, 0);  // to -> help
-    tree.set_parent(3, 2);  // write -> to
-    tree.set_parent(4, 3);  // code -> write
+    tree.set_parent(1, 0); // I -> help
+    tree.set_parent(2, 0); // to -> help
+    tree.set_parent(3, 2); // write -> to
+    tree.set_parent(4, 3); // code -> write
 
     // Parse a query instead of manually building a Pattern!
     let query = r#"
@@ -43,23 +43,31 @@ fn main() {
 
     // Parse the query into a Pattern
     let pattern = parse_query(query).expect("Failed to parse query");
-    println!("Parsed pattern with {} nodes and {} edges",
-             pattern.elements.len(), pattern.edges.len());
+    println!(
+        "Parsed pattern with {} nodes and {} edges",
+        pattern.elements.len(),
+        pattern.edges.len()
+    );
 
     // Save var names for later printing (pattern will be consumed by compiler)
-    let var_names: Vec<String> = pattern.elements.iter()
+    let var_names: Vec<String> = pattern
+        .elements
+        .iter()
         .map(|e| e.var_name.clone())
         .collect();
 
     // Compile the pattern to bytecode
     let (bytecode, anchor) = compile_pattern(pattern);
-    println!("Compiled to {} instructions, anchor at element {}",
-             bytecode.len(), anchor);
+    println!(
+        "Compiled to {} instructions, anchor at element {}",
+        bytecode.len(),
+        anchor
+    );
     println!();
 
     // Execute the pattern on the tree
     let vm = VM::new(bytecode);
-    let anchor_node = 0;  // Start at "help"
+    let anchor_node = 0; // Start at "help"
 
     match vm.execute(&tree, anchor_node) {
         Some(result) => {

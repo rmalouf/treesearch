@@ -158,7 +158,7 @@ impl VM {
                 }
                 Err(_) => {
                     // Instruction failed, try backtracking
-                    if !self.backtrack(&mut state) {
+                    if !Self::backtrack(&mut state) {
                         return None; // No more alternatives
                     }
                 }
@@ -167,7 +167,7 @@ impl VM {
     }
 
     /// Check if a node matches a constraint
-    fn check_constraint(node: &Node, constraint: &Constraint, tree: &Tree) -> bool {
+    fn check_constraint(node: &Node, constraint: &Constraint) -> bool {
         match constraint {
             Constraint::Any => true,
             Constraint::Lemma(lemma) => node.lemma == *lemma,
@@ -175,10 +175,10 @@ impl VM {
             Constraint::Form(form) => node.form == *form,
             Constraint::DepRel(deprel) => node.deprel == *deprel,
             Constraint::And(constraints) => {
-                constraints.iter().all(|c| Self::check_constraint(node, c, tree))
+                constraints.iter().all(|c| Self::check_constraint(node, c))
             }
             Constraint::Or(constraints) => {
-                constraints.iter().any(|c| Self::check_constraint(node, c, tree))
+                constraints.iter().any(|c| Self::check_constraint(node, c))
             }
         }
     }
@@ -226,7 +226,7 @@ impl VM {
 
             // Check if this node matches
             if let Some(node) = tree.get_node(node_id) {
-                if Self::check_constraint(node, constraint, tree) {
+                if Self::check_constraint(node, constraint) {
                     matches.push(node_id);
                     if first_match_depth.is_none() {
                         first_match_depth = Some(depth);
@@ -270,7 +270,7 @@ impl VM {
                 }
 
                 if let Some(parent_node) = tree.get_node(parent_id) {
-                    if Self::check_constraint(parent_node, constraint, tree) {
+                    if Self::check_constraint(parent_node, constraint) {
                         // For ancestors, return only the first (closest) match
                         // No backtracking needed for ancestor search
                         return vec![parent_id];
@@ -322,7 +322,7 @@ impl VM {
             Box::new(siblings.iter().rev())
         };
 
-        iter.filter(|&&id| Self::check_constraint(&tree.nodes[id], constraint, tree))
+        iter.filter(|&&id| Self::check_constraint(&tree.nodes[id], constraint))
             .copied()
             .collect()
     }
@@ -414,7 +414,7 @@ impl VM {
                         .filter_map(|&child_id| {
                             tree.get_node(child_id).and_then(|child| {
                                 let matches = if let Some(constraint) = constraint_opt {
-                                    Self::check_constraint(child, constraint, tree)
+                                    Self::check_constraint(child, constraint)
                                 } else {
                                     true // No constraint means any child matches
                                 };
@@ -565,7 +565,7 @@ impl VM {
     }
 
     /// Attempt to backtrack to a previous choice point
-    fn backtrack(&self, state: &mut VMState) -> bool {
+    fn backtrack(state: &mut VMState) -> bool {
         if let Some(mut choice) = state.backtrack_stack.pop() {
             if let Some(next_alternative) = choice.alternatives.pop() {
                 // Try next alternative
@@ -583,7 +583,7 @@ impl VM {
                 true
             } else {
                 // No more alternatives, try next choice point
-                self.backtrack(state)
+                Self::backtrack(state)
             }
         } else {
             false

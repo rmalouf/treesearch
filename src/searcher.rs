@@ -96,7 +96,7 @@ impl TreeSearcher {
         let constraint = &anchor_element.constraints;
 
         // Query index based on constraint type
-        match self.get_candidates_from_constraint(constraint, index) {
+        match Self::get_candidates_from_constraint(constraint, index) {
             Some(candidates) => candidates.to_vec(),
             None => {
                 // No specific constraint - return all nodes
@@ -107,7 +107,6 @@ impl TreeSearcher {
 
     /// Get candidates from index based on constraint
     fn get_candidates_from_constraint<'a>(
-        &self,
         constraint: &Constraint,
         index: &'a TreeIndex,
     ) -> Option<&'a [NodeId]> {
@@ -120,7 +119,7 @@ impl TreeSearcher {
                 // For And, use the most selective constraint
                 // Try lemma/form first (most selective), then POS/deprel
                 for c in constraints {
-                    if let Some(candidates) = self.get_candidates_from_constraint(c, index) {
+                    if let Some(candidates) = Self::get_candidates_from_constraint(c, index) {
                         return Some(candidates);
                     }
                 }
@@ -130,7 +129,7 @@ impl TreeSearcher {
                 // For Or, we'd need to union all candidates
                 // For now, just use the first constraint
                 if let Some(c) = constraints.first() {
-                    self.get_candidates_from_constraint(c, index)
+                    Self::get_candidates_from_constraint(c, index)
                 } else {
                     None
                 }
