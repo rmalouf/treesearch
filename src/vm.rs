@@ -121,8 +121,9 @@ impl VM {
         let mut nodes_with_pos: Vec<(NodeId, usize)> = nodes
             .into_iter()
             .map(|id| {
-                let pos = tree.get_node(id).map(|n| n.position).unwrap_or(id);
-                (id, pos)
+                let node = tree.get_node(id)
+                    .expect("VM bug: node in alternatives does not exist in tree");
+                (id, node.position)
             })
             .collect();
 

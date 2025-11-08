@@ -28,19 +28,21 @@ fn estimate_selectivity(constraint: &Constraint) -> Selectivity {
         Constraint::DepRel(_) => Selectivity::Medium,
         Constraint::And(constraints) => {
             // And is as selective as its most selective constraint
+            assert!(!constraints.is_empty(), "Compiler bug: empty And constraint");
             constraints
                 .iter()
                 .map(estimate_selectivity)
                 .max()
-                .unwrap_or(Selectivity::Low)
+                .unwrap()
         }
         Constraint::Or(constraints) => {
             // Or is as selective as its least selective constraint
+            assert!(!constraints.is_empty(), "Compiler bug: empty Or constraint");
             constraints
                 .iter()
                 .map(estimate_selectivity)
                 .min()
-                .unwrap_or(Selectivity::Low)
+                .unwrap()
         }
     }
 }
@@ -48,9 +50,7 @@ fn estimate_selectivity(constraint: &Constraint) -> Selectivity {
 /// Select the best anchor element for a pattern
 /// Returns the index of the most selective element
 fn select_anchor(pattern: &Pattern) -> usize {
-    if pattern.elements.is_empty() {
-        return 0;
-    }
+    assert!(!pattern.elements.is_empty(), "Compiler bug: cannot compile empty pattern");
 
     let mut best_idx = 0;
     let mut best_selectivity = Selectivity::Low;
@@ -85,11 +85,8 @@ fn compile_constraint(constraint: Constraint) -> Vec<Instruction> {
             // For Or, we'd need Choice/alternatives which is complex
             // For now, just compile first constraint
             // TODO: Implement proper Or compilation with Choice in future
-            constraints
-                .into_iter()
-                .next()
-                .map(compile_constraint)
-                .unwrap_or_default()
+            assert!(!constraints.is_empty(), "Compiler bug: empty Or constraint");
+            compile_constraint(constraints.into_iter().next().unwrap())
         }
     }
 }
