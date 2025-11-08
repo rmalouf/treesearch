@@ -285,48 +285,35 @@ impl VM {
         tree: &Tree,
         direction: bool,
     ) -> Vec<NodeId> {
-        // Get the parent and find our position among siblings
-        let current = match tree.get_node(start_node) {
-            Some(n) => n,
-            None => return Vec::new(),
-        };
-        let parent_id = match current.parent {
-            Some(p) => p,
+        // Get parent and find position among siblings
+        let parent_id = match tree.get_node(start_node).and_then(|n| n.parent) {
+            Some(id) => id,
             None => return Vec::new(),
         };
         let parent = match tree.get_node(parent_id) {
             Some(p) => p,
             None => return Vec::new(),
         };
-
         let start_pos = match parent.children.iter().position(|&id| id == start_node) {
             Some(p) => p,
             None => return Vec::new(),
         };
 
-        let mut matches = Vec::new();
-
-        if direction {
-            // Scan right siblings
-            for &sibling_id in &parent.children[start_pos + 1..] {
-                if let Some(sibling) = tree.get_node(sibling_id) {
-                    if Self::check_constraint(sibling, constraint, tree) {
-                        matches.push(sibling_id);
-                    }
-                }
-            }
+        let siblings = if direction {
+            &parent.children[start_pos + 1..]
         } else {
-            // Scan left siblings (in reverse order to get closest match first)
-            for &sibling_id in parent.children[..start_pos].iter().rev() {
-                if let Some(sibling) = tree.get_node(sibling_id) {
-                    if Self::check_constraint(sibling, constraint, tree) {
-                        matches.push(sibling_id);
-                    }
-                }
-            }
-        }
+            &parent.children[..start_pos]
+        };
 
-        matches
+        let iter: Box<dyn Iterator<Item = &NodeId>> = if direction {
+            Box::new(siblings.iter())
+        } else {
+            Box::new(siblings.iter().rev())
+        };
+
+        iter.filter(|&&id| Self::check_constraint(&tree.nodes[id], constraint, tree))
+            .copied()
+            .collect()
     }
 
     /// Execute a single instruction
@@ -346,48 +333,40 @@ impl VM {
             }
 
             Instruction::CheckLemma(lemma) => {
-                if let Some(node) = tree.get_node(state.current_node) {
-                    if node.lemma == *lemma {
-                        Ok(false)
-                    } else {
-                        Err(())
-                    }
+                let node = tree.get_node(state.current_node)
+                    .expect("VM bug: current_node does not exist");
+                if node.lemma == *lemma {
+                    Ok(false)
                 } else {
                     Err(())
                 }
             }
 
             Instruction::CheckPOS(pos) => {
-                if let Some(node) = tree.get_node(state.current_node) {
-                    if node.pos == *pos {
-                        Ok(false)
-                    } else {
-                        Err(())
-                    }
+                let node = tree.get_node(state.current_node)
+                    .expect("VM bug: current_node does not exist");
+                if node.pos == *pos {
+                    Ok(false)
                 } else {
                     Err(())
                 }
             }
 
             Instruction::CheckForm(form) => {
-                if let Some(node) = tree.get_node(state.current_node) {
-                    if node.form == *form {
-                        Ok(false)
-                    } else {
-                        Err(())
-                    }
+                let node = tree.get_node(state.current_node)
+                    .expect("VM bug: current_node does not exist");
+                if node.form == *form {
+                    Ok(false)
                 } else {
                     Err(())
                 }
             }
 
             Instruction::CheckDepRel(deprel) => {
-                if let Some(node) = tree.get_node(state.current_node) {
-                    if node.deprel == *deprel {
-                        Ok(false)
-                    } else {
-                        Err(())
-                    }
+                let node = tree.get_node(state.current_node)
+                    .expect("VM bug: current_node does not exist");
+                if node.deprel == *deprel {
+                    Ok(false)
                 } else {
                     Err(())
                 }
