@@ -1,7 +1,7 @@
 //! Pattern representation and compilation
 //!
 //! This module defines the AST for dependency tree patterns and
-//! handles compilation to VM bytecode.
+//! handles compilation to VM opcodes.
 
 /// A constraint on a node's attributes
 #[derive(Debug, Clone, PartialEq)]

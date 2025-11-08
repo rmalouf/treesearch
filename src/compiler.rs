@@ -1,6 +1,6 @@
-//! Pattern compilation to VM bytecode
+//! Pattern compilation to VM opcodes
 //!
-//! This module compiles high-level Pattern AST into optimized VM bytecode.
+//! This module compiles high-level Pattern AST into optimized VM opcodes.
 //! The compiler uses an anchor-based strategy with interleaved verification.
 
 use crate::pattern::{Constraint, Pattern, PatternEdge, RelationType};
@@ -131,8 +131,8 @@ fn compile_edge(
     instructions
 }
 
-/// Compile a pattern into VM bytecode
-/// Returns (bytecode, anchor_index, var_names)
+/// Compile a pattern into VM opcodes
+/// Returns (opcodes, anchor_index, var_names)
 pub fn compile_pattern(pattern: Pattern) -> (Vec<Instruction>, usize, Vec<String>) {
     if pattern.elements.is_empty() {
         return (vec![Instruction::Match], 0, Vec::new());
@@ -146,7 +146,7 @@ pub fn compile_pattern(pattern: Pattern) -> (Vec<Instruction>, usize, Vec<String
     // Extract variable names in position order
     let var_names: Vec<String> = elements.iter().map(|elem| elem.var_name.clone()).collect();
 
-    let mut bytecode = Vec::new();
+    let mut opcodes = Vec::new();
 
     // Build a map of element names to indices (moving var_name)
     let name_to_idx: HashMap<String, usize> = elements
@@ -167,8 +167,8 @@ pub fn compile_pattern(pattern: Pattern) -> (Vec<Instruction>, usize, Vec<String
 
     // Start at anchor: verify its constraints and bind it
     let anchor_element = &elements[anchor_idx];
-    bytecode.extend(compile_constraint(anchor_element.constraints.clone()));
-    bytecode.push(Instruction::Bind(anchor_idx));
+    opcodes.extend(compile_constraint(anchor_element.constraints.clone()));
+    opcodes.push(Instruction::Bind(anchor_idx));
 
     // Track which elements we've visited
     let mut visited = vec![false; elements.len()];
@@ -186,7 +186,7 @@ pub fn compile_pattern(pattern: Pattern) -> (Vec<Instruction>, usize, Vec<String
                 }
 
                 // Save state before navigating
-                bytecode.push(Instruction::PushState);
+                opcodes.push(Instruction::PushState);
 
                 // Navigate to target
                 let target_element = &elements[*target_idx];
@@ -195,7 +195,7 @@ pub fn compile_pattern(pattern: Pattern) -> (Vec<Instruction>, usize, Vec<String
                     edge.label.as_deref(),
                     target_element.constraints.clone(),
                 );
-                bytecode.extend(navigation);
+                opcodes.extend(navigation);
 
                 // Verify target constraints (if not already in navigation)
                 if !matches!(
@@ -206,11 +206,11 @@ pub fn compile_pattern(pattern: Pattern) -> (Vec<Instruction>, usize, Vec<String
                         | RelationType::Follows
                         | RelationType::Precedes
                 ) {
-                    bytecode.extend(compile_constraint(target_element.constraints.clone()));
+                    opcodes.extend(compile_constraint(target_element.constraints.clone()));
                 }
 
                 // Bind target
-                bytecode.push(Instruction::Bind(*target_idx));
+                opcodes.push(Instruction::Bind(*target_idx));
 
                 // Mark as visited and add to queue
                 visited[*target_idx] = true;
@@ -220,9 +220,9 @@ pub fn compile_pattern(pattern: Pattern) -> (Vec<Instruction>, usize, Vec<String
     }
 
     // Final match instruction
-    bytecode.push(Instruction::Match);
+    opcodes.push(Instruction::Match);
 
-    (bytecode, anchor_idx, var_names)
+    (opcodes, anchor_idx, var_names)
 }
 
 #[cfg(test)]
@@ -263,9 +263,9 @@ mod tests {
     #[test]
     fn test_compile_simple_constraint() {
         let constraint = Constraint::Lemma("run".to_string());
-        let bytecode = compile_constraint(constraint);
-        assert_eq!(bytecode.len(), 1);
-        assert_eq!(bytecode[0], Instruction::CheckLemma("run".to_string()));
+        let opcodes = compile_constraint(constraint);
+        assert_eq!(opcodes.len(), 1);
+        assert_eq!(opcodes[0], Instruction::CheckLemma("run".to_string()));
     }
 
     #[test]
@@ -274,10 +274,10 @@ mod tests {
             Constraint::POS("VERB".to_string()),
             Constraint::Lemma("run".to_string()),
         ]);
-        let bytecode = compile_constraint(constraint);
-        assert_eq!(bytecode.len(), 2);
-        assert_eq!(bytecode[0], Instruction::CheckPOS("VERB".to_string()));
-        assert_eq!(bytecode[1], Instruction::CheckLemma("run".to_string()));
+        let opcodes = compile_constraint(constraint);
+        assert_eq!(opcodes.len(), 2);
+        assert_eq!(opcodes[0], Instruction::CheckPOS("VERB".to_string()));
+        assert_eq!(opcodes[1], Instruction::CheckLemma("run".to_string()));
     }
 
     #[test]
@@ -289,14 +289,14 @@ mod tests {
             Constraint::POS("VERB".to_string()),
         ));
 
-        let (bytecode, anchor, _var_names) = compile_pattern(pattern);
+        let (opcodes, anchor, _var_names) = compile_pattern(pattern);
         assert_eq!(anchor, 0);
 
-        // Check exact bytecode: CheckPOS, Bind, Match
-        assert_eq!(bytecode.len(), 3);
-        assert_eq!(bytecode[0], Instruction::CheckPOS("VERB".to_string()));
-        assert_eq!(bytecode[1], Instruction::Bind(0));
-        assert_eq!(bytecode[2], Instruction::Match);
+        // Check exact opcodes: CheckPOS, Bind, Match
+        assert_eq!(opcodes.len(), 3);
+        assert_eq!(opcodes[0], Instruction::CheckPOS("VERB".to_string()));
+        assert_eq!(opcodes[1], Instruction::Bind(0));
+        assert_eq!(opcodes[2], Instruction::Match);
     }
 
     #[test]
@@ -318,10 +318,10 @@ mod tests {
             label: Some("nsubj".to_string()),
         });
 
-        let (bytecode, anchor, _var_names) = compile_pattern(pattern);
+        let (opcodes, anchor, _var_names) = compile_pattern(pattern);
         assert_eq!(anchor, 0); // Both have same selectivity, picks first
 
-        // Check exact bytecode:
+        // Check exact opcodes:
         // - Check verb POS
         // - Bind verb
         // - Push state
@@ -329,17 +329,17 @@ mod tests {
         // - Check deprel
         // - Bind noun
         // - Match
-        assert_eq!(bytecode.len(), 7);
-        assert_eq!(bytecode[0], Instruction::CheckPOS("VERB".to_string()));
-        assert_eq!(bytecode[1], Instruction::Bind(0));
-        assert_eq!(bytecode[2], Instruction::PushState);
+        assert_eq!(opcodes.len(), 7);
+        assert_eq!(opcodes[0], Instruction::CheckPOS("VERB".to_string()));
+        assert_eq!(opcodes[1], Instruction::Bind(0));
+        assert_eq!(opcodes[2], Instruction::PushState);
         assert_eq!(
-            bytecode[3],
+            opcodes[3],
             Instruction::MoveToChild(Some(Constraint::POS("NOUN".to_string())))
         );
-        assert_eq!(bytecode[4], Instruction::CheckDepRel("nsubj".to_string()));
-        assert_eq!(bytecode[5], Instruction::Bind(1));
-        assert_eq!(bytecode[6], Instruction::Match);
+        assert_eq!(opcodes[4], Instruction::CheckDepRel("nsubj".to_string()));
+        assert_eq!(opcodes[5], Instruction::Bind(1));
+        assert_eq!(opcodes[6], Instruction::Match);
     }
 
     #[test]
@@ -361,8 +361,8 @@ mod tests {
             ]),
         ));
 
-        let (bytecode, _anchor, _var_names) = compile_pattern(pattern);
-        let vm = VM::new(bytecode, Vec::new());
+        let (opcodes, _anchor, _var_names) = compile_pattern(pattern);
+        let vm = VM::new(opcodes, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_some());
@@ -398,8 +398,8 @@ mod tests {
             label: Some("nsubj".to_string()),
         });
 
-        let (bytecode, _anchor, _var_names) = compile_pattern(pattern);
-        let vm = VM::new(bytecode, Vec::new());
+        let (opcodes, _anchor, _var_names) = compile_pattern(pattern);
+        let vm = VM::new(opcodes, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_some());
@@ -441,8 +441,8 @@ mod tests {
             label: None,
         });
 
-        let (bytecode, _anchor, _var_names) = compile_pattern(pattern);
-        let vm = VM::new(bytecode, Vec::new());
+        let (opcodes, _anchor, _var_names) = compile_pattern(pattern);
+        let vm = VM::new(opcodes, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_some());
@@ -465,7 +465,7 @@ mod tests {
             Constraint::Lemma("help".to_string()),
         ));
 
-        let (_bytecode, anchor, _var_names) = compile_pattern(pattern);
+        let (_opcodes, anchor, _var_names) = compile_pattern(pattern);
         assert_eq!(anchor, 2); // Should select "lemma" (most selective)
     }
 
@@ -510,11 +510,11 @@ mod tests {
             label: Some("obj".to_string()),
         });
 
-        let (bytecode, anchor, _var_names) = compile_pattern(pattern);
+        let (opcodes, anchor, _var_names) = compile_pattern(pattern);
         // Should anchor on "help" or "to" (both lemmas, equally selective)
         assert!(anchor == 0 || anchor == 1);
 
-        let vm = VM::new(bytecode, Vec::new());
+        let vm = VM::new(opcodes, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_some());
