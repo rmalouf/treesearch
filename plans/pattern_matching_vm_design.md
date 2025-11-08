@@ -72,8 +72,8 @@ enum Instruction {
     CheckDeprel(String),
     
     // Navigation
-    MoveParent,
-    MoveChild(Option<Constraint>),
+    MoveToParent,
+    MoveToChild(Option<Constraint>),
     MoveLeft,
     MoveRight,
     
@@ -296,7 +296,7 @@ let bytecode = vec![
     Instruction::Bind(1),
     
     // Verify NOUN has VERB parent
-    Instruction::MoveParent,
+    Instruction::MoveToParent,
     Instruction::CheckPOS("VERB".into()),
     Instruction::Bind(0),
     

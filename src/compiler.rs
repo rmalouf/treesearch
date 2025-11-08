@@ -106,13 +106,13 @@ fn compile_edge(
     match relation {
         RelationType::Child => {
             if constraint.is_any() {
-                instructions.push(Instruction::MoveChild(None));
+                instructions.push(Instruction::MoveToChild(None));
             } else {
-                instructions.push(Instruction::MoveChild(Some(constraint)));
+                instructions.push(Instruction::MoveToChild(Some(constraint)));
             }
         }
         RelationType::Parent => {
-            instructions.push(Instruction::MoveParent);
+            instructions.push(Instruction::MoveToParent);
         }
         RelationType::Descendant => {
             instructions.push(Instruction::ScanDescendants(constraint));
@@ -332,7 +332,7 @@ mod tests {
         assert_eq!(bytecode[0], Instruction::CheckPOS("VERB".to_string()));
         assert_eq!(bytecode[1], Instruction::Bind(0));
         assert_eq!(bytecode[2], Instruction::PushState);
-        assert_eq!(bytecode[3], Instruction::MoveChild(Some(Constraint::POS("NOUN".to_string()))));
+        assert_eq!(bytecode[3], Instruction::MoveToChild(Some(Constraint::POS("NOUN".to_string()))));
         assert_eq!(bytecode[4], Instruction::CheckDepRel("nsubj".to_string()));
         assert_eq!(bytecode[5], Instruction::Bind(1));
         assert_eq!(bytecode[6], Instruction::Match);

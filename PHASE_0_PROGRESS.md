@@ -8,7 +8,7 @@
 ### ✅ Task 1: Core VM Instructions
 **Implemented**:
 - All constraint checking instructions: CheckLemma, CheckPOS, CheckForm, CheckDepRel
-- Navigation instructions: MoveParent, MoveChild (with optional constraint filtering), MoveLeft, MoveRight
+- Navigation instructions: MoveToParent, MoveToChild (with optional constraint filtering), MoveLeft, MoveRight
 - Control flow: Jump, Choice (basic), Commit
 - State management: PushState, RestoreState
 - Compound constraint evaluation: And/Or support in check_constraint helper
@@ -122,7 +122,7 @@ Match (bindings)
 ### Compiler
 1. **Or constraint compilation**: Currently only compiles first alternative. Need proper Choice-based implementation for full Or support.
 2. **Interleaved verification**: Currently uses simple BFS from anchor. The plan mentions alternating backward/forward verification which is more complex.
-3. **Parent-to-child edges**: Current implementation only handles edges FROM anchor TO other nodes. Reverse edges (e.g., NOUN -parent-> VERB) need MoveParent support.
+3. **Parent-to-child edges**: Current implementation only handles edges FROM anchor TO other nodes. Reverse edges (e.g., NOUN -parent-> VERB) need MoveToParent support.
 4. **Disconnected patterns**: No validation that pattern graph is connected.
 5. **Optimization pass**: No instruction reordering or redundant check elimination yet.
 

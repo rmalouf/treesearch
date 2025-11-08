@@ -17,8 +17,8 @@ pub enum Instruction {
     CheckDepRel(String),
 
     // Navigation
-    MoveParent,
-    MoveChild(Option<Constraint>),
+    MoveToParent,
+    MoveToChild(Option<Constraint>),
     MoveLeft,
     MoveRight,
 
@@ -372,7 +372,7 @@ impl VM {
                 }
             }
 
-            Instruction::MoveParent => {
+            Instruction::MoveToParent => {
                 if let Some(parent) = tree.parent(state.current_node) {
                     state.current_node = parent.id;
                     Ok(false)
@@ -396,7 +396,7 @@ impl VM {
                 }
             }
 
-            Instruction::MoveChild(constraint_opt) => {
+            Instruction::MoveToChild(constraint_opt) => {
                 if let Some(node) = tree.get_node(state.current_node) {
                     // Get all matching children
                     let matching_children: Vec<NodeId> = node.children.iter()
@@ -681,7 +681,7 @@ mod tests {
         // Move from root (0) to any child
         let bytecode = vec![
             Instruction::CheckPOS("VERB".to_string()),  // At root
-            Instruction::MoveChild(None),                // Move to first child
+            Instruction::MoveToChild(None),                // Move to first child
             Instruction::Bind(0),
             Instruction::Match,
         ];
@@ -701,7 +701,7 @@ mod tests {
         // Move from root to child with POS=NOUN
         let bytecode = vec![
             Instruction::CheckPOS("VERB".to_string()),
-            Instruction::MoveChild(Some(Constraint::POS("NOUN".to_string()))),
+            Instruction::MoveToChild(Some(Constraint::POS("NOUN".to_string()))),
             Instruction::Bind(0),
             Instruction::Match,
         ];
@@ -721,7 +721,7 @@ mod tests {
         // Try to move to child with POS=PRON (doesn't exist)
         let bytecode = vec![
             Instruction::CheckPOS("VERB".to_string()),
-            Instruction::MoveChild(Some(Constraint::POS("PRON".to_string()))),
+            Instruction::MoveToChild(Some(Constraint::POS("PRON".to_string()))),
             Instruction::Match,
         ];
 
@@ -738,7 +738,7 @@ mod tests {
         // Start at child, move to parent
         let bytecode = vec![
             Instruction::CheckPOS("NOUN".to_string()),  // At child 1 (dog)
-            Instruction::MoveParent,                     // Move to parent (runs)
+            Instruction::MoveToParent,                     // Move to parent (runs)
             Instruction::CheckPOS("VERB".to_string()),   // Verify we're at parent
             Instruction::Bind(0),
             Instruction::Match,
@@ -871,7 +871,7 @@ mod tests {
         let bytecode = vec![
             Instruction::CheckPOS("VERB".to_string()),  // At root (0)
             Instruction::PushState,                      // Save state (at root)
-            Instruction::MoveChild(None),                // Move to child 1
+            Instruction::MoveToChild(None),                // Move to child 1
             Instruction::CheckPOS("NOUN".to_string()),   // Verify at child
             Instruction::RestoreState,                   // Restore to root
             Instruction::CheckPOS("VERB".to_string()),   // Verify back at root
@@ -894,7 +894,7 @@ mod tests {
         // Test And constraint: must be both NOUN and lemma "dog"
         let bytecode = vec![
             Instruction::CheckPOS("VERB".to_string()),
-            Instruction::MoveChild(Some(Constraint::And(vec![
+            Instruction::MoveToChild(Some(Constraint::And(vec![
                 Constraint::POS("NOUN".to_string()),
                 Constraint::Lemma("dog".to_string()),
             ]))),
@@ -917,7 +917,7 @@ mod tests {
         // Test Or constraint: must be either NOUN or ADV (will match first child with NOUN)
         let bytecode = vec![
             Instruction::CheckPOS("VERB".to_string()),
-            Instruction::MoveChild(Some(Constraint::Or(vec![
+            Instruction::MoveToChild(Some(Constraint::Or(vec![
                 Constraint::POS("PRON".to_string()),  // Doesn't match
                 Constraint::POS("NOUN".to_string()),  // Matches child 1
             ]))),
@@ -1234,7 +1234,7 @@ mod tests {
         // First child is DET, so it should try DET, fail the check, backtrack, and try NOUN
         let bytecode = vec![
             Instruction::CheckPOS("VERB".to_string()),  // At root
-            Instruction::MoveChild(None),                // Move to first child (creates choice points)
+            Instruction::MoveToChild(None),                // Move to first child (creates choice points)
             Instruction::CheckPOS("NOUN".to_string()),   // Check if it's a NOUN
             Instruction::Bind(0),
             Instruction::Match,
@@ -1256,7 +1256,7 @@ mod tests {
         // Look for ADJ child (should be second alternative after DET)
         let bytecode = vec![
             Instruction::CheckPOS("VERB".to_string()),
-            Instruction::MoveChild(None),
+            Instruction::MoveToChild(None),
             Instruction::CheckPOS("ADJ".to_string()),  // Will fail on DET, succeed on ADJ
             Instruction::Bind(0),
             Instruction::Match,
@@ -1278,7 +1278,7 @@ mod tests {
         // Should try all children and fail
         let bytecode = vec![
             Instruction::CheckPOS("VERB".to_string()),
-            Instruction::MoveChild(None),
+            Instruction::MoveToChild(None),
             Instruction::CheckPOS("PRON".to_string()),  // Will fail on all children
             Instruction::Match,
         ];
@@ -1296,7 +1296,7 @@ mod tests {
         // Move to child with constraint - should only create choice points for matching children
         let bytecode = vec![
             Instruction::CheckPOS("VERB".to_string()),
-            Instruction::MoveChild(Some(Constraint::POS("ADJ".to_string()))),
+            Instruction::MoveToChild(Some(Constraint::POS("ADJ".to_string()))),
             Instruction::Bind(0),
             Instruction::Match,
         ];
@@ -1317,7 +1317,7 @@ mod tests {
         // Then try to match NOUN - should fail because we can't backtrack
         let bytecode = vec![
             Instruction::CheckPOS("VERB".to_string()),
-            Instruction::MoveChild(None),                // Creates choice points
+            Instruction::MoveToChild(None),                // Creates choice points
             Instruction::Commit,                         // Clear backtrack stack
             Instruction::CheckPOS("NOUN".to_string()),   // Will fail on DET (first child)
             Instruction::Match,
@@ -1356,8 +1356,8 @@ mod tests {
         // Should try: child1->gc1 (fail), child1->gc2 (fail on lemma), child2->gc5 (success)
         let bytecode = vec![
             Instruction::CheckPOS("VERB".to_string()),
-            Instruction::MoveChild(Some(Constraint::POS("NOUN".to_string()))), // Try child1 first
-            Instruction::MoveChild(Some(Constraint::POS("ADJ".to_string()))),  // Try ADJ grandchild
+            Instruction::MoveToChild(Some(Constraint::POS("NOUN".to_string()))), // Try child1 first
+            Instruction::MoveToChild(Some(Constraint::POS("ADJ".to_string()))),  // Try ADJ grandchild
             Instruction::CheckLemma("gc3".to_string()),                         // Check specific lemma
             Instruction::Bind(0),
             Instruction::Match,
@@ -1421,7 +1421,7 @@ mod tests {
         // Only node 3 is NOUN, so no backtracking needed, but test ordering works
         let bytecode = vec![
             Instruction::CheckPOS("VERB".to_string()),
-            Instruction::MoveChild(Some(Constraint::POS("NOUN".to_string()))),
+            Instruction::MoveToChild(Some(Constraint::POS("NOUN".to_string()))),
             Instruction::Bind(0),
             Instruction::Match,
         ];

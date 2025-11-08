@@ -25,7 +25,7 @@ This phase focuses on building and testing the core pattern matching virtual mac
 #### Subtasks:
 
 **1.1: Navigation Instructions**
-- [ ] `MoveChild` - with optional constraint filtering
+- [ ] `MoveToChild` - with optional constraint filtering
 - [ ] `MoveLeft` / `MoveRight` - sibling navigation
 - [ ] Add helper method `get_child_matching(node, constraint)` on Tree
 - [ ] Add helper method `get_sibling(node, direction)` on Tree
@@ -49,7 +49,7 @@ This phase focuses on building and testing the core pattern matching virtual mac
 vec![
     CheckPOS("VERB"),
     Bind(0),
-    MoveChild(Some(Constraint::POS("NOUN"))),
+    MoveToChild(Some(Constraint::POS("NOUN"))),
     CheckDepRel("nsubj"),
     Bind(1),
     Match,
@@ -148,7 +148,7 @@ vec![
     CheckPOS("NOUN"),
     Bind(0),
     Choice,  // Creates choice point
-    MoveChild(Some(Constraint::POS("DET"))),  // Try DET first
+    MoveToChild(Some(Constraint::POS("DET"))),  // Try DET first
     Bind(1),
     Match,
     // If DET fails, backtrack here and try ADJ...
@@ -183,8 +183,8 @@ vec![
 **4.3: Edge Compilation**
 - [ ] Implement `compile_edge(edge) -> Vec<Instruction>`
 - [ ] Handle relation types:
-  - `Child` → `MoveChild`
-  - `Parent` → `MoveParent`
+  - `Child` → `MoveToChild`
+  - `Parent` → `MoveToParent`
   - `Descendant` → `ScanDescendants`
   - `Ancestor` → `ScanAncestors`
   - `Precedes`/`Follows` → `ScanSiblings`
