@@ -66,27 +66,30 @@ fn select_anchor(pattern: &Pattern) -> usize {
     best_idx
 }
 
-/// Compile a constraint into check instructions, appending to bytecode
-fn compile_constraint(constraint: Constraint, bytecode: &mut Vec<Instruction>) {
+/// Compile a constraint into a sequence of check instructions
+fn compile_constraint(constraint: Constraint) -> Vec<Instruction> {
     match constraint {
-        Constraint::Any => {}, // No check needed
-        Constraint::Lemma(lemma) => bytecode.push(Instruction::CheckLemma(lemma)),
-        Constraint::Form(form) => bytecode.push(Instruction::CheckForm(form)),
-        Constraint::POS(pos) => bytecode.push(Instruction::CheckPOS(pos)),
-        Constraint::DepRel(deprel) => bytecode.push(Instruction::CheckDepRel(deprel)),
+        Constraint::Any => Vec::new(), // No check needed
+        Constraint::Lemma(lemma) => vec![Instruction::CheckLemma(lemma)],
+        Constraint::Form(form) => vec![Instruction::CheckForm(form)],
+        Constraint::POS(pos) => vec![Instruction::CheckPOS(pos)],
+        Constraint::DepRel(deprel) => vec![Instruction::CheckDepRel(deprel)],
         Constraint::And(constraints) => {
             // Compile all constraints sequentially
-            for constraint in constraints {
-                compile_constraint(constraint, bytecode);
-            }
+            constraints
+                .into_iter()
+                .flat_map(compile_constraint)
+                .collect()
         }
         Constraint::Or(constraints) => {
             // For Or, we'd need Choice/alternatives which is complex
             // For now, just compile first constraint
             // TODO: Implement proper Or compilation with Choice in future
-            if let Some(constraint) = constraints.into_iter().next() {
-                compile_constraint(constraint, bytecode);
-            }
+            constraints
+                .into_iter()
+                .next()
+                .map(compile_constraint)
+                .unwrap_or_default()
         }
     }
 }
@@ -170,7 +173,7 @@ pub fn compile_pattern(pattern: Pattern) -> (Vec<Instruction>, usize) {
 
     // Start at anchor: verify its constraints and bind it
     let anchor_element = &elements[anchor_idx];
-    compile_constraint(anchor_element.constraints.clone(), &mut bytecode);
+    bytecode.extend(compile_constraint(anchor_element.constraints.clone()));
     bytecode.push(Instruction::Bind(anchor_idx));
 
     // Track which elements we've visited
@@ -202,7 +205,7 @@ pub fn compile_pattern(pattern: Pattern) -> (Vec<Instruction>, usize) {
 
                 // Verify target constraints (if not already in navigation)
                 if !matches!(edge.relation, RelationType::Child | RelationType::Descendant | RelationType::Ancestor | RelationType::Follows | RelationType::Precedes) {
-                    compile_constraint(target_element.constraints.clone(), &mut bytecode);
+                    bytecode.extend(compile_constraint(target_element.constraints.clone()));
                 }
 
                 // Bind target
@@ -259,8 +262,7 @@ mod tests {
     #[test]
     fn test_compile_simple_constraint() {
         let constraint = Constraint::Lemma("run".to_string());
-        let mut bytecode = Vec::new();
-        compile_constraint(constraint, &mut bytecode);
+        let bytecode = compile_constraint(constraint);
         assert_eq!(bytecode.len(), 1);
         assert_eq!(bytecode[0], Instruction::CheckLemma("run".to_string()));
     }
@@ -271,8 +273,7 @@ mod tests {
             Constraint::POS("VERB".to_string()),
             Constraint::Lemma("run".to_string()),
         ]);
-        let mut bytecode = Vec::new();
-        compile_constraint(constraint, &mut bytecode);
+        let bytecode = compile_constraint(constraint);
         assert_eq!(bytecode.len(), 2);
         assert_eq!(bytecode[0], Instruction::CheckPOS("VERB".to_string()));
         assert_eq!(bytecode[1], Instruction::CheckLemma("run".to_string()));
