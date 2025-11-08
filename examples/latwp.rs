@@ -19,14 +19,13 @@ fn main() {
         let tree = tree.expect("Reader error");
         let matches = searcher.search_query(&tree, query).expect("Search error");
         for result in matches {
-            // Use the new iter_named() method to get variable names automatically
-            for (var_name, node_id) in result.iter_named() {
-                let node = tree.get_node(node_id).unwrap();
-                println!("  {} = {} (lemma: {})", var_name, node.form, node.lemma);
-            }
-            println!();
+            let verb_node = tree.get_node(result.get("Verb").unwrap()).unwrap();
+            let xcomp_node = tree.get_node(result.get("Xcomp").unwrap()).unwrap();
+            println!(
+                "{} ({}) -> {} ({})",
+                verb_node.form, verb_node.position, xcomp_node.form, xcomp_node.position
+            );
         }
     }
-
     ()
 }
