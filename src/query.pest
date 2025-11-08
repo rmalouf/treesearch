@@ -1,0 +1,36 @@
+// Grammar for dependency tree query language
+
+query = { SOI ~ statement* ~ EOI }
+
+statement = { node_decl | edge_decl }
+
+// Node declaration: Name [constraint, constraint];
+node_decl = { ident ~ "[" ~ constraint_list ~ "]" ~ ";" }
+
+// Edge declaration: Parent -[label]-> Child;
+edge_decl = { ident ~ "-[" ~ edge_label ~ "]->" ~ ident ~ ";" }
+
+// Constraint list (can be empty)
+constraint_list = { (constraint ~ ("," ~ constraint)*)? }
+
+// Single constraint: key="value"
+constraint = { constraint_key ~ "=" ~ string_literal }
+
+// Constraint keys
+constraint_key = { "lemma" | "pos" | "form" | "deprel" }
+
+// Edge label (deprel name)
+edge_label = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_" | ":" | "-")* }
+
+// Identifier (node name)
+ident = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+
+// String literal
+string_literal = ${ "\"" ~ string_inner ~ "\"" }
+string_inner = @{ (!("\"" | "\\") ~ ANY)* }
+
+// Whitespace (implicit between tokens)
+WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
+
+// Comments (optional, useful for query files)
+COMMENT = _{ "//" ~ (!"\n" ~ ANY)* }

@@ -9,6 +9,7 @@ pub mod pattern;   // Pattern AST and compilation
 pub mod vm;        // Virtual machine executor and instruction set
 pub mod index;     // Inverted indices for candidate lookup
 pub mod compiler;  // Pattern compilation to VM bytecode
+pub mod parser;    // Query language parser
 
 // Python bindings (will be implemented in Phase 1)
 #[cfg(feature = "python")]
@@ -18,6 +19,7 @@ pub mod python;
 pub use tree::{Node, Tree};
 pub use pattern::{Pattern, PatternElement};
 pub use vm::{VM, Instruction};
+pub use parser::parse_query;
 
 #[cfg(test)]
 mod tests {
