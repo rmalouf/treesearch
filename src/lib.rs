@@ -4,22 +4,24 @@
 //! Core implementation in Rust with Python bindings.
 
 // Core modules (algorithm-first approach)
-pub mod tree;      // Minimal tree data structures for testing the matcher
+pub mod tree;      // Tree data structures with full CoNLL-U support
 pub mod pattern;   // Pattern AST and compilation
 pub mod vm;        // Virtual machine executor and instruction set
 pub mod index;     // Inverted indices for candidate lookup
 pub mod compiler;  // Pattern compilation to VM bytecode
 pub mod parser;    // Query language parser
+pub mod conllu;    // CoNLL-U file parsing
 
 // Python bindings (will be implemented in Phase 1)
 #[cfg(feature = "python")]
 pub mod python;
 
 // Re-exports for convenience
-pub use tree::{Node, Tree};
+pub use tree::{Node, Tree, Features, TokenId};
 pub use pattern::{Pattern, PatternElement};
 pub use vm::{VM, Instruction};
 pub use parser::parse_query;
+pub use conllu::CoNLLUReader;
 
 #[cfg(test)]
 mod tests {
