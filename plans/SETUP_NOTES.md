@@ -100,7 +100,7 @@ Need to carefully handle:
 ## Recommendations for Phase 0
 
 ### Start Small
-- Implement basic instructions first (CheckPOS, CheckLemma, MoveParent)
+- Implement basic instructions first (CheckPOS, CheckLemma, MoveToParent)
 - Get simple linear patterns working before wildcards
 - Add complexity incrementally
 
