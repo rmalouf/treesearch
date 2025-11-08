@@ -3,9 +3,9 @@
 //! This module implements the bytecode VM that executes compiled patterns
 //! against dependency trees.
 
-use crate::tree::{NodeId, Tree, Node};
 use crate::pattern::Constraint;
-use std::collections::{HashMap, VecDeque, HashSet};
+use crate::tree::{Node, NodeId, Tree};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 /// VM instructions for pattern matching
 #[derive(Debug, Clone, PartialEq)]
@@ -28,16 +28,16 @@ pub enum Instruction {
     ScanSiblings(Constraint, bool), // Constraint, direction (true = right, false = left)
 
     // Control flow
-    Bind(usize),           // Bind current node to pattern variable
-    Choice,                // Create backtrack point
-    Commit,                // Discard backtrack points
-    Match,                 // Success - pattern matched
-    Fail,                  // Trigger backtracking
+    Bind(usize), // Bind current node to pattern variable
+    Choice,      // Create backtrack point
+    Commit,      // Discard backtrack points
+    Match,       // Success - pattern matched
+    Fail,        // Trigger backtracking
 
     // State management
-    PushState,             // Save current state
-    RestoreState,          // Restore saved state
-    Jump(isize),           // Jump to instruction offset
+    PushState,    // Save current state
+    RestoreState, // Restore saved state
+    Jump(isize),  // Jump to instruction offset
 }
 
 /// A choice point for backtracking
@@ -83,26 +83,46 @@ impl VMState {
 pub struct Match {
     /// Variable bindings (pattern position -> node ID)
     pub bindings: HashMap<usize, NodeId>,
+    /// Variable names (in pattern position order)
+    pub var_names: Vec<String>,
+}
+
+impl Match {
+    /// Get the node ID bound to a variable by name
+    ///
+    /// Returns None if the variable name is not found or not bound
+    pub fn get(&self, name: &str) -> Option<NodeId> {
+        let pos = self.var_names.iter().position(|n| n == name)?;
+        self.bindings.get(&pos).copied()
+    }
+
+    /// Iterate over bindings with variable names
+    ///
+    /// Yields (variable_name, node_id) pairs in binding order
+    pub fn iter_named(&self) -> impl Iterator<Item = (&str, NodeId)> + '_ {
+        self.bindings
+            .iter()
+            .map(|(pos, id)| (self.var_names[*pos].as_str(), *id))
+    }
 }
 
 /// The pattern matching virtual machine
 pub struct VM {
     /// Compiled bytecode
     bytecode: Vec<Instruction>,
+    /// Variable names (in pattern position order)
+    var_names: Vec<String>,
 }
 
 impl VM {
-    /// Create a new VM with the given bytecode
-    pub fn new(bytecode: Vec<Instruction>) -> Self {
-        Self { bytecode }
+    /// Create a new VM with the given bytecode and variable names
+    pub fn new(bytecode: Vec<Instruction>, var_names: Vec<String>) -> Self {
+        Self { bytecode, var_names }
     }
 
     /// Create a choice point with the given alternatives
     /// Alternatives should be ordered by preference (leftmost first)
-    fn create_choice_point(
-        state: &mut VMState,
-        alternatives: Vec<NodeId>,
-    ) {
+    fn create_choice_point(state: &mut VMState, alternatives: Vec<NodeId>) {
         if alternatives.is_empty() {
             return;
         }
@@ -121,7 +141,8 @@ impl VM {
         let mut nodes_with_pos: Vec<(NodeId, usize)> = nodes
             .into_iter()
             .map(|id| {
-                let node = tree.get_node(id)
+                let node = tree
+                    .get_node(id)
                     .expect("VM bug: node in alternatives does not exist in tree");
                 (id, node.position)
             })
@@ -150,6 +171,7 @@ impl VM {
                     // Match found - take ownership of bindings since we're returning
                     return Some(Match {
                         bindings: std::mem::take(&mut state.bindings),
+                        var_names: self.var_names.clone(),
                     });
                 }
                 Ok(false) => {
@@ -344,7 +366,8 @@ impl VM {
             }
 
             Instruction::CheckLemma(lemma) => {
-                let node = tree.get_node(state.current_node)
+                let node = tree
+                    .get_node(state.current_node)
                     .expect("VM bug: current_node does not exist");
                 if node.lemma == *lemma {
                     Ok(false)
@@ -354,7 +377,8 @@ impl VM {
             }
 
             Instruction::CheckPOS(pos) => {
-                let node = tree.get_node(state.current_node)
+                let node = tree
+                    .get_node(state.current_node)
                     .expect("VM bug: current_node does not exist");
                 if node.pos == *pos {
                     Ok(false)
@@ -364,7 +388,8 @@ impl VM {
             }
 
             Instruction::CheckForm(form) => {
-                let node = tree.get_node(state.current_node)
+                let node = tree
+                    .get_node(state.current_node)
                     .expect("VM bug: current_node does not exist");
                 if node.form == *form {
                     Ok(false)
@@ -374,7 +399,8 @@ impl VM {
             }
 
             Instruction::CheckDepRel(deprel) => {
-                let node = tree.get_node(state.current_node)
+                let node = tree
+                    .get_node(state.current_node)
                     .expect("VM bug: current_node does not exist");
                 if node.deprel == *deprel {
                     Ok(false)
@@ -393,7 +419,9 @@ impl VM {
             }
 
             Instruction::PushState => {
-                state.state_stack.push((state.current_node, state.bindings.clone()));
+                state
+                    .state_stack
+                    .push((state.current_node, state.bindings.clone()));
                 Ok(false)
             }
 
@@ -410,7 +438,9 @@ impl VM {
             Instruction::MoveToChild(constraint_opt) => {
                 if let Some(node) = tree.get_node(state.current_node) {
                     // Get all matching children
-                    let matching_children: Vec<NodeId> = node.children.iter()
+                    let matching_children: Vec<NodeId> = node
+                        .children
+                        .iter()
                         .filter_map(|&child_id| {
                             tree.get_node(child_id).and_then(|child| {
                                 let matches = if let Some(constraint) = constraint_opt {
@@ -418,7 +448,11 @@ impl VM {
                                 } else {
                                     true // No constraint means any child matches
                                 };
-                                if matches { Some(child_id) } else { None }
+                                if matches {
+                                    Some(child_id)
+                                } else {
+                                    None
+                                }
                             })
                         })
                         .collect();
@@ -449,7 +483,11 @@ impl VM {
                 if let Some(current) = tree.get_node(state.current_node) {
                     if let Some(parent_id) = current.parent {
                         if let Some(parent) = tree.get_node(parent_id) {
-                            if let Some(pos) = parent.children.iter().position(|&id| id == state.current_node) {
+                            if let Some(pos) = parent
+                                .children
+                                .iter()
+                                .position(|&id| id == state.current_node)
+                            {
                                 if pos > 0 {
                                     state.current_node = parent.children[pos - 1];
                                     return Ok(false);
@@ -466,7 +504,11 @@ impl VM {
                 if let Some(current) = tree.get_node(state.current_node) {
                     if let Some(parent_id) = current.parent {
                         if let Some(parent) = tree.get_node(parent_id) {
-                            if let Some(pos) = parent.children.iter().position(|&id| id == state.current_node) {
+                            if let Some(pos) = parent
+                                .children
+                                .iter()
+                                .position(|&id| id == state.current_node)
+                            {
                                 if pos + 1 < parent.children.len() {
                                     state.current_node = parent.children[pos + 1];
                                     return Ok(false);
@@ -504,7 +546,8 @@ impl VM {
 
             Instruction::ScanDescendants(constraint) => {
                 const MAX_DEPTH: usize = 7; // Default depth limit
-                let matches = Self::scan_descendants(state.current_node, constraint, tree, MAX_DEPTH);
+                let matches =
+                    Self::scan_descendants(state.current_node, constraint, tree, MAX_DEPTH);
 
                 if matches.is_empty() {
                     return Err(());
@@ -594,7 +637,7 @@ impl VM {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tree::{Tree, Node};
+    use crate::tree::{Node, Tree};
 
     /// Helper to create a simple test tree:
     /// 0: runs (VERB, root)
@@ -627,7 +670,7 @@ mod tests {
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_some());
@@ -645,7 +688,7 @@ mod tests {
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
         assert!(result.is_some());
 
@@ -654,7 +697,7 @@ mod tests {
             Instruction::CheckForm("walked".to_string()),
             Instruction::Match,
         ];
-        let vm_fail = VM::new(bytecode_fail);
+        let vm_fail = VM::new(bytecode_fail, Vec::new());
         let result_fail = vm_fail.execute(&tree, 0);
         assert!(result_fail.is_none());
     }
@@ -671,7 +714,7 @@ mod tests {
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
         assert!(result.is_some());
 
@@ -680,7 +723,7 @@ mod tests {
             Instruction::CheckDepRel("nsubj".to_string()),
             Instruction::Match,
         ];
-        let vm_fail = VM::new(bytecode_fail);
+        let vm_fail = VM::new(bytecode_fail, Vec::new());
         let result_fail = vm_fail.execute(&tree, 0);
         assert!(result_fail.is_none());
     }
@@ -691,13 +734,13 @@ mod tests {
 
         // Move from root (0) to any child
         let bytecode = vec![
-            Instruction::CheckPOS("VERB".to_string()),  // At root
-            Instruction::MoveToChild(None),                // Move to first child
+            Instruction::CheckPOS("VERB".to_string()), // At root
+            Instruction::MoveToChild(None),            // Move to first child
             Instruction::Bind(0),
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_some());
@@ -717,7 +760,7 @@ mod tests {
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_some());
@@ -736,7 +779,7 @@ mod tests {
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_none()); // Should fail - no PRON child
@@ -748,14 +791,14 @@ mod tests {
 
         // Start at child, move to parent
         let bytecode = vec![
-            Instruction::CheckPOS("NOUN".to_string()),  // At child 1 (dog)
-            Instruction::MoveToParent,                     // Move to parent (runs)
-            Instruction::CheckPOS("VERB".to_string()),   // Verify we're at parent
+            Instruction::CheckPOS("NOUN".to_string()), // At child 1 (dog)
+            Instruction::MoveToParent,                 // Move to parent (runs)
+            Instruction::CheckPOS("VERB".to_string()), // Verify we're at parent
             Instruction::Bind(0),
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 1); // Start at node 1 (dog)
 
         assert!(result.is_some());
@@ -769,14 +812,14 @@ mod tests {
 
         // Start at child 2, move left to child 1
         let bytecode = vec![
-            Instruction::CheckPOS("ADV".to_string()),   // At child 2 (quickly)
-            Instruction::MoveLeft,                       // Move to child 1 (dog)
-            Instruction::CheckPOS("NOUN".to_string()),   // Verify
+            Instruction::CheckPOS("ADV".to_string()), // At child 2 (quickly)
+            Instruction::MoveLeft,                    // Move to child 1 (dog)
+            Instruction::CheckPOS("NOUN".to_string()), // Verify
             Instruction::Bind(0),
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 2); // Start at node 2 (quickly)
 
         assert!(result.is_some());
@@ -785,14 +828,14 @@ mod tests {
 
         // Now test MoveRight: start at child 1, move right to child 2
         let bytecode2 = vec![
-            Instruction::CheckPOS("NOUN".to_string()),  // At child 1 (dog)
-            Instruction::MoveRight,                      // Move to child 2 (quickly)
-            Instruction::CheckPOS("ADV".to_string()),    // Verify
+            Instruction::CheckPOS("NOUN".to_string()), // At child 1 (dog)
+            Instruction::MoveRight,                    // Move to child 2 (quickly)
+            Instruction::CheckPOS("ADV".to_string()),  // Verify
             Instruction::Bind(0),
             Instruction::Match,
         ];
 
-        let vm2 = VM::new(bytecode2);
+        let vm2 = VM::new(bytecode2, Vec::new());
         let result2 = vm2.execute(&tree, 1); // Start at node 1 (dog)
 
         assert!(result2.is_some());
@@ -806,12 +849,12 @@ mod tests {
 
         // Try to move left from first child (should fail)
         let bytecode = vec![
-            Instruction::CheckPOS("NOUN".to_string()),  // At child 1 (dog)
-            Instruction::MoveLeft,                       // Try to move left (no left sibling)
+            Instruction::CheckPOS("NOUN".to_string()), // At child 1 (dog)
+            Instruction::MoveLeft,                     // Try to move left (no left sibling)
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 1);
 
         assert!(result.is_none());
@@ -823,12 +866,12 @@ mod tests {
 
         // Try to move right from last child (should fail)
         let bytecode = vec![
-            Instruction::CheckPOS("ADV".to_string()),   // At child 2 (quickly)
-            Instruction::MoveRight,                      // Try to move right (no right sibling)
+            Instruction::CheckPOS("ADV".to_string()), // At child 2 (quickly)
+            Instruction::MoveRight,                   // Try to move right (no right sibling)
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 2);
 
         assert!(result.is_none());
@@ -842,14 +885,14 @@ mod tests {
 
         // Use Jump to skip over a failing instruction
         let bytecode = vec![
-            Instruction::CheckPOS("VERB".to_string()),  // 0: Check passes
-            Instruction::Jump(2),                        // 1: Jump forward 2 (to instruction 3)
+            Instruction::CheckPOS("VERB".to_string()), // 0: Check passes
+            Instruction::Jump(2),                      // 1: Jump forward 2 (to instruction 3)
             Instruction::CheckForm("invalid".to_string()), // 2: Skipped (would fail)
-            Instruction::Bind(0),                        // 3: Land here
-            Instruction::Match,                          // 4: Success
+            Instruction::Bind(0),                      // 3: Land here
+            Instruction::Match,                        // 4: Success
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_some());
@@ -863,12 +906,12 @@ mod tests {
 
         let bytecode = vec![
             Instruction::CheckPOS("VERB".to_string()),
-            Instruction::Commit,  // Clear backtrack stack
+            Instruction::Commit, // Clear backtrack stack
             Instruction::Bind(0),
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_some());
@@ -880,17 +923,17 @@ mod tests {
 
         // Push state, move to child, then restore back to original
         let bytecode = vec![
-            Instruction::CheckPOS("VERB".to_string()),  // At root (0)
-            Instruction::PushState,                      // Save state (at root)
-            Instruction::MoveToChild(None),                // Move to child 1
-            Instruction::CheckPOS("NOUN".to_string()),   // Verify at child
-            Instruction::RestoreState,                   // Restore to root
-            Instruction::CheckPOS("VERB".to_string()),   // Verify back at root
+            Instruction::CheckPOS("VERB".to_string()), // At root (0)
+            Instruction::PushState,                    // Save state (at root)
+            Instruction::MoveToChild(None),            // Move to child 1
+            Instruction::CheckPOS("NOUN".to_string()), // Verify at child
+            Instruction::RestoreState,                 // Restore to root
+            Instruction::CheckPOS("VERB".to_string()), // Verify back at root
             Instruction::Bind(0),
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_some());
@@ -913,7 +956,7 @@ mod tests {
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_some());
@@ -929,14 +972,14 @@ mod tests {
         let bytecode = vec![
             Instruction::CheckPOS("VERB".to_string()),
             Instruction::MoveToChild(Some(Constraint::Or(vec![
-                Constraint::POS("PRON".to_string()),  // Doesn't match
-                Constraint::POS("NOUN".to_string()),  // Matches child 1
+                Constraint::POS("PRON".to_string()), // Doesn't match
+                Constraint::POS("NOUN".to_string()), // Matches child 1
             ]))),
             Instruction::Bind(0),
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_some());
@@ -984,13 +1027,13 @@ mod tests {
 
         // From root, scan for ADJ - should find node 3 (big) at depth 2
         let bytecode = vec![
-            Instruction::CheckPOS("VERB".to_string()),  // At root
+            Instruction::CheckPOS("VERB".to_string()), // At root
             Instruction::ScanDescendants(Constraint::POS("ADJ".to_string())),
             Instruction::Bind(0),
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_some());
@@ -1011,7 +1054,7 @@ mod tests {
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_some());
@@ -1030,7 +1073,7 @@ mod tests {
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_none()); // Should fail
@@ -1049,7 +1092,7 @@ mod tests {
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_some());
@@ -1063,13 +1106,13 @@ mod tests {
 
         // From node 3 (big/ADJ), scan ancestors for VERB (should find root)
         let bytecode = vec![
-            Instruction::CheckPOS("ADJ".to_string()),  // At node 3 (big)
+            Instruction::CheckPOS("ADJ".to_string()), // At node 3 (big)
             Instruction::ScanAncestors(Constraint::POS("VERB".to_string())),
             Instruction::Bind(0),
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 3); // Start at node 3
 
         assert!(result.is_some());
@@ -1084,13 +1127,13 @@ mod tests {
         // From node 8 (incredibly), scan ancestors for ADV
         // Should find node 7 (extremely), the closest ADV ancestor
         let bytecode = vec![
-            Instruction::CheckLemma("incredibly".to_string()),  // At node 8
+            Instruction::CheckLemma("incredibly".to_string()), // At node 8
             Instruction::ScanAncestors(Constraint::POS("ADV".to_string())),
             Instruction::Bind(0),
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 8);
 
         assert!(result.is_some());
@@ -1109,7 +1152,7 @@ mod tests {
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 3);
 
         assert!(result.is_none());
@@ -1121,13 +1164,13 @@ mod tests {
 
         // From node 1 (dog/NOUN), scan right for ADV
         let bytecode = vec![
-            Instruction::CheckPOS("NOUN".to_string()),  // At node 1 (dog)
+            Instruction::CheckPOS("NOUN".to_string()), // At node 1 (dog)
             Instruction::ScanSiblings(Constraint::POS("ADV".to_string()), true), // Scan right
             Instruction::Bind(0),
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 1);
 
         assert!(result.is_some());
@@ -1141,13 +1184,13 @@ mod tests {
 
         // From node 2 (quickly/ADV), scan left for NOUN
         let bytecode = vec![
-            Instruction::CheckPOS("ADV".to_string()),  // At node 2 (quickly)
+            Instruction::CheckPOS("ADV".to_string()), // At node 2 (quickly)
             Instruction::ScanSiblings(Constraint::POS("NOUN".to_string()), false), // Scan left
             Instruction::Bind(0),
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 2);
 
         assert!(result.is_some());
@@ -1166,7 +1209,7 @@ mod tests {
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 1);
 
         assert!(result.is_none());
@@ -1178,12 +1221,12 @@ mod tests {
 
         // From root (no parent), scan siblings should fail
         let bytecode = vec![
-            Instruction::CheckPOS("VERB".to_string()),  // At root
+            Instruction::CheckPOS("VERB".to_string()), // At root
             Instruction::ScanSiblings(Constraint::POS("NOUN".to_string()), true),
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_none()); // Should fail - root has no siblings
@@ -1196,7 +1239,7 @@ mod tests {
         // Complex pattern: VERB ... ADJ (find ADJ descendant of VERB)
         // Then from that ADJ, find NOUN ancestor
         let bytecode = vec![
-            Instruction::CheckPOS("VERB".to_string()),  // At root (runs)
+            Instruction::CheckPOS("VERB".to_string()), // At root (runs)
             Instruction::Bind(0),
             Instruction::ScanDescendants(Constraint::POS("ADJ".to_string())), // Find big
             Instruction::Bind(1),
@@ -1205,7 +1248,7 @@ mod tests {
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_some());
@@ -1244,14 +1287,14 @@ mod tests {
         // Try to find a child that is a NOUN (not first child)
         // First child is DET, so it should try DET, fail the check, backtrack, and try NOUN
         let bytecode = vec![
-            Instruction::CheckPOS("VERB".to_string()),  // At root
-            Instruction::MoveToChild(None),                // Move to first child (creates choice points)
-            Instruction::CheckPOS("NOUN".to_string()),   // Check if it's a NOUN
+            Instruction::CheckPOS("VERB".to_string()), // At root
+            Instruction::MoveToChild(None), // Move to first child (creates choice points)
+            Instruction::CheckPOS("NOUN".to_string()), // Check if it's a NOUN
             Instruction::Bind(0),
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_some());
@@ -1268,12 +1311,12 @@ mod tests {
         let bytecode = vec![
             Instruction::CheckPOS("VERB".to_string()),
             Instruction::MoveToChild(None),
-            Instruction::CheckPOS("ADJ".to_string()),  // Will fail on DET, succeed on ADJ
+            Instruction::CheckPOS("ADJ".to_string()), // Will fail on DET, succeed on ADJ
             Instruction::Bind(0),
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_some());
@@ -1290,11 +1333,11 @@ mod tests {
         let bytecode = vec![
             Instruction::CheckPOS("VERB".to_string()),
             Instruction::MoveToChild(None),
-            Instruction::CheckPOS("PRON".to_string()),  // Will fail on all children
+            Instruction::CheckPOS("PRON".to_string()), // Will fail on all children
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_none()); // Should fail after exhausting all alternatives
@@ -1312,7 +1355,7 @@ mod tests {
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_some());
@@ -1328,13 +1371,13 @@ mod tests {
         // Then try to match NOUN - should fail because we can't backtrack
         let bytecode = vec![
             Instruction::CheckPOS("VERB".to_string()),
-            Instruction::MoveToChild(None),                // Creates choice points
-            Instruction::Commit,                         // Clear backtrack stack
-            Instruction::CheckPOS("NOUN".to_string()),   // Will fail on DET (first child)
+            Instruction::MoveToChild(None), // Creates choice points
+            Instruction::Commit,            // Clear backtrack stack
+            Instruction::CheckPOS("NOUN".to_string()), // Will fail on DET (first child)
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_none()); // Should fail - can't backtrack after commit
@@ -1368,13 +1411,13 @@ mod tests {
         let bytecode = vec![
             Instruction::CheckPOS("VERB".to_string()),
             Instruction::MoveToChild(Some(Constraint::POS("NOUN".to_string()))), // Try child1 first
-            Instruction::MoveToChild(Some(Constraint::POS("ADJ".to_string()))),  // Try ADJ grandchild
-            Instruction::CheckLemma("gc3".to_string()),                         // Check specific lemma
+            Instruction::MoveToChild(Some(Constraint::POS("ADJ".to_string()))), // Try ADJ grandchild
+            Instruction::CheckLemma("gc3".to_string()), // Check specific lemma
             Instruction::Bind(0),
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_some());
@@ -1410,12 +1453,12 @@ mod tests {
         let bytecode = vec![
             Instruction::CheckPOS("VERB".to_string()),
             Instruction::ScanDescendants(Constraint::POS("ADJ".to_string())),
-            Instruction::CheckLemma("quick".to_string()),  // Only matches node 5
+            Instruction::CheckLemma("quick".to_string()), // Only matches node 5
             Instruction::Bind(0),
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_some());
@@ -1459,7 +1502,7 @@ mod tests {
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0).unwrap(); // Start at root (NodeId 0)
 
         assert_eq!(result.bindings[&0], 0); // VERB = NodeId 0 (root)
@@ -1480,10 +1523,79 @@ mod tests {
             Instruction::Match,
         ];
 
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, Vec::new());
         let result = vm.execute(&tree, 0);
 
         assert!(result.is_some());
         assert_eq!(result.unwrap().bindings[&0], 3);
+    }
+
+    #[test]
+    fn test_match_get_by_name() {
+        // Create a VM with variable names
+        let bytecode = vec![
+            Instruction::CheckPOS("VERB".to_string()),
+            Instruction::Bind(0),
+            Instruction::Match,
+        ];
+        let var_names = vec!["Verb".to_string()];
+        let vm = VM::new(bytecode, var_names);
+
+        let tree = create_test_tree();
+        let result = vm.execute(&tree, 0).expect("Match should succeed");
+
+        // Access by name
+        assert_eq!(result.get("Verb"), Some(0));
+        assert_eq!(result.get("NonExistent"), None);
+    }
+
+    #[test]
+    fn test_match_get_multiple_bindings() {
+        // Create a pattern that binds multiple variables
+        let bytecode = vec![
+            Instruction::CheckPOS("VERB".to_string()),
+            Instruction::Bind(0),
+            Instruction::PushState,
+            Instruction::MoveToChild(Some(Constraint::POS("NOUN".to_string()))),
+            Instruction::Bind(1),
+            Instruction::Match,
+        ];
+        let var_names = vec!["V".to_string(), "N".to_string()];
+        let vm = VM::new(bytecode, var_names);
+
+        let tree = create_test_tree();
+        let result = vm.execute(&tree, 0).expect("Match should succeed");
+
+        // Access both bindings by name
+        assert_eq!(result.get("V"), Some(0));
+        assert_eq!(result.get("N"), Some(1));
+    }
+
+    #[test]
+    fn test_match_iter_named() {
+        // Create a pattern with multiple bindings
+        let bytecode = vec![
+            Instruction::CheckPOS("VERB".to_string()),
+            Instruction::Bind(0),
+            Instruction::PushState,
+            Instruction::MoveToChild(Some(Constraint::POS("NOUN".to_string()))),
+            Instruction::Bind(1),
+            Instruction::Match,
+        ];
+        let var_names = vec!["Verb".to_string(), "Subject".to_string()];
+        let vm = VM::new(bytecode, var_names);
+
+        let tree = create_test_tree();
+        let result = vm.execute(&tree, 0).expect("Match should succeed");
+
+        // Collect named bindings
+        let named: Vec<(&str, NodeId)> = result.iter_named().collect();
+        assert_eq!(named.len(), 2);
+
+        // Check that both bindings are present (order may vary)
+        let has_verb = named.iter().any(|(name, id)| *name == "Verb" && *id == 0);
+        let has_subject = named.iter().any(|(name, id)| *name == "Subject" && *id == 1);
+        assert!(has_verb);
+        assert!(has_subject);
     }
 }

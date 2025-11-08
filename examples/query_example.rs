@@ -49,15 +49,8 @@ fn main() {
         pattern.edges.len()
     );
 
-    // Save var names for later printing (pattern will be consumed by compiler)
-    let var_names: Vec<String> = pattern
-        .elements
-        .iter()
-        .map(|e| e.var_name.clone())
-        .collect();
-
-    // Compile the pattern to bytecode
-    let (bytecode, anchor) = compile_pattern(pattern);
+    // Compile the pattern to bytecode (also returns var_names)
+    let (bytecode, anchor, var_names) = compile_pattern(pattern);
     println!(
         "Compiled to {} instructions, anchor at element {}",
         bytecode.len(),
@@ -66,15 +59,15 @@ fn main() {
     println!();
 
     // Execute the pattern on the tree
-    let vm = VM::new(bytecode);
+    let vm = VM::new(bytecode, var_names);
     let anchor_node = 0; // Start at "help"
 
     match vm.execute(&tree, anchor_node) {
         Some(result) => {
             println!("Match found!");
-            for (pos, node_id) in &result.bindings {
-                let node = tree.get_node(*node_id).unwrap();
-                let var_name = &var_names[*pos];
+            // Use the new iter_named() method to get variable names automatically
+            for (var_name, node_id) in result.iter_named() {
+                let node = tree.get_node(node_id).unwrap();
                 println!("  {} = {} (lemma: {})", var_name, node.form, node.lemma);
             }
         }

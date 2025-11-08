@@ -51,18 +51,22 @@ impl TreeSearcher {
     /// Search a tree with a pre-compiled pattern
     ///
     /// Returns an iterator over all matches in the tree.
-    pub fn search<'a>(&self, tree: &'a Tree, pattern: &Pattern) -> impl Iterator<Item = Match> + 'a {
+    pub fn search<'a>(
+        &self,
+        tree: &'a Tree,
+        pattern: &Pattern,
+    ) -> impl Iterator<Item = Match> + 'a {
         // Build index from tree
         let index = TreeIndex::build(tree);
 
         // Compile pattern to bytecode
-        let (bytecode, anchor_idx) = compile_pattern(pattern.clone());
+        let (bytecode, anchor_idx, var_names) = compile_pattern(pattern.clone());
 
         // Get candidates from index based on anchor element
         let candidates = self.get_candidates(tree, pattern, anchor_idx, &index);
 
         // Execute VM on each candidate
-        let vm = VM::new(bytecode);
+        let vm = VM::new(bytecode, var_names);
         candidates
             .into_iter()
             .filter_map(move |node_id| vm.execute(tree, node_id))
