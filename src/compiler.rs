@@ -264,7 +264,7 @@ mod tests {
         let constraint = Constraint::Lemma("run".to_string());
         let bytecode = compile_constraint(constraint);
         assert_eq!(bytecode.len(), 1);
-        assert!(matches!(bytecode[0], Instruction::CheckLemma(_)));
+        assert_eq!(bytecode[0], Instruction::CheckLemma("run".to_string()));
     }
 
     #[test]
@@ -275,6 +275,8 @@ mod tests {
         ]);
         let bytecode = compile_constraint(constraint);
         assert_eq!(bytecode.len(), 2);
+        assert_eq!(bytecode[0], Instruction::CheckPOS("VERB".to_string()));
+        assert_eq!(bytecode[1], Instruction::CheckLemma("run".to_string()));
     }
 
     #[test]
@@ -288,7 +290,12 @@ mod tests {
 
         let (bytecode, anchor) = compile_pattern(pattern);
         assert_eq!(anchor, 0);
-        assert!(bytecode.len() >= 3); // At least CheckPOS, Bind, Match
+
+        // Check exact bytecode: CheckPOS, Bind, Match
+        assert_eq!(bytecode.len(), 3);
+        assert_eq!(bytecode[0], Instruction::CheckPOS("VERB".to_string()));
+        assert_eq!(bytecode[1], Instruction::Bind(0));
+        assert_eq!(bytecode[2], Instruction::Match);
     }
 
     #[test]
@@ -313,15 +320,22 @@ mod tests {
         let (bytecode, anchor) = compile_pattern(pattern);
         assert_eq!(anchor, 0); // Both have same selectivity, picks first
 
-        // Should have instructions for:
+        // Check exact bytecode:
         // - Check verb POS
         // - Bind verb
         // - Push state
-        // - Move to child (noun)
+        // - Move to child (with noun constraint)
         // - Check deprel
         // - Bind noun
         // - Match
-        assert!(bytecode.len() >= 7);
+        assert_eq!(bytecode.len(), 7);
+        assert_eq!(bytecode[0], Instruction::CheckPOS("VERB".to_string()));
+        assert_eq!(bytecode[1], Instruction::Bind(0));
+        assert_eq!(bytecode[2], Instruction::PushState);
+        assert_eq!(bytecode[3], Instruction::MoveChild(Some(Constraint::POS("NOUN".to_string()))));
+        assert_eq!(bytecode[4], Instruction::CheckDepRel("nsubj".to_string()));
+        assert_eq!(bytecode[5], Instruction::Bind(1));
+        assert_eq!(bytecode[6], Instruction::Match);
     }
 
     #[test]
