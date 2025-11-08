@@ -67,17 +67,17 @@ fn select_anchor(pattern: &Pattern) -> usize {
 }
 
 /// Compile a constraint into a sequence of check instructions
-fn compile_constraint(constraint: &Constraint) -> Vec<Instruction> {
+fn compile_constraint(constraint: Constraint) -> Vec<Instruction> {
     match constraint {
         Constraint::Any => Vec::new(), // No check needed
-        Constraint::Lemma(lemma) => vec![Instruction::CheckLemma(lemma.clone())],
-        Constraint::Form(form) => vec![Instruction::CheckForm(form.clone())],
-        Constraint::POS(pos) => vec![Instruction::CheckPOS(pos.clone())],
-        Constraint::DepRel(deprel) => vec![Instruction::CheckDepRel(deprel.clone())],
+        Constraint::Lemma(lemma) => vec![Instruction::CheckLemma(lemma)],
+        Constraint::Form(form) => vec![Instruction::CheckForm(form)],
+        Constraint::POS(pos) => vec![Instruction::CheckPOS(pos)],
+        Constraint::DepRel(deprel) => vec![Instruction::CheckDepRel(deprel)],
         Constraint::And(constraints) => {
             // Compile all constraints sequentially
             constraints
-                .iter()
+                .into_iter()
                 .flat_map(compile_constraint)
                 .collect()
         }
@@ -86,8 +86,9 @@ fn compile_constraint(constraint: &Constraint) -> Vec<Instruction> {
             // For now, just compile first constraint
             // TODO: Implement proper Or compilation with Choice in future
             constraints
-                .first()
-                .map(|c| compile_constraint(c))
+                .into_iter()
+                .next()
+                .map(compile_constraint)
                 .unwrap_or_default()
         }
     }
@@ -97,7 +98,7 @@ fn compile_constraint(constraint: &Constraint) -> Vec<Instruction> {
 fn compile_edge(
     relation: RelationType,
     label: Option<&str>,
-    constraint: &Constraint,
+    constraint: Constraint,
 ) -> Vec<Instruction> {
     let mut instructions = Vec::new();
 
@@ -107,23 +108,23 @@ fn compile_edge(
             if constraint.is_any() {
                 instructions.push(Instruction::MoveChild(None));
             } else {
-                instructions.push(Instruction::MoveChild(Some(constraint.clone())));
+                instructions.push(Instruction::MoveChild(Some(constraint)));
             }
         }
         RelationType::Parent => {
             instructions.push(Instruction::MoveParent);
         }
         RelationType::Descendant => {
-            instructions.push(Instruction::ScanDescendants(constraint.clone()));
+            instructions.push(Instruction::ScanDescendants(constraint));
         }
         RelationType::Ancestor => {
-            instructions.push(Instruction::ScanAncestors(constraint.clone()));
+            instructions.push(Instruction::ScanAncestors(constraint));
         }
         RelationType::Follows => {
-            instructions.push(Instruction::ScanSiblings(constraint.clone(), true));
+            instructions.push(Instruction::ScanSiblings(constraint, true));
         }
         RelationType::Precedes => {
-            instructions.push(Instruction::ScanSiblings(constraint.clone(), false));
+            instructions.push(Instruction::ScanSiblings(constraint, false));
         }
     }
 
@@ -137,25 +138,28 @@ fn compile_edge(
 
 /// Compile a pattern into VM bytecode
 /// Returns (bytecode, anchor_index)
-pub fn compile_pattern(pattern: &Pattern) -> (Vec<Instruction>, usize) {
+pub fn compile_pattern(pattern: Pattern) -> (Vec<Instruction>, usize) {
     if pattern.elements.is_empty() {
         return (vec![Instruction::Match], 0);
     }
 
-    let anchor_idx = select_anchor(pattern);
+    let anchor_idx = select_anchor(&pattern);
+
+    // Destructure pattern to take ownership of parts
+    let Pattern { elements, edges } = pattern;
+
     let mut bytecode = Vec::new();
 
-    // Build a map of element names to indices
-    let name_to_idx: HashMap<String, usize> = pattern
-        .elements
+    // Build a map of element names to indices (moving var_name)
+    let name_to_idx: HashMap<String, usize> = elements
         .iter()
         .enumerate()
         .map(|(idx, elem)| (elem.var_name.clone(), idx))
         .collect();
 
     // Build adjacency list from edges
-    let mut edges_from: HashMap<usize, Vec<(usize, &PatternEdge)>> = HashMap::new();
-    for edge in &pattern.edges {
+    let mut edges_from: HashMap<usize, Vec<(usize, PatternEdge)>> = HashMap::new();
+    for edge in edges {
         if let (Some(&from_idx), Some(&to_idx)) = (
             name_to_idx.get(&edge.from),
             name_to_idx.get(&edge.to),
@@ -168,12 +172,12 @@ pub fn compile_pattern(pattern: &Pattern) -> (Vec<Instruction>, usize) {
     }
 
     // Start at anchor: verify its constraints and bind it
-    let anchor_element = &pattern.elements[anchor_idx];
-    bytecode.extend(compile_constraint(&anchor_element.constraints));
+    let anchor_element = &elements[anchor_idx];
+    bytecode.extend(compile_constraint(anchor_element.constraints.clone()));
     bytecode.push(Instruction::Bind(anchor_idx));
 
     // Track which elements we've visited
-    let mut visited = vec![false; pattern.elements.len()];
+    let mut visited = vec![false; elements.len()];
     visited[anchor_idx] = true;
 
     // BFS traversal from anchor to compile verification of connected nodes
@@ -181,8 +185,8 @@ pub fn compile_pattern(pattern: &Pattern) -> (Vec<Instruction>, usize) {
 
     while let Some(current_idx) = queue.pop() {
         // Check edges from this node
-        if let Some(edges) = edges_from.get(&current_idx) {
-            for (target_idx, edge) in edges {
+        if let Some(edges_list) = edges_from.get(&current_idx) {
+            for (target_idx, edge) in edges_list {
                 if visited[*target_idx] {
                     continue;
                 }
@@ -191,17 +195,17 @@ pub fn compile_pattern(pattern: &Pattern) -> (Vec<Instruction>, usize) {
                 bytecode.push(Instruction::PushState);
 
                 // Navigate to target
-                let target_element = &pattern.elements[*target_idx];
+                let target_element = &elements[*target_idx];
                 let navigation = compile_edge(
                     edge.relation,
                     edge.label.as_deref(),
-                    &target_element.constraints,
+                    target_element.constraints.clone(),
                 );
                 bytecode.extend(navigation);
 
                 // Verify target constraints (if not already in navigation)
                 if !matches!(edge.relation, RelationType::Child | RelationType::Descendant | RelationType::Ancestor | RelationType::Follows | RelationType::Precedes) {
-                    bytecode.extend(compile_constraint(&target_element.constraints));
+                    bytecode.extend(compile_constraint(target_element.constraints.clone()));
                 }
 
                 // Bind target
@@ -258,7 +262,7 @@ mod tests {
     #[test]
     fn test_compile_simple_constraint() {
         let constraint = Constraint::Lemma("run".to_string());
-        let bytecode = compile_constraint(&constraint);
+        let bytecode = compile_constraint(constraint);
         assert_eq!(bytecode.len(), 1);
         assert!(matches!(bytecode[0], Instruction::CheckLemma(_)));
     }
@@ -269,7 +273,7 @@ mod tests {
             Constraint::POS("VERB".to_string()),
             Constraint::Lemma("run".to_string()),
         ]);
-        let bytecode = compile_constraint(&constraint);
+        let bytecode = compile_constraint(constraint);
         assert_eq!(bytecode.len(), 2);
     }
 
@@ -282,7 +286,7 @@ mod tests {
             Constraint::POS("VERB".to_string()),
         ));
 
-        let (bytecode, anchor) = compile_pattern(&pattern);
+        let (bytecode, anchor) = compile_pattern(pattern);
         assert_eq!(anchor, 0);
         assert!(bytecode.len() >= 3); // At least CheckPOS, Bind, Match
     }
@@ -306,7 +310,7 @@ mod tests {
             label: Some("nsubj".to_string()),
         });
 
-        let (bytecode, anchor) = compile_pattern(&pattern);
+        let (bytecode, anchor) = compile_pattern(pattern);
         assert_eq!(anchor, 0); // Both have same selectivity, picks first
 
         // Should have instructions for:
@@ -339,7 +343,7 @@ mod tests {
             ]),
         ));
 
-        let (bytecode, _anchor) = compile_pattern(&pattern);
+        let (bytecode, _anchor) = compile_pattern(pattern);
         let vm = VM::new(bytecode);
         let result = vm.execute(&tree, 0);
 
@@ -376,7 +380,7 @@ mod tests {
             label: Some("nsubj".to_string()),
         });
 
-        let (bytecode, _anchor) = compile_pattern(&pattern);
+        let (bytecode, _anchor) = compile_pattern(pattern);
         let vm = VM::new(bytecode);
         let result = vm.execute(&tree, 0);
 
@@ -419,7 +423,7 @@ mod tests {
             label: None,
         });
 
-        let (bytecode, _anchor) = compile_pattern(&pattern);
+        let (bytecode, _anchor) = compile_pattern(pattern);
         let vm = VM::new(bytecode);
         let result = vm.execute(&tree, 0);
 
@@ -443,7 +447,7 @@ mod tests {
             Constraint::Lemma("help".to_string()),
         ));
 
-        let (_bytecode, anchor) = compile_pattern(&pattern);
+        let (_bytecode, anchor) = compile_pattern(pattern);
         assert_eq!(anchor, 2); // Should select "lemma" (most selective)
     }
 
@@ -488,7 +492,7 @@ mod tests {
             label: Some("obj".to_string()),
         });
 
-        let (bytecode, anchor) = compile_pattern(&pattern);
+        let (bytecode, anchor) = compile_pattern(pattern);
         // Should anchor on "help" or "to" (both lemmas, equally selective)
         assert!(anchor == 0 || anchor == 1);
 

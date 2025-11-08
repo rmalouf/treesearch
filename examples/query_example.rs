@@ -46,8 +46,13 @@ fn main() {
     println!("Parsed pattern with {} nodes and {} edges",
              pattern.elements.len(), pattern.edges.len());
 
+    // Save var names for later printing (pattern will be consumed by compiler)
+    let var_names: Vec<String> = pattern.elements.iter()
+        .map(|e| e.var_name.clone())
+        .collect();
+
     // Compile the pattern to bytecode
-    let (bytecode, anchor) = compile_pattern(&pattern);
+    let (bytecode, anchor) = compile_pattern(pattern);
     println!("Compiled to {} instructions, anchor at element {}",
              bytecode.len(), anchor);
     println!();
@@ -61,7 +66,7 @@ fn main() {
             println!("Match found!");
             for (pos, node_id) in &result.bindings {
                 let node = tree.get_node(*node_id).unwrap();
-                let var_name = &pattern.elements[*pos].var_name;
+                let var_name = &var_names[*pos];
                 println!("  {} = {} (lemma: {})", var_name, node.form, node.lemma);
             }
         }
