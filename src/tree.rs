@@ -31,63 +31,17 @@ impl TokenId {
 }
 
 /// Morphological features (key=value pairs)
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct Features {
-    pairs: HashMap<String, String>,
-}
-
-impl Features {
-    pub fn new() -> Self {
-        Self { pairs: HashMap::new() }
-    }
-
-    pub fn insert(&mut self, key: String, value: String) {
-        self.pairs.insert(key, value);
-    }
-
-    pub fn get(&self, key: &str) -> Option<&str> {
-        self.pairs.get(key).map(|s| s.as_str())
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.pairs.is_empty()
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (&String, &String)> {
-        self.pairs.iter()
-    }
-}
+pub type Features = HashMap<String, String>;
 
 /// Enhanced dependency (for DEPS field)
 #[derive(Debug, Clone, PartialEq)]
 pub struct Dep {
-    pub head: NodeId,
+    pub head: Option<NodeId>,
     pub deprel: String,
 }
 
 /// Miscellaneous annotations (key=value pairs)
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct Misc {
-    pairs: HashMap<String, String>,
-}
-
-impl Misc {
-    pub fn new() -> Self {
-        Self { pairs: HashMap::new() }
-    }
-
-    pub fn insert(&mut self, key: String, value: String) {
-        self.pairs.insert(key, value);
-    }
-
-    pub fn get(&self, key: &str) -> Option<&str> {
-        self.pairs.get(key).map(|s| s.as_str())
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.pairs.is_empty()
-    }
-}
+pub type Misc = HashMap<String, String>;
 
 /// A node in a dependency tree
 #[derive(Debug, Clone)]

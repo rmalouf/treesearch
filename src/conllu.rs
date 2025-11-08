@@ -216,7 +216,7 @@ fn parse_line(line: &str, line_num: usize, node_id: NodeId) -> Result<Option<Nod
     };
 
     // Field 5: FEATS
-    let feats = parse_features(fields[5]);
+    let feats = parse_features(fields[5])?;
 
     // Field 6: HEAD
     let head = parse_head(fields[6])?;
@@ -225,10 +225,10 @@ fn parse_line(line: &str, line_num: usize, node_id: NodeId) -> Result<Option<Nod
     let deprel = fields[7].to_string();
 
     // Field 8: DEPS
-    let deps = parse_deps(fields[8]);
+    let deps = parse_deps(fields[8])?;
 
     // Field 9: MISC
-    let misc = parse_misc(fields[9]);
+    let misc = parse_misc(fields[9])?;
 
     let mut node = Node::with_full_fields(
         node_id,
@@ -306,77 +306,79 @@ fn parse_head(s: &str) -> Result<Option<NodeId>, ParseError> {
             line_num: 0,
             message: format!("Invalid HEAD: {}", s),
         })?;
-        // HEAD is 1-indexed in CoNLL-U, but we use 0-indexed NodeIds
-        if head > 0 {
-            Ok(Some(head - 1))
-        } else {
-            Ok(None)
-        }
+        // HEAD is 1-indexed in CoNLL-U, convert to 0-indexed NodeIds
+        Ok(Some(head - 1))
     }
 }
 
 /// Parse FEATS field (key=value|key=value)
-fn parse_features(s: &str) -> Features {
-    let mut feats = Features::new();
-
+fn parse_features(s: &str) -> Result<Features, ParseError> {
     if s == "_" {
-        return feats;
+        return Ok(Features::new());
     }
 
+    let mut feats = Features::new();
     for pair in s.split('|') {
-        if let Some(eq_pos) = pair.find('=') {
-            let key = pair[..eq_pos].to_string();
-            let value = pair[eq_pos + 1..].to_string();
-            feats.insert(key, value);
-        }
+        let (k, v) = pair.split_once('=')
+            .ok_or_else(|| ParseError {
+                line_num: 0,
+                message: format!("Invalid FEATS pair (missing '='): {}", pair),
+            })?;
+        feats.insert(k.to_string(), v.to_string());
     }
-
-    feats
+    Ok(feats)
 }
 
 /// Parse DEPS field (head:deprel|head:deprel)
-fn parse_deps(s: &str) -> Vec<Dep> {
+fn parse_deps(s: &str) -> Result<Vec<Dep>, ParseError> {
     let mut deps = Vec::new();
 
     if s == "_" {
-        return deps;
+        return Ok(deps);
     }
 
     for pair in s.split('|') {
-        if let Some(colon_pos) = pair.find(':') {
-            if let Ok(head) = pair[..colon_pos].parse::<usize>() {
-                let deprel = pair[colon_pos + 1..].to_string();
-                // Convert 1-indexed to 0-indexed
-                if head > 0 {
-                    deps.push(Dep {
-                        head: head - 1,
-                        deprel,
-                    });
-                }
-            }
-        }
+        let Some((head_str, deprel)) = pair.split_once(':') else {
+            return Err(ParseError {
+                line_num: 0,
+                message: format!("Invalid DEPS pair: {}", pair),
+            });
+        };
+
+        let Ok(head) = head_str.parse::<usize>() else {
+            return Err(ParseError {
+                line_num: 0,
+                message: format!("Invalid DEPS pair: {}", pair),
+            });
+        };
+
+        // Convert 1-indexed to 0-indexed; 0 means root (None)
+        let head_id = if head == 0 { None } else { Some(head - 1) };
+        deps.push(Dep {
+            head: head_id,
+            deprel: deprel.to_string(),
+        });
     }
 
-    deps
+    Ok(deps)
 }
 
 /// Parse MISC field (key=value|key=value)
-fn parse_misc(s: &str) -> Misc {
-    let mut misc = Misc::new();
-
+fn parse_misc(s: &str) -> Result<Misc, ParseError> {
     if s == "_" {
-        return misc;
+        return Ok(Misc::new());
     }
 
+    let mut misc = Misc::new();
     for pair in s.split('|') {
-        if let Some(eq_pos) = pair.find('=') {
-            let key = pair[..eq_pos].to_string();
-            let value = pair[eq_pos + 1..].to_string();
-            misc.insert(key, value);
-        }
+        let (k, v) = pair.split_once('=')
+            .ok_or_else(|| ParseError {
+                line_num: 0,
+                message: format!("Invalid MISC pair (missing '='): {}", pair),
+            })?;
+        misc.insert(k.to_string(), v.to_string());
     }
-
-    misc
+    Ok(misc)
 }
 
 #[cfg(test)]
@@ -424,9 +426,9 @@ mod tests {
         assert_eq!(tree.nodes.len(), 2);
 
         // Check features
-        assert_eq!(tree.nodes[0].feats.get("Number"), Some("Plur"));
-        assert_eq!(tree.nodes[1].feats.get("Number"), Some("Plur"));
-        assert_eq!(tree.nodes[1].feats.get("Tense"), Some("Pres"));
+        assert_eq!(tree.nodes[0].feats.get("Number"), Some(&"Plur".to_string()));
+        assert_eq!(tree.nodes[1].feats.get("Number"), Some(&"Plur".to_string()));
+        assert_eq!(tree.nodes[1].feats.get("Tense"), Some(&"Pres".to_string()));
     }
 
     #[test]
@@ -449,12 +451,16 @@ mod tests {
 
     #[test]
     fn test_parse_features() {
-        let feats = parse_features("Case=Nom|Number=Sing");
-        assert_eq!(feats.get("Case"), Some("Nom"));
-        assert_eq!(feats.get("Number"), Some("Sing"));
+        let feats = parse_features("Case=Nom|Number=Sing").unwrap();
+        assert_eq!(feats.get("Case"), Some(&"Nom".to_string()));
+        assert_eq!(feats.get("Number"), Some(&"Sing".to_string()));
 
-        let empty = parse_features("_");
+        let empty = parse_features("_").unwrap();
         assert!(empty.is_empty());
+
+        // Test error case
+        assert!(parse_features("InvalidPair").is_err());
+        assert!(parse_features("foo|bar=baz").is_err());
     }
 
     #[test]
@@ -462,5 +468,29 @@ mod tests {
         assert_eq!(parse_head("0").unwrap(), None);
         assert_eq!(parse_head("1").unwrap(), Some(0)); // 1-indexed to 0-indexed
         assert_eq!(parse_head("5").unwrap(), Some(4));
+    }
+
+    #[test]
+    fn test_parse_deps() {
+        let deps = parse_deps("2:nsubj|3:obj").unwrap();
+        assert_eq!(deps.len(), 2);
+        assert_eq!(deps[0].head, Some(1)); // 2 -> 1 (0-indexed)
+        assert_eq!(deps[0].deprel, "nsubj");
+        assert_eq!(deps[1].head, Some(2)); // 3 -> 2 (0-indexed)
+        assert_eq!(deps[1].deprel, "obj");
+
+        // Test root attachment
+        let deps = parse_deps("0:root").unwrap();
+        assert_eq!(deps.len(), 1);
+        assert_eq!(deps[0].head, None); // 0 -> None
+        assert_eq!(deps[0].deprel, "root");
+
+        let empty = parse_deps("_").unwrap();
+        assert!(empty.is_empty());
+
+        // Test error cases
+        assert!(parse_deps("InvalidPair").is_err()); // Missing ':'
+        assert!(parse_deps("foo:bar").is_err()); // Non-numeric head
+        assert!(parse_deps("1:nsubj|invalid").is_err()); // One valid, one invalid
     }
 }

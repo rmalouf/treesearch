@@ -63,19 +63,13 @@ pub enum TokenId {
     Decimal(usize, usize),      // Empty node: 2.1
 }
 
-pub struct Features {
-    // key=value pairs, e.g., "Case=Nom|Number=Sing"
-    pairs: HashMap<String, String>,
-}
+// Type aliases for simplicity (internal API)
+pub type Features = HashMap<String, String>;
+pub type Misc = HashMap<String, String>;
 
 pub struct Dep {
-    pub head: NodeId,
+    pub head: Option<NodeId>,  // None = root attachment (head=0)
     pub deprel: String,
-}
-
-pub struct Misc {
-    // key=value pairs
-    pairs: HashMap<String, String>,
 }
 ```
 
@@ -130,10 +124,12 @@ impl Iterator for CoNLLUReader {
 **2.3: Field Parsing**
 ```rust
 fn parse_line(line: &str) -> Result<Node, ParseError>;
-fn parse_features(s: &str) -> Features;
-fn parse_deps(s: &str) -> Vec<Dep>;
-fn parse_misc(s: &str) -> Misc;
+fn parse_features(s: &str) -> Result<Features, ParseError>;
+fn parse_deps(s: &str) -> Result<Vec<Dep>, ParseError>;
+fn parse_misc(s: &str) -> Result<Misc, ParseError>;
 ```
+
+Note: All parsing functions return Result to catch malformed data instead of silently skipping invalid entries.
 
 **Tests**:
 - Simple sentence (3-5 tokens)
