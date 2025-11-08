@@ -1,35 +1,167 @@
-//! Minimal tree data structures for pattern matching
+//! Tree data structures for dependency parsing
 //!
-//! This module provides the basic data structures needed for testing
-//! the pattern matching VM. Full CoNLL-U support will be added in Phase 1.
+//! This module provides complete CoNLL-U support including all fields,
+//! morphological features, enhanced dependencies, and metadata.
 
-use std::rc::Rc;
-use std::cell::RefCell;
+use std::collections::HashMap;
 
-/// Unique identifier for a node
+/// Unique identifier for a node (index in tree's nodes vector)
 pub type NodeId = usize;
+
+/// Token ID from CoNLL-U (can be single, range, or decimal)
+#[derive(Debug, Clone, PartialEq)]
+pub enum TokenId {
+    /// Normal token: 1, 2, 3, ...
+    Single(usize),
+    /// Multiword token: 1-2, 3-4, ...
+    Range(usize, usize),
+    /// Empty node: 2.1, 3.1, ...
+    Decimal(usize, usize),
+}
+
+impl TokenId {
+    /// Get the primary index (first number in all cases)
+    pub fn primary(&self) -> usize {
+        match self {
+            TokenId::Single(n) => *n,
+            TokenId::Range(start, _) => *start,
+            TokenId::Decimal(n, _) => *n,
+        }
+    }
+}
+
+/// Morphological features (key=value pairs)
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Features {
+    pairs: HashMap<String, String>,
+}
+
+impl Features {
+    pub fn new() -> Self {
+        Self { pairs: HashMap::new() }
+    }
+
+    pub fn insert(&mut self, key: String, value: String) {
+        self.pairs.insert(key, value);
+    }
+
+    pub fn get(&self, key: &str) -> Option<&str> {
+        self.pairs.get(key).map(|s| s.as_str())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.pairs.is_empty()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &String)> {
+        self.pairs.iter()
+    }
+}
+
+/// Enhanced dependency (for DEPS field)
+#[derive(Debug, Clone, PartialEq)]
+pub struct Dep {
+    pub head: NodeId,
+    pub deprel: String,
+}
+
+/// Miscellaneous annotations (key=value pairs)
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Misc {
+    pairs: HashMap<String, String>,
+}
+
+impl Misc {
+    pub fn new() -> Self {
+        Self { pairs: HashMap::new() }
+    }
+
+    pub fn insert(&mut self, key: String, value: String) {
+        self.pairs.insert(key, value);
+    }
+
+    pub fn get(&self, key: &str) -> Option<&str> {
+        self.pairs.get(key).map(|s| s.as_str())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.pairs.is_empty()
+    }
+}
 
 /// A node in a dependency tree
 #[derive(Debug, Clone)]
 pub struct Node {
+    // Node identifier (index in tree)
     pub id: NodeId,
-    pub form: String,
-    pub lemma: String,
-    pub pos: String,
-    pub deprel: String,
+
+    // Linear position for leftmost semantics (Phase 1)
+    pub position: usize,
+
+    // CoNLL-U ID field (can be range or decimal)
+    pub token_id: TokenId,
+
+    // CoNLL-U fields
+    pub form: String,          // FORM
+    pub lemma: String,         // LEMMA
+    pub pos: String,           // UPOS (universal POS)
+    pub xpos: Option<String>,  // XPOS (language-specific POS)
+    pub feats: Features,       // FEATS (morphological features)
+    pub deprel: String,        // DEPREL (dependency relation)
+    pub deps: Vec<Dep>,        // DEPS (enhanced dependencies)
+    pub misc: Misc,            // MISC (miscellaneous)
+
+    // Tree structure (computed from HEAD field)
     pub(crate) parent: Option<NodeId>,
     pub(crate) children: Vec<NodeId>,
 }
 
 impl Node {
-    /// Create a new node with the given attributes
+    /// Create a new node with minimal attributes (for Phase 0 compatibility)
     pub fn new(id: NodeId, form: &str, lemma: &str, pos: &str, deprel: &str) -> Self {
         Self {
             id,
+            position: id, // Default: position = id
+            token_id: TokenId::Single(id),
             form: form.to_string(),
             lemma: lemma.to_string(),
             pos: pos.to_string(),
+            xpos: None,
+            feats: Features::new(),
             deprel: deprel.to_string(),
+            deps: Vec::new(),
+            misc: Misc::new(),
+            parent: None,
+            children: Vec::new(),
+        }
+    }
+
+    /// Create a new node with full CoNLL-U fields
+    pub fn with_full_fields(
+        id: NodeId,
+        position: usize,
+        token_id: TokenId,
+        form: String,
+        lemma: String,
+        pos: String,
+        xpos: Option<String>,
+        feats: Features,
+        deprel: String,
+        deps: Vec<Dep>,
+        misc: Misc,
+    ) -> Self {
+        Self {
+            id,
+            position,
+            token_id,
+            form,
+            lemma,
+            pos,
+            xpos,
+            feats,
+            deprel,
+            deps,
+            misc,
             parent: None,
             children: Vec::new(),
         }
@@ -41,6 +173,10 @@ impl Node {
 pub struct Tree {
     pub(crate) nodes: Vec<Node>,
     pub root_id: Option<NodeId>,
+
+    // Sentence metadata (from CoNLL-U comments)
+    pub sentence_text: Option<String>,
+    pub metadata: HashMap<String, String>,
 }
 
 impl Tree {
@@ -49,6 +185,18 @@ impl Tree {
         Self {
             nodes: Vec::new(),
             root_id: None,
+            sentence_text: None,
+            metadata: HashMap::new(),
+        }
+    }
+
+    /// Create a new tree with sentence metadata
+    pub fn with_metadata(sentence_text: Option<String>, metadata: HashMap<String, String>) -> Self {
+        Self {
+            nodes: Vec::new(),
+            root_id: None,
+            sentence_text,
+            metadata,
         }
     }
 
