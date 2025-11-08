@@ -117,6 +117,16 @@ pub struct Node {
 }
 
 impl Node {
+    /// Get the parent node ID
+    pub fn parent_id(&self) -> Option<NodeId> {
+        self.parent
+    }
+
+    /// Get the children node IDs
+    pub fn children_ids(&self) -> &[NodeId] {
+        &self.children
+    }
+
     /// Create a new node with minimal attributes (for Phase 0 compatibility)
     pub fn new(id: NodeId, form: &str, lemma: &str, pos: &str, deprel: &str) -> Self {
         Self {
@@ -239,6 +249,21 @@ impl Tree {
         self.get_node(node_id)
             .and_then(|node| node.parent)
             .and_then(|parent_id| self.get_node(parent_id))
+    }
+
+    /// Get all nodes in the tree
+    pub fn nodes(&self) -> &[Node] {
+        &self.nodes
+    }
+
+    /// Get the number of nodes in the tree
+    pub fn len(&self) -> usize {
+        self.nodes.len()
+    }
+
+    /// Check if the tree is empty
+    pub fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
     }
 }
 
