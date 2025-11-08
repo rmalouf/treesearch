@@ -116,11 +116,21 @@ impl VM {
     }
 
     /// Order nodes by their position (for leftmost semantics)
-    /// In a real implementation, this would use linear position from CoNLL-U
-    /// For now, we just use node IDs as a proxy
-    fn order_alternatives(mut nodes: Vec<NodeId>) -> Vec<NodeId> {
-        nodes.sort();
-        nodes
+    /// Uses the position field from nodes to ensure correct linear ordering
+    fn order_alternatives(nodes: Vec<NodeId>, tree: &Tree) -> Vec<NodeId> {
+        let mut nodes_with_pos: Vec<(NodeId, usize)> = nodes
+            .into_iter()
+            .map(|id| {
+                let pos = tree.get_node(id).map(|n| n.position).unwrap_or(id);
+                (id, pos)
+            })
+            .collect();
+
+        // Sort by position (leftmost first)
+        nodes_with_pos.sort_by_key(|(_, pos)| *pos);
+
+        // Extract node IDs
+        nodes_with_pos.into_iter().map(|(id, _)| id).collect()
     }
 
     /// Execute the VM starting from the given node
@@ -417,7 +427,7 @@ impl VM {
                     }
 
                     // Order by leftmost position
-                    let ordered = Self::order_alternatives(matching_children);
+                    let ordered = Self::order_alternatives(matching_children, tree);
 
                     // Use first match
                     state.current_node = ordered[0];
@@ -500,7 +510,7 @@ impl VM {
                 }
 
                 // Order by leftmost position
-                let ordered = Self::order_alternatives(matches);
+                let ordered = Self::order_alternatives(matches, tree);
 
                 // Use first match
                 state.current_node = ordered[0];
@@ -1410,6 +1420,49 @@ mod tests {
         assert!(result.is_some());
         let match_result = result.unwrap();
         assert_eq!(match_result.bindings[&0], 5); // Should find "quick" after backtracking
+    }
+
+    #[test]
+    fn test_leftmost_semantics_by_position() {
+        // Test that leftmost semantics uses position field, not node ID
+        // Create a tree where NodeIds (vector indices) don't match positions
+        let mut tree = Tree::new();
+
+        // Add root first - NodeId 0, position 2 (rightmost)
+        let mut root = Node::new(0, "root", "root", "VERB", "root");
+        root.position = 2;
+        tree.add_node(root);
+
+        // Add first NOUN - NodeId 1, position 1 (middle)
+        let mut noun1 = Node::new(1, "second", "second", "NOUN", "nsubj");
+        noun1.position = 1;
+        tree.add_node(noun1);
+
+        // Add second NOUN - NodeId 2, position 0 (leftmost!)
+        let mut noun2 = Node::new(2, "first", "first", "NOUN", "nsubj");
+        noun2.position = 0;
+        tree.add_node(noun2);
+
+        // Both NOUNs are children of root
+        tree.set_parent(1, 0); // NodeId 1 (position 1) -> root
+        tree.set_parent(2, 0); // NodeId 2 (position 0) -> root
+
+        // Query: find VERB with NOUN child
+        // Should match the LEFTMOST NOUN by position (NodeId 2, position 0)
+        // NOT NodeId 1 (which has lower NodeId but higher position)
+        let bytecode = vec![
+            Instruction::CheckPOS("VERB".to_string()),
+            Instruction::Bind(0),
+            Instruction::MoveToChild(Some(Constraint::POS("NOUN".to_string()))),
+            Instruction::Bind(1),
+            Instruction::Match,
+        ];
+
+        let vm = VM::new(bytecode);
+        let result = vm.execute(&tree, 0).unwrap(); // Start at root (NodeId 0)
+
+        assert_eq!(result.bindings[&0], 0); // VERB = NodeId 0 (root)
+        assert_eq!(result.bindings[&1], 2); // NOUN = NodeId 2 (position 0, leftmost!)
     }
 
     #[test]
