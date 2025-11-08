@@ -49,17 +49,17 @@ fn main() {
         pattern.edges.len()
     );
 
-    // Compile the pattern to bytecode (also returns var_names)
-    let (bytecode, anchor, var_names) = compile_pattern(pattern);
+    // Compile the pattern to opcodes (also returns var_names)
+    let (opcodes, anchor, var_names) = compile_pattern(pattern);
     println!(
         "Compiled to {} instructions, anchor at element {}",
-        bytecode.len(),
+        opcodes.len(),
         anchor
     );
     println!();
 
     // Execute the pattern on the tree
-    let vm = VM::new(bytecode, var_names);
+    let vm = VM::new(opcodes, var_names);
     let anchor_node = 0; // Start at "help"
 
     match vm.execute(&tree, anchor_node) {

@@ -161,7 +161,7 @@ fn main() {
     println!("   Components:");
     println!("   1. Parser     → Converts CoNLL-U to Tree");
     println!("   2. Query      → Parses query string to Pattern");
-    println!("   3. Compiler   → Compiles Pattern to VM bytecode");
+    println!("   3. Compiler   → Compiles Pattern to VM opcodes");
     println!("   4. Index      → Finds candidate nodes quickly");
     println!("   5. VM         → Verifies pattern matches");
     println!("   6. Results    → Returns Match objects");
