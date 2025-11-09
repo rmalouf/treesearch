@@ -12,7 +12,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # Python bindings
-pyo3 = { version = "0.27", features = ["extension-module"] }
+pyo3 = { version = "0.27", optional = true }
 
 # Parallelization
 rayon = "1.11"
@@ -22,8 +22,11 @@ pest = "2.7"
 pest_derive = "2.7"
 
 [features]
-# Optional Python bindings (Phase 1+)
-python = []
+# Default features for Rust-only builds
+default = []
+
+# Python extension module (automatically enabled by maturin)
+extension-module = ["pyo3/extension-module"]
 
 [dev-dependencies]
 # Testing utilities

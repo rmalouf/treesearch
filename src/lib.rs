@@ -13,8 +13,8 @@ pub mod searcher;
 pub mod tree; // Tree data structures with full CoNLL-U support
 pub mod vm; // Virtual machine executor and instruction set // End-to-end search (index + compiler + VM)
 
-// Python bindings (will be implemented in Phase 1)
-#[cfg(feature = "python")]
+// Python bindings
+#[cfg(feature = "pyo3")]
 pub mod python;
 
 // Re-exports for convenience
