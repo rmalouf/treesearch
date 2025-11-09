@@ -81,6 +81,38 @@ impl Node {
         &self.children
     }
 
+    /// Get all children with a specific dependency relation
+    ///
+    /// Returns all children that have the specified dependency relation.
+    /// Useful for relations that can have multiple dependents (e.g., "conj" in
+    /// coordinated structures).
+    ///
+    /// # Arguments
+    /// * `tree` - Reference to the tree containing this node
+    /// * `deprel` - The dependency relation name to search for (e.g., "conj", "obl")
+    ///
+    /// # Examples
+    /// ```
+    /// # use treesearch::{Tree, Node};
+    /// let mut tree = Tree::new();
+    /// tree.add_node(Node::new(0, "and", "and", "CCONJ", "root"));
+    /// tree.add_node(Node::new(1, "cats", "cat", "NOUN", "conj"));
+    /// tree.add_node(Node::new(2, "dogs", "dog", "NOUN", "conj"));
+    /// tree.set_parent(1, 0);
+    /// tree.set_parent(2, 0);
+    ///
+    /// let coord = tree.get_node(0).unwrap();
+    /// let conjuncts = coord.children_by_deprel(&tree, "conj");
+    /// assert_eq!(conjuncts.len(), 2);
+    /// ```
+    pub fn children_by_deprel<'a>(&self, tree: &'a Tree, deprel: &str) -> Vec<&'a Node> {
+        self.children
+            .iter()
+            .filter_map(|&id| tree.get_node(id))
+            .filter(|child| child.deprel == deprel)
+            .collect()
+    }
+
     /// Create a new node with minimal attributes (for Phase 0 compatibility)
     pub fn new(id: NodeId, form: &str, lemma: &str, pos: &str, deprel: &str) -> Self {
         Self {
@@ -242,5 +274,76 @@ mod tests {
         assert_eq!(tree.nodes.len(), 2);
         assert_eq!(tree.parent(1).unwrap().id, 0);
         assert_eq!(tree.children(0).len(), 1);
+    }
+
+    #[test]
+    fn test_children_by_deprel_multiple_matches() {
+        let mut tree = Tree::new();
+        tree.add_node(Node::new(0, "and", "and", "CCONJ", "root"));
+        tree.add_node(Node::new(1, "cats", "cat", "NOUN", "conj"));
+        tree.add_node(Node::new(2, "dogs", "dog", "NOUN", "conj"));
+        tree.add_node(Node::new(3, "birds", "bird", "NOUN", "conj"));
+        tree.set_parent(1, 0);
+        tree.set_parent(2, 0);
+        tree.set_parent(3, 0);
+
+        let coord = tree.get_node(0).unwrap();
+
+        let conjuncts = coord.children_by_deprel(&tree, "conj");
+        assert_eq!(conjuncts.len(), 3);
+        assert_eq!(conjuncts[0].lemma, "cat");
+        assert_eq!(conjuncts[1].lemma, "dog");
+        assert_eq!(conjuncts[2].lemma, "bird");
+    }
+
+    #[test]
+    fn test_children_by_deprel_single_match() {
+        let mut tree = Tree::new();
+        tree.add_node(Node::new(0, "runs", "run", "VERB", "root"));
+        tree.add_node(Node::new(1, "dog", "dog", "NOUN", "nsubj"));
+        tree.add_node(Node::new(2, "quickly", "quickly", "ADV", "advmod"));
+        tree.set_parent(1, 0);
+        tree.set_parent(2, 0);
+
+        let verb = tree.get_node(0).unwrap();
+
+        let subjects = verb.children_by_deprel(&tree, "nsubj");
+        assert_eq!(subjects.len(), 1);
+        assert_eq!(subjects[0].lemma, "dog");
+    }
+
+    #[test]
+    fn test_children_by_deprel_no_matches() {
+        let mut tree = Tree::new();
+        tree.add_node(Node::new(0, "runs", "run", "VERB", "root"));
+        tree.add_node(Node::new(1, "dog", "dog", "NOUN", "nsubj"));
+        tree.set_parent(1, 0);
+
+        let verb = tree.get_node(0).unwrap();
+
+        let objects = verb.children_by_deprel(&tree, "obj");
+        assert_eq!(objects.len(), 0);
+    }
+
+    #[test]
+    fn test_children_by_deprel_mixed_children() {
+        let mut tree = Tree::new();
+        tree.add_node(Node::new(0, "runs", "run", "VERB", "root"));
+        tree.add_node(Node::new(1, "dog", "dog", "NOUN", "nsubj"));
+        tree.add_node(Node::new(2, "park", "park", "NOUN", "obl"));
+        tree.add_node(Node::new(3, "store", "store", "NOUN", "obl"));
+        tree.add_node(Node::new(4, "quickly", "quickly", "ADV", "advmod"));
+        tree.set_parent(1, 0);
+        tree.set_parent(2, 0);
+        tree.set_parent(3, 0);
+        tree.set_parent(4, 0);
+
+        let verb = tree.get_node(0).unwrap();
+
+        // Should only return obl children
+        let obliques = verb.children_by_deprel(&tree, "obl");
+        assert_eq!(obliques.len(), 2);
+        assert_eq!(obliques[0].lemma, "park");
+        assert_eq!(obliques[1].lemma, "store");
     }
 }
