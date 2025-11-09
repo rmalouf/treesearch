@@ -224,21 +224,28 @@ impl Tree {
 
     /// Set the parent of a node
     ///
-    /// Returns `Ok(())` if both nodes exist and the relationship was set,
-    /// or `Err` if either node doesn't exist.
-    pub fn set_parent(&mut self, child_id: NodeId, parent_id: NodeId) -> Result<(), String> {
+    /// # Panics
+    ///
+    /// Panics if either the child node or parent node doesn't exist.
+    /// This is an internal API for tree construction - invalid node IDs indicate a bug.
+    pub fn set_parent(&mut self, child_id: NodeId, parent_id: NodeId) {
         // Validate both nodes exist
-        if child_id >= self.nodes.len() {
-            return Err(format!("Child node with id {} does not exist", child_id));
-        }
-        if parent_id >= self.nodes.len() {
-            return Err(format!("Parent node with id {} does not exist", parent_id));
-        }
+        assert!(
+            child_id < self.nodes.len(),
+            "Child node with id {} does not exist (tree has {} nodes)",
+            child_id,
+            self.nodes.len()
+        );
+        assert!(
+            parent_id < self.nodes.len(),
+            "Parent node with id {} does not exist (tree has {} nodes)",
+            parent_id,
+            self.nodes.len()
+        );
 
         // Both exist, safe to modify
         self.nodes[child_id].parent = Some(parent_id);
         self.nodes[parent_id].children.push(child_id);
-        Ok(())
     }
 
     /// Get the parent ID of a node
@@ -296,7 +303,7 @@ mod tests {
 
         tree.add_node(root);
         tree.add_node(child);
-        tree.set_parent(1, 0).unwrap();
+        tree.set_parent(1, 0);
 
         assert_eq!(tree.nodes.len(), 2);
         assert_eq!(tree.parent_id(1).unwrap(), Some(0));
@@ -310,9 +317,9 @@ mod tests {
         tree.add_node(Node::new(1, "cats", "cat", "NOUN", "conj"));
         tree.add_node(Node::new(2, "dogs", "dog", "NOUN", "conj"));
         tree.add_node(Node::new(3, "birds", "bird", "NOUN", "conj"));
-        tree.set_parent(1, 0).unwrap();
-        tree.set_parent(2, 0).unwrap();
-        tree.set_parent(3, 0).unwrap();
+        tree.set_parent(1, 0);
+        tree.set_parent(2, 0);
+        tree.set_parent(3, 0);
 
         let coord = tree.get_node(0).unwrap();
 
@@ -329,8 +336,8 @@ mod tests {
         tree.add_node(Node::new(0, "runs", "run", "VERB", "root"));
         tree.add_node(Node::new(1, "dog", "dog", "NOUN", "nsubj"));
         tree.add_node(Node::new(2, "quickly", "quickly", "ADV", "advmod"));
-        tree.set_parent(1, 0).unwrap();
-        tree.set_parent(2, 0).unwrap();
+        tree.set_parent(1, 0);
+        tree.set_parent(2, 0);
 
         let verb = tree.get_node(0).unwrap();
 
@@ -344,7 +351,7 @@ mod tests {
         let mut tree = Tree::new();
         tree.add_node(Node::new(0, "runs", "run", "VERB", "root"));
         tree.add_node(Node::new(1, "dog", "dog", "NOUN", "nsubj"));
-        tree.set_parent(1, 0).unwrap();
+        tree.set_parent(1, 0);
 
         let verb = tree.get_node(0).unwrap();
 
@@ -360,10 +367,10 @@ mod tests {
         tree.add_node(Node::new(2, "park", "park", "NOUN", "obl"));
         tree.add_node(Node::new(3, "store", "store", "NOUN", "obl"));
         tree.add_node(Node::new(4, "quickly", "quickly", "ADV", "advmod"));
-        tree.set_parent(1, 0).unwrap();
-        tree.set_parent(2, 0).unwrap();
-        tree.set_parent(3, 0).unwrap();
-        tree.set_parent(4, 0).unwrap();
+        tree.set_parent(1, 0);
+        tree.set_parent(2, 0);
+        tree.set_parent(3, 0);
+        tree.set_parent(4, 0);
 
         let verb = tree.get_node(0).unwrap();
 
