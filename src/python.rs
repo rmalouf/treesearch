@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::conllu::CoNLLUReader as RustCoNLLUReader;
 use crate::searcher::TreeSearcher as RustTreeSearcher;
@@ -17,7 +18,7 @@ use crate::vm::Match as RustMatch;
 /// A dependency tree
 #[pyclass(name = "Tree")]
 pub struct PyTree {
-    inner: RustTree,
+    inner: Arc<RustTree>,
 }
 
 #[pymethods]
@@ -26,7 +27,7 @@ impl PyTree {
     #[new]
     fn new() -> Self {
         PyTree {
-            inner: RustTree::new(),
+            inner: Arc::new(RustTree::new()),
         }
     }
 
@@ -34,7 +35,7 @@ impl PyTree {
     fn get_node(&self, id: usize) -> Option<PyNode> {
         self.inner.get_node(id).map(|node| PyNode {
             inner: node.clone(),
-            tree: self.inner.clone(),
+            tree: Arc::clone(&self.inner),
         })
     }
 
@@ -53,7 +54,7 @@ impl PyTree {
 #[pyclass(name = "Node")]
 pub struct PyNode {
     inner: RustNode,
-    tree: RustTree,
+    tree: Arc<RustTree>,
 }
 
 #[pymethods]
@@ -109,7 +110,7 @@ impl PyNode {
     fn parent(&self) -> Option<PyNode> {
         self.inner.parent(&self.tree).map(|node| PyNode {
             inner: node.clone(),
-            tree: self.tree.clone(),
+            tree: Arc::clone(&self.tree),
         })
     }
 
@@ -125,7 +126,7 @@ impl PyNode {
             .iter()
             .map(|&node| PyNode {
                 inner: node.clone(),
-                tree: self.tree.clone(),
+                tree: Arc::clone(&self.tree),
             })
             .collect()
     }
@@ -143,7 +144,7 @@ impl PyNode {
             .into_iter()
             .map(|node| PyNode {
                 inner: node.clone(),
-                tree: self.tree.clone(),
+                tree: Arc::clone(&self.tree),
             })
             .collect()
     }
@@ -161,7 +162,7 @@ impl PyNode {
 #[pyclass(name = "Match")]
 pub struct PyMatch {
     inner: RustMatch,
-    tree: RustTree,
+    tree: Arc<RustTree>,
 }
 
 #[pymethods]
@@ -176,7 +177,7 @@ impl PyMatch {
         self.inner.get(name).and_then(|id| {
             self.tree.get_node(id).map(|node| PyNode {
                 inner: node.clone(),
-                tree: self.tree.clone(),
+                tree: Arc::clone(&self.tree),
             })
         })
     }
@@ -199,7 +200,7 @@ impl PyMatch {
                         name.to_string(),
                         PyNode {
                             inner: node.clone(),
-                            tree: self.tree.clone(),
+                            tree: Arc::clone(&self.tree),
                         },
                     )
                 })
@@ -251,7 +252,7 @@ impl PyTreeSearcher {
         Ok(matches
             .map(|m| PyMatch {
                 inner: m,
-                tree: tree.inner.clone(),
+                tree: Arc::clone(&tree.inner),
             })
             .collect())
     }
@@ -301,7 +302,7 @@ impl PyCoNLLUReaderIterator {
     fn __next__(&mut self, py: Python) -> PyResult<Option<PyTree>> {
         let mut reader = self.reader.borrow_mut(py);
         match reader.inner.next() {
-            Some(Ok(tree)) => Ok(Some(PyTree { inner: tree })),
+            Some(Ok(tree)) => Ok(Some(PyTree { inner: Arc::new(tree) })),
             Some(Err(e)) => Err(PyValueError::new_err(format!("Parse error: {}", e))),
             None => Ok(None),
         }
