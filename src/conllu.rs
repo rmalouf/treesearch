@@ -184,28 +184,8 @@ fn parse_line(line: &str, line_num: usize, node_id: NodeId) -> Result<Node, Pars
         });
     }
 
-    // Field 0: ID
-    let token_id = parse_id(fields[0])?;
-
-    // Only single token IDs are supported
-    match token_id {
-        TokenId::Range(start, end) => {
-            return Err(ParseError {
-                line_num,
-                message: format!(
-                    "Multiword tokens (e.g., {}-{}) are not yet supported",
-                    start, end
-                ),
-            })
-        }
-        TokenId::Decimal(n, m) => {
-            return Err(ParseError {
-                line_num,
-                message: format!("Empty nodes (e.g., {}.{}) are not yet supported", n, m),
-            })
-        }
-        TokenId::Single(_) => {}
-    }
+    // Field 0: ID (1-based token number)
+    let token_id = parse_id(fields[0], line_num)?;
 
     // Field 1: FORM
     let form = fields[1].to_string();
@@ -252,52 +232,25 @@ fn parse_line(line: &str, line_num: usize, node_id: NodeId) -> Result<Node, Pars
     Ok(node)
 }
 
-/// Parse ID field (can be integer, range, or decimal)
-fn parse_id(s: &str) -> Result<TokenId, ParseError> {
+/// Parse ID field (single integer only)
+fn parse_id(s: &str, line_num: usize) -> Result<TokenId, ParseError> {
     if s.contains('-') {
-        // Range: 1-2
-        let parts: Vec<&str> = s.split('-').collect();
-        if parts.len() != 2 {
-            return Err(ParseError {
-                line_num: 0,
-                message: format!("Invalid range ID: {}", s),
-            });
-        }
-        let start = parts[0].parse().map_err(|_| ParseError {
-            line_num: 0,
-            message: format!("Invalid range start: {}", parts[0]),
-        })?;
-        let end = parts[1].parse().map_err(|_| ParseError {
-            line_num: 0,
-            message: format!("Invalid range end: {}", parts[1]),
-        })?;
-        Ok(TokenId::Range(start, end))
-    } else if s.contains('.') {
-        // Decimal: 2.1
-        let parts: Vec<&str> = s.split('.').collect();
-        if parts.len() != 2 {
-            return Err(ParseError {
-                line_num: 0,
-                message: format!("Invalid decimal ID: {}", s),
-            });
-        }
-        let main = parts[0].parse().map_err(|_| ParseError {
-            line_num: 0,
-            message: format!("Invalid decimal main: {}", parts[0]),
-        })?;
-        let sub = parts[1].parse().map_err(|_| ParseError {
-            line_num: 0,
-            message: format!("Invalid decimal sub: {}", parts[1]),
-        })?;
-        Ok(TokenId::Decimal(main, sub))
-    } else {
-        // Single: 1, 2, 3
-        let id = s.parse().map_err(|_| ParseError {
-            line_num: 0,
-            message: format!("Invalid ID: {}", s),
-        })?;
-        Ok(TokenId::Single(id))
+        return Err(ParseError {
+            line_num,
+            message: format!("Multiword tokens (e.g., {}) are not supported", s),
+        });
     }
+    if s.contains('.') {
+        return Err(ParseError {
+            line_num,
+            message: format!("Empty nodes (e.g., {}) are not supported", s),
+        });
+    }
+
+    s.parse().map_err(|_| ParseError {
+        line_num,
+        message: format!("Invalid token ID: {}", s),
+    })
 }
 
 /// Parse HEAD field (0 or integer)
@@ -434,20 +387,22 @@ mod tests {
 
     #[test]
     fn test_parse_id_single() {
-        assert_eq!(parse_id("1").unwrap(), TokenId::Single(1));
-        assert_eq!(parse_id("42").unwrap(), TokenId::Single(42));
+        assert_eq!(parse_id("1", 1).unwrap(), 1);
+        assert_eq!(parse_id("42", 1).unwrap(), 42);
     }
 
     #[test]
     fn test_parse_id_range() {
-        assert_eq!(parse_id("1-2").unwrap(), TokenId::Range(1, 2));
-        assert_eq!(parse_id("5-7").unwrap(), TokenId::Range(5, 7));
+        // Multiword tokens are not supported
+        assert!(parse_id("1-2", 1).is_err());
+        assert!(parse_id("5-7", 1).is_err());
     }
 
     #[test]
     fn test_parse_id_decimal() {
-        assert_eq!(parse_id("2.1").unwrap(), TokenId::Decimal(2, 1));
-        assert_eq!(parse_id("10.5").unwrap(), TokenId::Decimal(10, 5));
+        // Empty nodes are not supported
+        assert!(parse_id("2.1", 1).is_err());
+        assert!(parse_id("10.5", 1).is_err());
     }
 
     #[test]
