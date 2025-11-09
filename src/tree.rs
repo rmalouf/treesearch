@@ -211,10 +211,8 @@ impl Tree {
     }
 
     /// Add a node to the tree
-    pub fn add_node(&mut self, node: Node) -> NodeId {
-        let id = node.id;
+    pub fn add_node(&mut self, node: Node) {
         self.nodes.push(node);
-        id
     }
 
     /// Get a node by ID (safe external API)
