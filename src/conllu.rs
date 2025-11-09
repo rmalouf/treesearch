@@ -146,12 +146,7 @@ fn parse_tree(
     // Parse each line into a Node
     for (line_num, line) in lines {
         match parse_line(&line, line_num, nodes.len()) {
-            Ok(Some(node)) => nodes.push(node),
-            Ok(None) => {
-                // Multiword token or empty node - skip for now
-                // TODO: Handle these properly in future
-                continue;
-            }
+            Ok(node) => nodes.push(node),
             Err(e) => return Err(e),
         }
     }
@@ -178,8 +173,8 @@ fn parse_tree(
 }
 
 /// Parse a single CoNLL-U line into a Node
-/// Returns None for multiword tokens and empty nodes (for now)
-fn parse_line(line: &str, line_num: usize, node_id: NodeId) -> Result<Option<Node>, ParseError> {
+/// Errors on multiword tokens and empty nodes (not yet supported)
+fn parse_line(line: &str, line_num: usize, node_id: NodeId) -> Result<Node, ParseError> {
     let fields: Vec<&str> = line.split('\t').collect();
 
     if fields.len() != 10 {
@@ -192,10 +187,23 @@ fn parse_line(line: &str, line_num: usize, node_id: NodeId) -> Result<Option<Nod
     // Field 0: ID
     let token_id = parse_id(fields[0])?;
 
-    // Skip multiword tokens and empty nodes for now
+    // Only single token IDs are supported
     match token_id {
-        TokenId::Range(_, _) => return Ok(None),
-        TokenId::Decimal(_, _) => return Ok(None),
+        TokenId::Range(start, end) => {
+            return Err(ParseError {
+                line_num,
+                message: format!(
+                    "Multiword tokens (e.g., {}-{}) are not yet supported",
+                    start, end
+                ),
+            })
+        }
+        TokenId::Decimal(n, m) => {
+            return Err(ParseError {
+                line_num,
+                message: format!("Empty nodes (e.g., {}.{}) are not yet supported", n, m),
+            })
+        }
         TokenId::Single(_) => {}
     }
 
@@ -241,7 +249,7 @@ fn parse_line(line: &str, line_num: usize, node_id: NodeId) -> Result<Option<Nod
 
     node.parent = head;
 
-    Ok(Some(node))
+    Ok(node)
 }
 
 /// Parse ID field (can be integer, range, or decimal)
