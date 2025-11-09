@@ -315,21 +315,17 @@ fn parse_deps(s: &str) -> Result<Vec<Dep>, ParseError> {
     }
 
     for pair in s.split('|') {
-        let Some((head_str, deprel)) = pair.split_once(':') else {
-            return Err(ParseError {
-                line_num: None,
-                line_content: None,
-                message: format!("Invalid DEPS pair: {}", pair),
-            });
-        };
+        let (head_str, deprel) = pair.split_once(':').ok_or_else(|| ParseError {
+            line_num: None,
+            line_content: None,
+            message: format!("Invalid DEPS pair: {}", pair),
+        })?;
 
-        let Ok(head) = head_str.parse::<usize>() else {
-            return Err(ParseError {
-                line_num: None,
-                line_content: None,
-                message: format!("Invalid DEPS pair: {}", pair),
-            });
-        };
+        let head = head_str.parse::<usize>().map_err(|_| ParseError {
+            line_num: None,
+            line_content: None,
+            message: format!("Invalid DEPS pair: {}", pair),
+        })?;
 
         // Convert 1-indexed to 0-indexed; 0 means root (None)
         let head_id = if head == 0 { None } else { Some(head - 1) };
