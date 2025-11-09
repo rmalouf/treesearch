@@ -75,7 +75,7 @@ fn main() {
     let mut tree = Tree::new();
     tree.add_node(Node::new(0, "runs", "run", "VERB", "root"));
     tree.add_node(Node::new(1, "dog", "dog", "NOUN", "nsubj"));
-    tree.set_parent(1, 0);
+    tree.set_parent(1, 0).unwrap();
 
     println!("Tree: runs (VERB) -> dog (NOUN, nsubj)\n");
 

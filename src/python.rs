@@ -102,8 +102,10 @@ impl PyNode {
     }
 
     /// Get parent node ID
-    fn parent_id(&self) -> Option<usize> {
-        self.tree.parent_id(self.inner.id)
+    fn parent_id(&self) -> PyResult<Option<usize>> {
+        self.tree
+            .parent_id(self.inner.id)
+            .map_err(|e| PyValueError::new_err(e))
     }
 
     /// Get parent node
@@ -115,8 +117,10 @@ impl PyNode {
     }
 
     /// Get child node IDs
-    fn children_ids(&self) -> Vec<usize> {
-        self.tree.children_ids(self.inner.id)
+    fn children_ids(&self) -> PyResult<Vec<usize>> {
+        self.tree
+            .children_ids(self.inner.id)
+            .map_err(|e| PyValueError::new_err(e))
     }
 
     /// Get all children nodes

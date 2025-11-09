@@ -223,27 +223,43 @@ impl Tree {
     }
 
     /// Set the parent of a node
-    pub fn set_parent(&mut self, child_id: NodeId, parent_id: NodeId) {
-        if let Some(child) = self.nodes.get_mut(child_id) {
-            child.parent = Some(parent_id);
+    ///
+    /// Returns `Ok(())` if both nodes exist and the relationship was set,
+    /// or `Err` if either node doesn't exist.
+    pub fn set_parent(&mut self, child_id: NodeId, parent_id: NodeId) -> Result<(), String> {
+        // Validate both nodes exist
+        if child_id >= self.nodes.len() {
+            return Err(format!("Child node with id {} does not exist", child_id));
         }
-        if let Some(parent) = self.nodes.get_mut(parent_id) {
-            parent.children.push(child_id);
+        if parent_id >= self.nodes.len() {
+            return Err(format!("Parent node with id {} does not exist", parent_id));
         }
+
+        // Both exist, safe to modify
+        self.nodes[child_id].parent = Some(parent_id);
+        self.nodes[parent_id].children.push(child_id);
+        Ok(())
     }
 
     /// Get the parent ID of a node
-    pub fn parent_id(&self, node_id: NodeId) -> Option<NodeId> {
-        self.get_node(node_id).and_then(|node| node.parent)
+    ///
+    /// Returns `Ok(Some(parent_id))` if the node exists and has a parent,
+    /// `Ok(None)` if the node exists but has no parent,
+    /// or `Err` if the node doesn't exist.
+    pub fn parent_id(&self, node_id: NodeId) -> Result<Option<NodeId>, String> {
+        self.get_node(node_id)
+            .map(|node| node.parent)
+            .ok_or_else(|| format!("Node with id {} does not exist", node_id))
     }
 
     /// Get the children IDs of a node
-    pub fn children_ids(&self, node_id: NodeId) -> Vec<NodeId> {
-        if let Some(node) = self.get_node(node_id) {
-            node.children.clone()
-        } else {
-            Vec::new()
-        }
+    ///
+    /// Returns `Ok(vec)` with the children IDs if the node exists,
+    /// or `Err` if the node doesn't exist.
+    pub fn children_ids(&self, node_id: NodeId) -> Result<Vec<NodeId>, String> {
+        self.get_node(node_id)
+            .map(|node| node.children.clone())
+            .ok_or_else(|| format!("Node with id {} does not exist", node_id))
     }
 
     /// Get all nodes in the tree
@@ -280,11 +296,11 @@ mod tests {
 
         tree.add_node(root);
         tree.add_node(child);
-        tree.set_parent(1, 0);
+        tree.set_parent(1, 0).unwrap();
 
         assert_eq!(tree.nodes.len(), 2);
-        assert_eq!(tree.parent_id(1), Some(0));
-        assert_eq!(tree.children_ids(0).len(), 1);
+        assert_eq!(tree.parent_id(1).unwrap(), Some(0));
+        assert_eq!(tree.children_ids(0).unwrap().len(), 1);
     }
 
     #[test]
@@ -294,9 +310,9 @@ mod tests {
         tree.add_node(Node::new(1, "cats", "cat", "NOUN", "conj"));
         tree.add_node(Node::new(2, "dogs", "dog", "NOUN", "conj"));
         tree.add_node(Node::new(3, "birds", "bird", "NOUN", "conj"));
-        tree.set_parent(1, 0);
-        tree.set_parent(2, 0);
-        tree.set_parent(3, 0);
+        tree.set_parent(1, 0).unwrap();
+        tree.set_parent(2, 0).unwrap();
+        tree.set_parent(3, 0).unwrap();
 
         let coord = tree.get_node(0).unwrap();
 
@@ -313,8 +329,8 @@ mod tests {
         tree.add_node(Node::new(0, "runs", "run", "VERB", "root"));
         tree.add_node(Node::new(1, "dog", "dog", "NOUN", "nsubj"));
         tree.add_node(Node::new(2, "quickly", "quickly", "ADV", "advmod"));
-        tree.set_parent(1, 0);
-        tree.set_parent(2, 0);
+        tree.set_parent(1, 0).unwrap();
+        tree.set_parent(2, 0).unwrap();
 
         let verb = tree.get_node(0).unwrap();
 
@@ -328,7 +344,7 @@ mod tests {
         let mut tree = Tree::new();
         tree.add_node(Node::new(0, "runs", "run", "VERB", "root"));
         tree.add_node(Node::new(1, "dog", "dog", "NOUN", "nsubj"));
-        tree.set_parent(1, 0);
+        tree.set_parent(1, 0).unwrap();
 
         let verb = tree.get_node(0).unwrap();
 
@@ -344,10 +360,10 @@ mod tests {
         tree.add_node(Node::new(2, "park", "park", "NOUN", "obl"));
         tree.add_node(Node::new(3, "store", "store", "NOUN", "obl"));
         tree.add_node(Node::new(4, "quickly", "quickly", "ADV", "advmod"));
-        tree.set_parent(1, 0);
-        tree.set_parent(2, 0);
-        tree.set_parent(3, 0);
-        tree.set_parent(4, 0);
+        tree.set_parent(1, 0).unwrap();
+        tree.set_parent(2, 0).unwrap();
+        tree.set_parent(3, 0).unwrap();
+        tree.set_parent(4, 0).unwrap();
 
         let verb = tree.get_node(0).unwrap();
 

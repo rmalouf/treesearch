@@ -166,9 +166,9 @@ mod tests {
         tree.add_node(Node::new(2, "quickly", "quickly", "ADV", "advmod"));
         tree.add_node(Node::new(3, "big", "big", "ADJ", "amod"));
 
-        tree.set_parent(1, 0);
-        tree.set_parent(2, 0);
-        tree.set_parent(3, 1);
+        tree.set_parent(1, 0).unwrap();
+        tree.set_parent(2, 0).unwrap();
+        tree.set_parent(3, 1).unwrap();
 
         tree
     }

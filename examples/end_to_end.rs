@@ -54,7 +54,7 @@ fn main() {
     // Display tree structure
     println!("🌳 Tree structure:");
     for node in tree.nodes() {
-        let parent_info = if let Some(parent_id) = tree.parent_id(node.id) {
+        let parent_info = if let Ok(Some(parent_id)) = tree.parent_id(node.id) {
             format!("→ {} ({})", tree.nodes()[parent_id].form, node.deprel)
         } else {
             format!("({})", node.deprel)
