@@ -413,8 +413,8 @@ impl VM {
             }
 
             Instruction::MoveToParent => {
-                if let Some(parent) = tree.parent(state.current_node) {
-                    state.current_node = parent.id;
+                if let Some(parent_id) = tree.parent_id(state.current_node) {
+                    state.current_node = parent_id;
                     Ok(false)
                 } else {
                     Err(())
