@@ -98,7 +98,7 @@ fn main() {
     // Example 4: Comparing old vs new API
     println!("4. OLD vs NEW API");
     println!("   Old API (manual filtering):");
-    let children = tree.children(0);
+    let children = verb.children(&tree);
     if let Some(obj) = children.iter().find(|c| c.deprel == "obj") {
         println!("     Object found: {}", obj.form);
     }

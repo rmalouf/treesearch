@@ -102,34 +102,30 @@ impl PyNode {
 
     /// Get parent node ID
     fn parent_id(&self) -> Option<usize> {
-        self.inner.parent_id()
+        self.tree.parent_id(self.inner.id)
     }
 
     /// Get parent node
     fn parent(&self) -> Option<PyNode> {
-        self.inner.parent_id().and_then(|id| {
-            self.tree.get_node(id).map(|node| PyNode {
-                inner: node.clone(),
-                tree: self.tree.clone(),
-            })
+        self.inner.parent(&self.tree).map(|node| PyNode {
+            inner: node.clone(),
+            tree: self.tree.clone(),
         })
     }
 
     /// Get child node IDs
     fn children_ids(&self) -> Vec<usize> {
-        self.inner.children_ids().to_vec()
+        self.tree.children_ids(self.inner.id)
     }
 
     /// Get all children nodes
     fn children(&self) -> Vec<PyNode> {
         self.inner
-            .children_ids()
+            .children(&self.tree)
             .iter()
-            .filter_map(|&id| {
-                self.tree.get_node(id).map(|node| PyNode {
-                    inner: node.clone(),
-                    tree: self.tree.clone(),
-                })
+            .map(|&node| PyNode {
+                inner: node.clone(),
+                tree: self.tree.clone(),
             })
             .collect()
     }

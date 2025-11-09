@@ -71,16 +71,6 @@ pub struct Node {
 }
 
 impl Node {
-    /// Get the parent node ID
-    pub fn parent_id(&self) -> Option<NodeId> {
-        self.parent
-    }
-
-    /// Get the children node IDs
-    pub fn children_ids(&self) -> &[NodeId] {
-        &self.children
-    }
-
     /// Get all children with a specific dependency relation
     ///
     /// Returns all children that have the specified dependency relation.
@@ -110,6 +100,29 @@ impl Node {
             .iter()
             .filter_map(|&id| tree.get_node(id))
             .filter(|child| child.deprel == deprel)
+            .collect()
+    }
+
+    /// Get the parent node
+    ///
+    /// Returns the parent node if one exists.
+    ///
+    /// # Arguments
+    /// * `tree` - Reference to the tree containing this node
+    pub fn parent<'a>(&self, tree: &'a Tree) -> Option<&'a Node> {
+        self.parent.and_then(|parent_id| tree.get_node(parent_id))
+    }
+
+    /// Get all children nodes
+    ///
+    /// Returns all children of this node.
+    ///
+    /// # Arguments
+    /// * `tree` - Reference to the tree containing this node
+    pub fn children<'a>(&self, tree: &'a Tree) -> Vec<&'a Node> {
+        self.children
+            .iter()
+            .filter_map(|&id| tree.get_node(id))
             .collect()
     }
 
@@ -219,20 +232,18 @@ impl Tree {
         }
     }
 
-    /// Get the children of a node
-    pub fn children(&self, node_id: NodeId) -> Vec<&Node> {
+    /// Get the parent ID of a node
+    pub fn parent_id(&self, node_id: NodeId) -> Option<NodeId> {
+        self.get_node(node_id).and_then(|node| node.parent)
+    }
+
+    /// Get the children IDs of a node
+    pub fn children_ids(&self, node_id: NodeId) -> Vec<NodeId> {
         if let Some(node) = self.get_node(node_id) {
-            node.children.iter().map(|&id| &self.nodes[id]).collect()
+            node.children.clone()
         } else {
             Vec::new()
         }
-    }
-
-    /// Get the parent of a node
-    pub fn parent(&self, node_id: NodeId) -> Option<&Node> {
-        self.get_node(node_id)
-            .and_then(|node| node.parent)
-            .and_then(|parent_id| self.get_node(parent_id))
     }
 
     /// Get all nodes in the tree
@@ -272,8 +283,8 @@ mod tests {
         tree.set_parent(1, 0);
 
         assert_eq!(tree.nodes.len(), 2);
-        assert_eq!(tree.parent(1).unwrap().id, 0);
-        assert_eq!(tree.children(0).len(), 1);
+        assert_eq!(tree.parent_id(1), Some(0));
+        assert_eq!(tree.children_ids(0).len(), 1);
     }
 
     #[test]
