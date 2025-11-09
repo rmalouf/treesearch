@@ -22,10 +22,10 @@ fn main() {
     tree.add_node(Node::new(3, "write", "write", "VERB", "mark"));
     tree.add_node(Node::new(4, "code", "code", "NOUN", "obj"));
 
-    tree.set_parent(1, 0).unwrap(); // I -> help
-    tree.set_parent(2, 0).unwrap(); // to -> help
-    tree.set_parent(3, 2).unwrap(); // write -> to
-    tree.set_parent(4, 3).unwrap(); // code -> write
+    tree.set_parent(1, 0); // I -> help
+    tree.set_parent(2, 0); // to -> help
+    tree.set_parent(3, 2); // write -> to
+    tree.set_parent(4, 3); // code -> write
 
     // Parse a query instead of manually building a Pattern!
     let query = r#"
