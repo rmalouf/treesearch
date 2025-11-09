@@ -229,6 +229,8 @@ pub fn compile_pattern(pattern: Pattern) -> (Vec<Instruction>, usize, Vec<String
 mod tests {
     use super::*;
     use crate::pattern::{Constraint, Pattern, PatternEdge, PatternElement, RelationType};
+    use crate::tree::{Node, Tree};
+    use crate::vm::VM;
 
     #[test]
     fn test_selectivity_estimation() {
@@ -449,6 +451,63 @@ mod tests {
         let match_result = result.unwrap();
         assert_eq!(match_result.bindings[&0], 0); // verb
         assert_eq!(match_result.bindings[&1], 2); // adj
+    }
+
+    #[test]
+    fn test_unconstrained_deprel_matches_any() {
+        // Test that unconstrained edges (label: None) match any deprel
+        let mut pattern = Pattern::new();
+        pattern.add_element(PatternElement::new(
+            "parent",
+            Constraint::POS("VERB".to_string()),
+        ));
+        pattern.add_element(PatternElement::new(
+            "child",
+            Constraint::POS("NOUN".to_string()),
+        ));
+        pattern.add_edge(PatternEdge {
+            from: "parent".to_string(),
+            to: "child".to_string(),
+            relation: RelationType::Child,
+            label: None, // Unconstrained - should match any deprel
+        });
+
+        let (opcodes, _anchor, _var_names) = compile_pattern(pattern);
+
+        // Verify no CheckDepRel instruction is generated
+        assert!(!opcodes
+            .iter()
+            .any(|op| matches!(op, Instruction::CheckDepRel(_))));
+
+        // Test tree 1: with nsubj relation
+        let mut tree1 = Tree::new();
+        tree1.add_node(Node::new(0, "runs", "run", "VERB", "root"));
+        tree1.add_node(Node::new(1, "dog", "dog", "NOUN", "nsubj"));
+        tree1.set_parent(1, 0);
+
+        let vm1 = VM::new(opcodes.clone(), Vec::new());
+        let result1 = vm1.execute(&tree1, 0);
+        assert!(result1.is_some(), "Should match tree with nsubj");
+
+        // Test tree 2: with obj relation (different deprel)
+        let mut tree2 = Tree::new();
+        tree2.add_node(Node::new(0, "sees", "see", "VERB", "root"));
+        tree2.add_node(Node::new(1, "cat", "cat", "NOUN", "obj"));
+        tree2.set_parent(1, 0);
+
+        let vm2 = VM::new(opcodes.clone(), Vec::new());
+        let result2 = vm2.execute(&tree2, 0);
+        assert!(result2.is_some(), "Should match tree with obj");
+
+        // Test tree 3: with obl relation (yet another deprel)
+        let mut tree3 = Tree::new();
+        tree3.add_node(Node::new(0, "goes", "go", "VERB", "root"));
+        tree3.add_node(Node::new(1, "store", "store", "NOUN", "obl"));
+        tree3.set_parent(1, 0);
+
+        let vm3 = VM::new(opcodes, Vec::new());
+        let result3 = vm3.execute(&tree3, 0);
+        assert!(result3.is_some(), "Should match tree with obl");
     }
 
     #[test]

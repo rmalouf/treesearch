@@ -7,8 +7,8 @@ statement = { node_decl | edge_decl }
 // Node declaration: Name [constraint, constraint];
 node_decl = { ident ~ "[" ~ constraint_list ~ "]" ~ ";" }
 
-// Edge declaration: Parent -[label]-> Child;
-edge_decl = { ident ~ "-[" ~ edge_label ~ "]->" ~ ident ~ ";" }
+// Edge declaration: Parent -[label]-> Child; or Parent -> Child;
+edge_decl = { ident ~ ("-[" ~ edge_label ~ "]->" | "->") ~ ident ~ ";" }
 
 // Constraint list (can be empty)
 constraint_list = { (constraint ~ ("," ~ constraint)*)? }
