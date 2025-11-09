@@ -123,9 +123,9 @@ fn parse_comment(
     let comment = comment.trim();
 
     // Check for key = value format
-    if let Some(eq_pos) = comment.find('=') {
-        let key = comment[..eq_pos].trim();
-        let value = comment[eq_pos + 1..].trim();
+    if let Some((key, value)) = comment.split_once('=') {
+        let key = key.trim();
+        let value = value.trim();
 
         if key == "text" {
             *sentence_text = Some(value.to_string());
