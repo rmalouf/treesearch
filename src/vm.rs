@@ -413,11 +413,16 @@ impl VM {
             }
 
             Instruction::MoveToParent => {
-                if let Some(parent_id) = tree.parent_id(state.current_node) {
-                    state.current_node = parent_id;
-                    Ok(false)
-                } else {
-                    Err(())
+                match tree.parent_id(state.current_node) {
+                    Ok(Some(parent_id)) => {
+                        state.current_node = parent_id;
+                        Ok(false)
+                    }
+                    Ok(None) => Err(()), // Node has no parent - matching fails
+                    Err(e) => panic!(
+                        "VM bug: MoveToParent called on non-existent node {}: {}",
+                        state.current_node, e
+                    ),
                 }
             }
 
@@ -439,63 +444,78 @@ impl VM {
             }
 
             Instruction::MoveToChild(constraint_opt) => {
-                if let Some(node) = tree.get_node(state.current_node) {
-                    // Get all matching children
-                    let matching_children: Vec<NodeId> = node
-                        .children
-                        .iter()
-                        .filter_map(|&child_id| {
-                            tree.get_node(child_id).and_then(|child| {
-                                let matches = if let Some(constraint) = constraint_opt {
-                                    Self::check_constraint(child, constraint)
-                                } else {
-                                    true // No constraint means any child matches
-                                };
-                                if matches {
-                                    Some(child_id)
-                                } else {
-                                    None
-                                }
-                            })
+                let node = tree
+                    .get_node(state.current_node)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "VM bug: MoveToChild called on non-existent node {}",
+                            state.current_node
+                        )
+                    });
+
+                // Get all matching children
+                let matching_children: Vec<NodeId> = node
+                    .children
+                    .iter()
+                    .filter_map(|&child_id| {
+                        tree.get_node(child_id).and_then(|child| {
+                            let matches = if let Some(constraint) = constraint_opt {
+                                Self::check_constraint(child, constraint)
+                            } else {
+                                true // No constraint means any child matches
+                            };
+                            if matches {
+                                Some(child_id)
+                            } else {
+                                None
+                            }
                         })
-                        .collect();
+                    })
+                    .collect();
 
-                    if matching_children.is_empty() {
-                        return Err(());
-                    }
-
-                    // Order by leftmost position
-                    let ordered = Self::order_alternatives(matching_children, tree);
-
-                    // Use first match
-                    state.current_node = ordered[0];
-
-                    // Create choice point if there are alternatives
-                    if ordered.len() > 1 {
-                        Self::create_choice_point(state, ordered[1..].to_vec());
-                    }
-
-                    Ok(false)
-                } else {
-                    Err(())
+                if matching_children.is_empty() {
+                    return Err(());
                 }
+
+                // Order by leftmost position
+                let ordered = Self::order_alternatives(matching_children, tree);
+
+                // Use first match
+                state.current_node = ordered[0];
+
+                // Create choice point if there are alternatives
+                if ordered.len() > 1 {
+                    Self::create_choice_point(state, ordered[1..].to_vec());
+                }
+
+                Ok(false)
             }
 
             Instruction::MoveLeft => {
                 // Move to left sibling (previous sibling in parent's children list)
-                if let Some(current) = tree.get_node(state.current_node) {
-                    if let Some(parent_id) = current.parent {
-                        if let Some(parent) = tree.get_node(parent_id) {
-                            if let Some(pos) = parent
-                                .children
-                                .iter()
-                                .position(|&id| id == state.current_node)
-                            {
-                                if pos > 0 {
-                                    state.current_node = parent.children[pos - 1];
-                                    return Ok(false);
-                                }
-                            }
+                let current = tree.get_node(state.current_node).unwrap_or_else(|| {
+                    panic!(
+                        "VM bug: MoveLeft called on non-existent node {}",
+                        state.current_node
+                    )
+                });
+
+                if let Some(parent_id) = current.parent {
+                    let parent = tree.get_node(parent_id).unwrap_or_else(|| {
+                        panic!(
+                            "VM bug: Parent node {} does not exist for node {}",
+                            parent_id, state.current_node
+                        )
+                    });
+
+                    if let Some(pos) = parent
+                        .children
+                        .iter()
+                        .position(|&id| id == state.current_node)
+                    {
+                        if pos > 0 {
+                            state.current_node = parent.children[pos - 1];
+                            return Ok(false);
                         }
                     }
                 }
@@ -504,19 +524,29 @@ impl VM {
 
             Instruction::MoveRight => {
                 // Move to right sibling (next sibling in parent's children list)
-                if let Some(current) = tree.get_node(state.current_node) {
-                    if let Some(parent_id) = current.parent {
-                        if let Some(parent) = tree.get_node(parent_id) {
-                            if let Some(pos) = parent
-                                .children
-                                .iter()
-                                .position(|&id| id == state.current_node)
-                            {
-                                if pos + 1 < parent.children.len() {
-                                    state.current_node = parent.children[pos + 1];
-                                    return Ok(false);
-                                }
-                            }
+                let current = tree.get_node(state.current_node).unwrap_or_else(|| {
+                    panic!(
+                        "VM bug: MoveRight called on non-existent node {}",
+                        state.current_node
+                    )
+                });
+
+                if let Some(parent_id) = current.parent {
+                    let parent = tree.get_node(parent_id).unwrap_or_else(|| {
+                        panic!(
+                            "VM bug: Parent node {} does not exist for node {}",
+                            parent_id, state.current_node
+                        )
+                    });
+
+                    if let Some(pos) = parent
+                        .children
+                        .iter()
+                        .position(|&id| id == state.current_node)
+                    {
+                        if pos + 1 < parent.children.len() {
+                            state.current_node = parent.children[pos + 1];
+                            return Ok(false);
                         }
                     }
                 }
@@ -655,8 +685,8 @@ mod tests {
         tree.add_node(root);
         tree.add_node(child1);
         tree.add_node(child2);
-        tree.set_parent(1, 0);
-        tree.set_parent(2, 0);
+        tree.set_parent(1, 0).unwrap();
+        tree.set_parent(2, 0).unwrap();
 
         tree
     }
@@ -1012,14 +1042,14 @@ mod tests {
         tree.add_node(Node::new(7, "extremely", "extremely", "ADV", "advmod"));
         tree.add_node(Node::new(8, "incredibly", "incredibly", "ADV", "advmod"));
 
-        tree.set_parent(1, 0); // dog -> runs
-        tree.set_parent(2, 0); // quickly -> runs
-        tree.set_parent(3, 1); // big -> dog
-        tree.set_parent(4, 2); // very -> quickly
-        tree.set_parent(5, 4); // much -> very
-        tree.set_parent(6, 5); // too -> much
-        tree.set_parent(7, 6); // extremely -> too
-        tree.set_parent(8, 7); // incredibly -> extremely
+        tree.set_parent(1, 0).unwrap(); // dog -> runs
+        tree.set_parent(2, 0).unwrap(); // quickly -> runs
+        tree.set_parent(3, 1).unwrap(); // big -> dog
+        tree.set_parent(4, 2).unwrap(); // very -> quickly
+        tree.set_parent(5, 4).unwrap(); // much -> very
+        tree.set_parent(6, 5).unwrap(); // too -> much
+        tree.set_parent(7, 6).unwrap(); // extremely -> too
+        tree.set_parent(8, 7).unwrap(); // incredibly -> extremely
 
         tree
     }
@@ -1275,10 +1305,10 @@ mod tests {
         tree.add_node(Node::new(3, "dog", "dog", "NOUN", "nsubj"));
         tree.add_node(Node::new(4, "quickly", "quickly", "ADV", "advmod"));
 
-        tree.set_parent(1, 0);
-        tree.set_parent(2, 0);
-        tree.set_parent(3, 0);
-        tree.set_parent(4, 0);
+        tree.set_parent(1, 0).unwrap();
+        tree.set_parent(2, 0).unwrap();
+        tree.set_parent(3, 0).unwrap();
+        tree.set_parent(4, 0).unwrap();
 
         tree
     }
@@ -1403,11 +1433,11 @@ mod tests {
         tree.add_node(Node::new(4, "gc2", "gc2", "ADJ", "amod"));
         tree.add_node(Node::new(5, "gc3", "gc3", "ADJ", "amod"));
 
-        tree.set_parent(1, 0);
-        tree.set_parent(2, 0);
-        tree.set_parent(3, 1);
-        tree.set_parent(4, 1);
-        tree.set_parent(5, 2);
+        tree.set_parent(1, 0).unwrap();
+        tree.set_parent(2, 0).unwrap();
+        tree.set_parent(3, 1).unwrap();
+        tree.set_parent(4, 1).unwrap();
+        tree.set_parent(5, 2).unwrap();
 
         // Pattern: VERB -> NOUN -> ADJ, but check that grandchild lemma is "gc3"
         // Should try: child1->gc1 (fail), child1->gc2 (fail on lemma), child2->gc5 (success)
@@ -1445,11 +1475,11 @@ mod tests {
         tree.add_node(Node::new(4, "small", "small", "ADJ", "amod"));
         tree.add_node(Node::new(5, "quick", "quick", "ADJ", "amod"));
 
-        tree.set_parent(1, 0);
-        tree.set_parent(2, 0);
-        tree.set_parent(3, 1);
-        tree.set_parent(4, 1);
-        tree.set_parent(5, 2);
+        tree.set_parent(1, 0).unwrap();
+        tree.set_parent(2, 0).unwrap();
+        tree.set_parent(3, 1).unwrap();
+        tree.set_parent(4, 1).unwrap();
+        tree.set_parent(5, 2).unwrap();
 
         // Scan for ADJ descendants, but require specific lemma
         // Should try nodes in order: 3, 4, 5 (BFS, then leftmost at same depth)
@@ -1491,8 +1521,8 @@ mod tests {
         tree.add_node(noun2);
 
         // Both NOUNs are children of root
-        tree.set_parent(1, 0); // NodeId 1 (position 1) -> root
-        tree.set_parent(2, 0); // NodeId 2 (position 0) -> root
+        tree.set_parent(1, 0).unwrap(); // NodeId 1 (position 1) -> root
+        tree.set_parent(2, 0).unwrap(); // NodeId 2 (position 0) -> root
 
         // Query: find VERB with NOUN child
         // Should match the LEFTMOST NOUN by position (NodeId 2, position 0)

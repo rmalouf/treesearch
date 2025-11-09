@@ -166,7 +166,8 @@ fn parse_tree(
     for i in 0..node_count {
         if let Some(parent_id) = tree.nodes[i].parent {
             if parent_id < node_count {
-                tree.set_parent(i, parent_id);
+                tree.set_parent(i, parent_id)
+                    .expect("Both node IDs were validated to be in range");
             }
         } else {
             // Node with no parent is root

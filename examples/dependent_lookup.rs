@@ -33,14 +33,14 @@ fn main() {
     tree.add_node(Node::new(8, "the", "the", "DET", "det"));
 
     // Set up tree structure
-    tree.set_parent(1, 0); // dog -> chased
-    tree.set_parent(2, 1); // The -> dog
-    tree.set_parent(3, 0); // quickly -> chased
-    tree.set_parent(4, 0); // cat -> chased
-    tree.set_parent(5, 4); // the -> cat
-    tree.set_parent(6, 0); // and -> chased
-    tree.set_parent(7, 4); // mouse -> cat (coordination)
-    tree.set_parent(8, 7); // the -> mouse
+    tree.set_parent(1, 0).unwrap(); // dog -> chased
+    tree.set_parent(2, 1).unwrap(); // The -> dog
+    tree.set_parent(3, 0).unwrap(); // quickly -> chased
+    tree.set_parent(4, 0).unwrap(); // cat -> chased
+    tree.set_parent(5, 4).unwrap(); // the -> cat
+    tree.set_parent(6, 0).unwrap(); // and -> chased
+    tree.set_parent(7, 4).unwrap(); // mouse -> cat (coordination)
+    tree.set_parent(8, 7).unwrap(); // the -> mouse
 
     println!("Sentence: The dog quickly chased the cat and the mouse\n");
 

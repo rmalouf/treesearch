@@ -381,7 +381,7 @@ mod tests {
         let mut tree = Tree::new();
         tree.add_node(Node::new(0, "runs", "run", "VERB", "root"));
         tree.add_node(Node::new(1, "dog", "dog", "NOUN", "nsubj"));
-        tree.set_parent(1, 0);
+        tree.set_parent(1, 0).unwrap();
 
         // Create pattern: VERB -[nsubj]-> NOUN
         let mut pattern = Pattern::new();
@@ -423,8 +423,8 @@ mod tests {
         tree.add_node(Node::new(0, "runs", "run", "VERB", "root"));
         tree.add_node(Node::new(1, "dog", "dog", "NOUN", "nsubj"));
         tree.add_node(Node::new(2, "big", "big", "ADJ", "amod"));
-        tree.set_parent(1, 0);
-        tree.set_parent(2, 1);
+        tree.set_parent(1, 0).unwrap();
+        tree.set_parent(2, 1).unwrap();
 
         // Create pattern: VERB ... ADJ (descendant relation)
         let mut pattern = Pattern::new();
@@ -483,7 +483,7 @@ mod tests {
         let mut tree1 = Tree::new();
         tree1.add_node(Node::new(0, "runs", "run", "VERB", "root"));
         tree1.add_node(Node::new(1, "dog", "dog", "NOUN", "nsubj"));
-        tree1.set_parent(1, 0);
+        tree1.set_parent(1, 0).unwrap();
 
         let vm1 = VM::new(opcodes.clone(), Vec::new());
         let result1 = vm1.execute(&tree1, 0);
@@ -493,7 +493,7 @@ mod tests {
         let mut tree2 = Tree::new();
         tree2.add_node(Node::new(0, "sees", "see", "VERB", "root"));
         tree2.add_node(Node::new(1, "cat", "cat", "NOUN", "obj"));
-        tree2.set_parent(1, 0);
+        tree2.set_parent(1, 0).unwrap();
 
         let vm2 = VM::new(opcodes.clone(), Vec::new());
         let result2 = vm2.execute(&tree2, 0);
@@ -503,7 +503,7 @@ mod tests {
         let mut tree3 = Tree::new();
         tree3.add_node(Node::new(0, "goes", "go", "VERB", "root"));
         tree3.add_node(Node::new(1, "store", "store", "NOUN", "obl"));
-        tree3.set_parent(1, 0);
+        tree3.set_parent(1, 0).unwrap();
 
         let vm3 = VM::new(opcodes, Vec::new());
         let result3 = vm3.execute(&tree3, 0);
@@ -538,8 +538,8 @@ mod tests {
         tree.add_node(Node::new(0, "help", "help", "VERB", "root"));
         tree.add_node(Node::new(1, "to", "to", "PART", "xcomp"));
         tree.add_node(Node::new(2, "write", "write", "VERB", "obj"));
-        tree.set_parent(1, 0);
-        tree.set_parent(2, 1);
+        tree.set_parent(1, 0).unwrap();
+        tree.set_parent(2, 1).unwrap();
 
         // Create pattern: help -[xcomp]-> to -[obj]-> write
         let mut pattern = Pattern::new();
