@@ -33,7 +33,7 @@ impl PyTree {
 
     /// Get a node by ID
     fn get_node(&self, id: usize) -> Option<PyNode> {
-        self.inner.get_node(id).map(|node| PyNode {
+        self.inner.get_node(id).ok().map(|node| PyNode {
             inner: node.clone(),
             tree: Arc::clone(&self.inner),
         })
@@ -179,7 +179,7 @@ impl PyMatch {
     /// Get the node bound to a variable name
     fn get_node(&self, name: &str) -> Option<PyNode> {
         self.inner.get(name).and_then(|id| {
-            self.tree.get_node(id).map(|node| PyNode {
+            self.tree.get_node(id).ok().map(|node| PyNode {
                 inner: node.clone(),
                 tree: Arc::clone(&self.tree),
             })
@@ -199,7 +199,7 @@ impl PyMatch {
         self.inner
             .iter_named()
             .filter_map(|(name, id)| {
-                self.tree.get_node(id).map(|node| {
+                self.tree.get_node(id).ok().map(|node| {
                     (
                         name.to_string(),
                         PyNode {

@@ -144,9 +144,7 @@ impl VM {
         let mut nodes_with_pos: Vec<(NodeId, usize)> = nodes
             .into_iter()
             .map(|id| {
-                let node = tree
-                    .get_node(id)
-                    .expect("VM bug: node in alternatives does not exist in tree");
+                let node = tree.get_node_unchecked(id);
                 (id, node.position)
             })
             .collect();
@@ -222,10 +220,9 @@ impl VM {
         let mut first_match_depth = None;
 
         // Start with children of the current node at depth 1
-        if let Some(node) = tree.get_node(start_node) {
-            for &child_id in &node.children {
-                queue.push_back((child_id, 1));
-            }
+        let node = tree.get_node_unchecked(start_node);
+        for &child_id in &node.children {
+            queue.push_back((child_id, 1));
         }
 
         visited.insert(start_node);
@@ -250,21 +247,20 @@ impl VM {
             visited.insert(node_id);
 
             // Check if this node matches
-            if let Some(node) = tree.get_node(node_id) {
-                if Self::check_constraint(node, constraint) {
-                    matches.push(node_id);
-                    if first_match_depth.is_none() {
-                        first_match_depth = Some(depth);
-                    }
+            let node = tree.get_node_unchecked(node_id);
+            if Self::check_constraint(node, constraint) {
+                matches.push(node_id);
+                if first_match_depth.is_none() {
+                    first_match_depth = Some(depth);
                 }
+            }
 
-                // Add children to queue for next level
-                // (only if we haven't found matches yet, or we're at the match depth)
-                if first_match_depth.is_none() || first_match_depth == Some(depth) {
-                    for &child_id in &node.children {
-                        if !visited.contains(&child_id) {
-                            queue.push_back((child_id, depth + 1));
-                        }
+            // Add children to queue for next level
+            // (only if we haven't found matches yet, or we're at the match depth)
+            if first_match_depth.is_none() || first_match_depth == Some(depth) {
+                for &child_id in &node.children {
+                    if !visited.contains(&child_id) {
+                        queue.push_back((child_id, depth + 1));
                     }
                 }
             }
@@ -286,7 +282,8 @@ impl VM {
         let mut depth = 0;
 
         // Walk up the parent chain
-        while let Some(node) = tree.get_node(current_id) {
+        loop {
+            let node = tree.get_node_unchecked(current_id);
             if let Some(parent_id) = node.parent {
                 depth += 1;
 
@@ -294,16 +291,13 @@ impl VM {
                     break;
                 }
 
-                if let Some(parent_node) = tree.get_node(parent_id) {
-                    if Self::check_constraint(parent_node, constraint) {
-                        // For ancestors, return only the first (closest) match
-                        // No backtracking needed for ancestor search
-                        return vec![parent_id];
-                    }
-                    current_id = parent_id;
-                } else {
-                    break;
+                let parent_node = tree.get_node_unchecked(parent_id);
+                if Self::check_constraint(parent_node, constraint) {
+                    // For ancestors, return only the first (closest) match
+                    // No backtracking needed for ancestor search
+                    return vec![parent_id];
                 }
+                current_id = parent_id;
             } else {
                 break; // Reached root
             }
@@ -322,14 +316,12 @@ impl VM {
         direction: bool,
     ) -> Vec<NodeId> {
         // Get parent and find position among siblings
-        let parent_id = match tree.get_node(start_node).and_then(|n| n.parent) {
+        let node = tree.get_node_unchecked(start_node);
+        let parent_id = match node.parent {
             Some(id) => id,
             None => return Vec::new(),
         };
-        let parent = match tree.get_node(parent_id) {
-            Some(p) => p,
-            None => return Vec::new(),
-        };
+        let parent = tree.get_node_unchecked(parent_id);
         let start_pos = match parent.children.iter().position(|&id| id == start_node) {
             Some(p) => p,
             None => return Vec::new(),
@@ -369,9 +361,7 @@ impl VM {
             }
 
             Instruction::CheckLemma(lemma) => {
-                let node = tree
-                    .get_node(state.current_node)
-                    .expect("VM bug: current_node does not exist");
+                let node = tree.get_node_unchecked(state.current_node);
                 if node.lemma == *lemma {
                     Ok(false)
                 } else {
@@ -380,9 +370,7 @@ impl VM {
             }
 
             Instruction::CheckPOS(pos) => {
-                let node = tree
-                    .get_node(state.current_node)
-                    .expect("VM bug: current_node does not exist");
+                let node = tree.get_node_unchecked(state.current_node);
                 if node.pos == *pos {
                     Ok(false)
                 } else {
@@ -391,9 +379,7 @@ impl VM {
             }
 
             Instruction::CheckForm(form) => {
-                let node = tree
-                    .get_node(state.current_node)
-                    .expect("VM bug: current_node does not exist");
+                let node = tree.get_node_unchecked(state.current_node);
                 if node.form == *form {
                     Ok(false)
                 } else {
@@ -402,9 +388,7 @@ impl VM {
             }
 
             Instruction::CheckDepRel(deprel) => {
-                let node = tree
-                    .get_node(state.current_node)
-                    .expect("VM bug: current_node does not exist");
+                let node = tree.get_node_unchecked(state.current_node);
                 if node.deprel == *deprel {
                     Ok(false)
                 } else {
@@ -444,32 +428,20 @@ impl VM {
             }
 
             Instruction::MoveToChild(constraint_opt) => {
-                let node = tree
-                    .get_node(state.current_node)
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "VM bug: MoveToChild called on non-existent node {}",
-                            state.current_node
-                        )
-                    });
+                let node = tree.get_node_unchecked(state.current_node);
 
                 // Get all matching children
                 let matching_children: Vec<NodeId> = node
                     .children
                     .iter()
-                    .filter_map(|&child_id| {
-                        tree.get_node(child_id).and_then(|child| {
-                            let matches = if let Some(constraint) = constraint_opt {
-                                Self::check_constraint(child, constraint)
-                            } else {
-                                true // No constraint means any child matches
-                            };
-                            if matches {
-                                Some(child_id)
-                            } else {
-                                None
-                            }
-                        })
+                    .copied()
+                    .filter(|&child_id| {
+                        let child = tree.get_node_unchecked(child_id);
+                        if let Some(constraint) = constraint_opt {
+                            Self::check_constraint(child, constraint)
+                        } else {
+                            true // No constraint means any child matches
+                        }
                     })
                     .collect();
 
@@ -493,20 +465,10 @@ impl VM {
 
             Instruction::MoveLeft => {
                 // Move to left sibling (previous sibling in parent's children list)
-                let current = tree.get_node(state.current_node).unwrap_or_else(|| {
-                    panic!(
-                        "VM bug: MoveLeft called on non-existent node {}",
-                        state.current_node
-                    )
-                });
+                let current = tree.get_node_unchecked(state.current_node);
 
                 if let Some(parent_id) = current.parent {
-                    let parent = tree.get_node(parent_id).unwrap_or_else(|| {
-                        panic!(
-                            "VM bug: Parent node {} does not exist for node {}",
-                            parent_id, state.current_node
-                        )
-                    });
+                    let parent = tree.get_node_unchecked(parent_id);
 
                     if let Some(pos) = parent
                         .children
@@ -524,20 +486,10 @@ impl VM {
 
             Instruction::MoveRight => {
                 // Move to right sibling (next sibling in parent's children list)
-                let current = tree.get_node(state.current_node).unwrap_or_else(|| {
-                    panic!(
-                        "VM bug: MoveRight called on non-existent node {}",
-                        state.current_node
-                    )
-                });
+                let current = tree.get_node_unchecked(state.current_node);
 
                 if let Some(parent_id) = current.parent {
-                    let parent = tree.get_node(parent_id).unwrap_or_else(|| {
-                        panic!(
-                            "VM bug: Parent node {} does not exist for node {}",
-                            parent_id, state.current_node
-                        )
-                    });
+                    let parent = tree.get_node_unchecked(parent_id);
 
                     if let Some(pos) = parent
                         .children
