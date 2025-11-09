@@ -9,8 +9,8 @@ fn main() {
         CoNLLUReader::from_file("./examples/lw970831.conll".as_ref()).expect("Can't open file");
 
     let query = r#"
-        Verb [pos="VERB"];
-        Xcomp [pos="VERB"];
+        Verb [pos="VERB", lemma="help"];
+        Xcomp [];
         Verb -[xcomp]-> Xcomp;
     "#;
     let searcher = TreeSearcher::new();
@@ -21,11 +21,17 @@ fn main() {
         for result in matches {
             let verb_node = tree.get_node(result.get("Verb").unwrap()).unwrap();
             let xcomp_node = tree.get_node(result.get("Xcomp").unwrap()).unwrap();
-            println!(
-                "{} ({}) -> {} ({})",
-                verb_node.form, verb_node.position, xcomp_node.form, xcomp_node.position
-            );
+            let to_node = xcomp_node.children_by_deprel(&tree, "aux");
+            match to_node.first() {
+                Some(to_node) => println!(
+                    "{} {} {}",
+                    verb_node.form, to_node.form, xcomp_node.form,
+                ),
+                None => println!(
+                    "{} {}",
+                    verb_node.form, xcomp_node.form
+                )
+            }
         }
     }
-    ()
 }
