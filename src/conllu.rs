@@ -16,15 +16,25 @@ use std::path::Path;
 #[derive(Debug)]
 pub struct ParseError {
     pub line_num: Option<usize>,
+    pub line_content: Option<String>,
     pub message: String,
 }
 
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(line_num) = self.line_num {
-            write!(f, "Parse error at line {}: {}", line_num, self.message)
-        } else {
-            write!(f, "Parse error: {}", self.message)
+        match (&self.line_num, &self.line_content) {
+            (Some(num), Some(content)) => {
+                write!(f, "Parse error at line {}: {}\n  Line: {}", num, self.message, content)
+            }
+            (Some(num), None) => {
+                write!(f, "Parse error at line {}: {}", num, self.message)
+            }
+            (None, Some(content)) => {
+                write!(f, "Parse error: {}\n  Line: {}", self.message, content)
+            }
+            (None, None) => {
+                write!(f, "Parse error: {}", self.message)
+            }
         }
     }
 }
@@ -77,6 +87,7 @@ impl<R: BufRead> Iterator for CoNLLUReader<R> {
                 Some(Err(e)) => {
                     return Some(Err(ParseError {
                         line_num: Some(self.line_num),
+                        line_content: None,
                         message: format!("IO error: {}", e),
                     }));
                 }
@@ -150,6 +161,7 @@ fn parse_tree(
             Ok(node) => nodes.push(node),
             Err(mut e) => {
                 e.line_num = Some(line_num);
+                e.line_content = Some(line);
                 return Err(e);
             }
         }
@@ -184,6 +196,7 @@ fn parse_line(line: &str, node_id: NodeId) -> Result<Node, ParseError> {
     if fields.len() != 10 {
         return Err(ParseError {
             line_num: None,
+            line_content: None,
             message: format!("Expected 10 fields, found {}", fields.len()),
         });
     }
@@ -241,18 +254,21 @@ fn parse_id(s: &str) -> Result<TokenId, ParseError> {
     if s.contains('-') {
         return Err(ParseError {
             line_num: None,
+            line_content: None,
             message: format!("Multiword tokens (e.g., {}) are not supported", s),
         });
     }
     if s.contains('.') {
         return Err(ParseError {
             line_num: None,
+            line_content: None,
             message: format!("Empty nodes (e.g., {}) are not supported", s),
         });
     }
 
     s.parse().map_err(|_| ParseError {
         line_num: None,
+        line_content: None,
         message: format!("Invalid token ID: {}", s),
     })
 }
@@ -264,6 +280,7 @@ fn parse_head(s: &str) -> Result<Option<NodeId>, ParseError> {
     } else {
         let head: usize = s.parse().map_err(|_| ParseError {
             line_num: None,
+            line_content: None,
             message: format!("Invalid HEAD: {}", s),
         })?;
         // HEAD is 1-indexed in CoNLL-U, convert to 0-indexed NodeIds
@@ -281,6 +298,7 @@ fn parse_features(s: &str) -> Result<Features, ParseError> {
     for pair in s.split('|') {
         let (k, v) = pair.split_once('=').ok_or_else(|| ParseError {
             line_num: None,
+            line_content: None,
             message: format!("Invalid FEATS pair (missing '='): {}", pair),
         })?;
         feats.insert(k.to_string(), v.to_string());
@@ -300,6 +318,7 @@ fn parse_deps(s: &str) -> Result<Vec<Dep>, ParseError> {
         let Some((head_str, deprel)) = pair.split_once(':') else {
             return Err(ParseError {
                 line_num: None,
+                line_content: None,
                 message: format!("Invalid DEPS pair: {}", pair),
             });
         };
@@ -307,6 +326,7 @@ fn parse_deps(s: &str) -> Result<Vec<Dep>, ParseError> {
         let Ok(head) = head_str.parse::<usize>() else {
             return Err(ParseError {
                 line_num: None,
+                line_content: None,
                 message: format!("Invalid DEPS pair: {}", pair),
             });
         };
@@ -332,6 +352,7 @@ fn parse_misc(s: &str) -> Result<Misc, ParseError> {
     for pair in s.split('|') {
         let (k, v) = pair.split_once('=').ok_or_else(|| ParseError {
             line_num: None,
+            line_content: None,
             message: format!("Invalid MISC pair (missing '='): {}", pair),
         })?;
         misc.insert(k.to_string(), v.to_string());
