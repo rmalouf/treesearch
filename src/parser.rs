@@ -143,7 +143,7 @@ fn parse_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, Par
     }
 }
 
-/// Parse edge declaration: Parent -[label]-> Child;
+/// Parse edge declaration: Parent -[label]-> Child; or Parent -> Child;
 fn parse_edge_decl(pair: pest::iterators::Pair<Rule>) -> Result<PatternEdge, ParseError> {
     let mut inner = pair.into_inner();
 
@@ -155,21 +155,26 @@ fn parse_edge_decl(pair: pest::iterators::Pair<Rule>) -> Result<PatternEdge, Par
         .as_str()
         .to_string();
 
-    let label = inner
-        .next()
-        .ok_or_else(|| ParseError {
-            message: "Expected edge label".to_string(),
-        })?
-        .as_str()
-        .to_string();
+    // The next element could be edge_label (if present) or the target node
+    let next = inner.next().ok_or_else(|| ParseError {
+        message: "Expected edge label or target node".to_string(),
+    })?;
 
-    let to = inner
-        .next()
-        .ok_or_else(|| ParseError {
-            message: "Expected target node in edge".to_string(),
-        })?
-        .as_str()
-        .to_string();
+    let (label, to) = if next.as_rule() == Rule::edge_label {
+        // We have a label, so get the target node next
+        let label_str = next.as_str().to_string();
+        let to_node = inner
+            .next()
+            .ok_or_else(|| ParseError {
+                message: "Expected target node in edge".to_string(),
+            })?
+            .as_str()
+            .to_string();
+        (Some(label_str), to_node)
+    } else {
+        // No label, this is the target node
+        (None, next.as_str().to_string())
+    };
 
     // For now, all edges are Child relations (parent -> child)
     // We can extend this later to support different arrow types
@@ -177,7 +182,7 @@ fn parse_edge_decl(pair: pest::iterators::Pair<Rule>) -> Result<PatternEdge, Par
         from,
         to,
         relation: RelationType::Child,
-        label: Some(label),
+        label,
     })
 }
 
@@ -243,6 +248,46 @@ mod tests {
         assert_eq!(edge.to, "To");
         assert_eq!(edge.relation, RelationType::Child);
         assert_eq!(edge.label, Some("xcomp".to_string()));
+    }
+
+    #[test]
+    fn test_parse_unconstrained_edge() {
+        let query = r#"
+            Parent [];
+            Child [];
+            Parent -> Child;
+        "#;
+        let pattern = parse_query(query).unwrap();
+
+        assert_eq!(pattern.elements.len(), 2);
+        assert_eq!(pattern.edges.len(), 1);
+
+        let edge = &pattern.edges[0];
+        assert_eq!(edge.from, "Parent");
+        assert_eq!(edge.to, "Child");
+        assert_eq!(edge.relation, RelationType::Child);
+        assert_eq!(edge.label, None);
+    }
+
+    #[test]
+    fn test_parse_mixed_edges() {
+        let query = r#"
+            A [];
+            B [];
+            C [];
+            A -[nsubj]-> B;
+            B -> C;
+        "#;
+        let pattern = parse_query(query).unwrap();
+
+        assert_eq!(pattern.elements.len(), 3);
+        assert_eq!(pattern.edges.len(), 2);
+
+        // First edge has a label
+        assert_eq!(pattern.edges[0].label, Some("nsubj".to_string()));
+
+        // Second edge has no label (unconstrained)
+        assert_eq!(pattern.edges[1].label, None);
     }
 
     #[test]
