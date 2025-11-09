@@ -98,7 +98,7 @@ impl Node {
     pub fn children_by_deprel<'a>(&self, tree: &'a Tree, deprel: &str) -> Vec<&'a Node> {
         self.children
             .iter()
-            .filter_map(|&id| tree.get_node(id))
+            .map(|&id| tree.get_node_unchecked(id))
             .filter(|child| child.deprel == deprel)
             .collect()
     }
@@ -110,7 +110,7 @@ impl Node {
     /// # Arguments
     /// * `tree` - Reference to the tree containing this node
     pub fn parent<'a>(&self, tree: &'a Tree) -> Option<&'a Node> {
-        self.parent.and_then(|parent_id| tree.get_node(parent_id))
+        self.parent.map(|parent_id| tree.get_node_unchecked(parent_id))
     }
 
     /// Get all children nodes
@@ -122,7 +122,7 @@ impl Node {
     pub fn children<'a>(&self, tree: &'a Tree) -> Vec<&'a Node> {
         self.children
             .iter()
-            .filter_map(|&id| tree.get_node(id))
+            .map(|&id| tree.get_node_unchecked(id))
             .collect()
     }
 
@@ -217,9 +217,30 @@ impl Tree {
         id
     }
 
-    /// Get a node by ID
-    pub fn get_node(&self, id: NodeId) -> Option<&Node> {
-        self.nodes.get(id)
+    /// Get a node by ID (safe external API)
+    ///
+    /// Returns `Ok(&Node)` if the node exists, or `Err` with a descriptive message if not.
+    /// Use this for external callers where the node ID might be invalid user input.
+    pub fn get_node(&self, id: NodeId) -> Result<&Node, String> {
+        self.nodes.get(id).ok_or_else(|| {
+            format!(
+                "Node with id {} does not exist (tree has {} nodes)",
+                id,
+                self.nodes.len()
+            )
+        })
+    }
+
+    /// Get a node by ID (unchecked internal API)
+    ///
+    /// Returns a reference to the node, panicking if the ID is invalid.
+    /// This is for internal use where invalid IDs indicate bugs, not user errors.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the node ID is out of bounds.
+    pub(crate) fn get_node_unchecked(&self, id: NodeId) -> &Node {
+        &self.nodes[id]
     }
 
     /// Set the parent of a node
@@ -254,9 +275,7 @@ impl Tree {
     /// `Ok(None)` if the node exists but has no parent,
     /// or `Err` if the node doesn't exist.
     pub fn parent_id(&self, node_id: NodeId) -> Result<Option<NodeId>, String> {
-        self.get_node(node_id)
-            .map(|node| node.parent)
-            .ok_or_else(|| format!("Node with id {} does not exist", node_id))
+        self.get_node(node_id).map(|node| node.parent)
     }
 
     /// Get the children IDs of a node
@@ -264,9 +283,7 @@ impl Tree {
     /// Returns `Ok(vec)` with the children IDs if the node exists,
     /// or `Err` if the node doesn't exist.
     pub fn children_ids(&self, node_id: NodeId) -> Result<Vec<NodeId>, String> {
-        self.get_node(node_id)
-            .map(|node| node.children.clone())
-            .ok_or_else(|| format!("Node with id {} does not exist", node_id))
+        self.get_node(node_id).map(|node| node.children.clone())
     }
 
     /// Get all nodes in the tree
