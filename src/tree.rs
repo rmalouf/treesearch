@@ -8,27 +8,8 @@ use std::collections::HashMap;
 /// Unique identifier for a node (index in tree's nodes vector)
 pub type NodeId = usize;
 
-/// Token ID from CoNLL-U (can be single, range, or decimal)
-#[derive(Debug, Clone, PartialEq)]
-pub enum TokenId {
-    /// Normal token: 1, 2, 3, ...
-    Single(usize),
-    /// Multiword token: 1-2, 3-4, ...
-    Range(usize, usize),
-    /// Empty node: 2.1, 3.1, ...
-    Decimal(usize, usize),
-}
-
-impl TokenId {
-    /// Get the primary index (first number in all cases)
-    pub fn primary(&self) -> usize {
-        match self {
-            TokenId::Single(n) => *n,
-            TokenId::Range(start, _) => *start,
-            TokenId::Decimal(n, _) => *n,
-        }
-    }
-}
+/// Token ID from CoNLL-U file (1-based integer)
+pub type TokenId = usize;
 
 /// Morphological features (key=value pairs)
 pub type Features = HashMap<String, String>;
@@ -52,7 +33,7 @@ pub struct Node {
     // Linear position for leftmost semantics (Phase 1)
     pub position: usize,
 
-    // CoNLL-U ID field (can be range or decimal)
+    // CoNLL-U ID field (1-based token number from file)
     pub token_id: TokenId,
 
     // CoNLL-U fields
@@ -130,8 +111,8 @@ impl Node {
     pub fn new(id: NodeId, form: &str, lemma: &str, pos: &str, deprel: &str) -> Self {
         Self {
             id,
-            position: id, // Default: position = id
-            token_id: TokenId::Single(id),
+            position: id,   // Default: position = id
+            token_id: id,   // Default: token_id = id (1-based)
             form: form.to_string(),
             lemma: lemma.to_string(),
             pos: pos.to_string(),
