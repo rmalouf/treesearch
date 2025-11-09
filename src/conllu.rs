@@ -15,13 +15,17 @@ use std::path::Path;
 /// Error during CoNLL-U parsing
 #[derive(Debug)]
 pub struct ParseError {
-    pub line_num: usize,
+    pub line_num: Option<usize>,
     pub message: String,
 }
 
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Parse error at line {}: {}", self.line_num, self.message)
+        if let Some(line_num) = self.line_num {
+            write!(f, "Parse error at line {}: {}", line_num, self.message)
+        } else {
+            write!(f, "Parse error: {}", self.message)
+        }
     }
 }
 
@@ -80,7 +84,7 @@ impl<R: BufRead> Iterator for CoNLLUReader<R> {
                 }
                 Some(Err(e)) => {
                     return Some(Err(ParseError {
-                        line_num: self.line_num,
+                        line_num: Some(self.line_num),
                         message: format!("IO error: {}", e),
                     }));
                 }
@@ -145,9 +149,12 @@ fn parse_tree(
 
     // Parse each line into a Node
     for (line_num, line) in lines {
-        match parse_line(&line, line_num, nodes.len()) {
+        match parse_line(&line, nodes.len()) {
             Ok(node) => nodes.push(node),
-            Err(e) => return Err(e),
+            Err(mut e) => {
+                e.line_num = Some(line_num);
+                return Err(e);
+            }
         }
     }
 
@@ -174,18 +181,18 @@ fn parse_tree(
 
 /// Parse a single CoNLL-U line into a Node
 /// Errors on multiword tokens and empty nodes (not yet supported)
-fn parse_line(line: &str, line_num: usize, node_id: NodeId) -> Result<Node, ParseError> {
+fn parse_line(line: &str, node_id: NodeId) -> Result<Node, ParseError> {
     let fields: Vec<&str> = line.split('\t').collect();
 
     if fields.len() != 10 {
         return Err(ParseError {
-            line_num,
+            line_num: None,
             message: format!("Expected 10 fields, found {}", fields.len()),
         });
     }
 
     // Field 0: ID (1-based token number)
-    let token_id = parse_id(fields[0], line_num)?;
+    let token_id = parse_id(fields[0])?;
 
     // Field 1: FORM
     let form = fields[1].to_string();
@@ -233,22 +240,22 @@ fn parse_line(line: &str, line_num: usize, node_id: NodeId) -> Result<Node, Pars
 }
 
 /// Parse ID field (single integer only)
-fn parse_id(s: &str, line_num: usize) -> Result<TokenId, ParseError> {
+fn parse_id(s: &str) -> Result<TokenId, ParseError> {
     if s.contains('-') {
         return Err(ParseError {
-            line_num,
+            line_num: None,
             message: format!("Multiword tokens (e.g., {}) are not supported", s),
         });
     }
     if s.contains('.') {
         return Err(ParseError {
-            line_num,
+            line_num: None,
             message: format!("Empty nodes (e.g., {}) are not supported", s),
         });
     }
 
     s.parse().map_err(|_| ParseError {
-        line_num,
+        line_num: None,
         message: format!("Invalid token ID: {}", s),
     })
 }
@@ -259,7 +266,7 @@ fn parse_head(s: &str) -> Result<Option<NodeId>, ParseError> {
         Ok(None) // Root node
     } else {
         let head: usize = s.parse().map_err(|_| ParseError {
-            line_num: 0,
+            line_num: None,
             message: format!("Invalid HEAD: {}", s),
         })?;
         // HEAD is 1-indexed in CoNLL-U, convert to 0-indexed NodeIds
@@ -276,7 +283,7 @@ fn parse_features(s: &str) -> Result<Features, ParseError> {
     let mut feats = Features::new();
     for pair in s.split('|') {
         let (k, v) = pair.split_once('=').ok_or_else(|| ParseError {
-            line_num: 0,
+            line_num: None,
             message: format!("Invalid FEATS pair (missing '='): {}", pair),
         })?;
         feats.insert(k.to_string(), v.to_string());
@@ -295,14 +302,14 @@ fn parse_deps(s: &str) -> Result<Vec<Dep>, ParseError> {
     for pair in s.split('|') {
         let Some((head_str, deprel)) = pair.split_once(':') else {
             return Err(ParseError {
-                line_num: 0,
+                line_num: None,
                 message: format!("Invalid DEPS pair: {}", pair),
             });
         };
 
         let Ok(head) = head_str.parse::<usize>() else {
             return Err(ParseError {
-                line_num: 0,
+                line_num: None,
                 message: format!("Invalid DEPS pair: {}", pair),
             });
         };
@@ -327,7 +334,7 @@ fn parse_misc(s: &str) -> Result<Misc, ParseError> {
     let mut misc = Misc::new();
     for pair in s.split('|') {
         let (k, v) = pair.split_once('=').ok_or_else(|| ParseError {
-            line_num: 0,
+            line_num: None,
             message: format!("Invalid MISC pair (missing '='): {}", pair),
         })?;
         misc.insert(k.to_string(), v.to_string());
@@ -387,22 +394,22 @@ mod tests {
 
     #[test]
     fn test_parse_id_single() {
-        assert_eq!(parse_id("1", 1).unwrap(), 1);
-        assert_eq!(parse_id("42", 1).unwrap(), 42);
+        assert_eq!(parse_id("1").unwrap(), 1);
+        assert_eq!(parse_id("42").unwrap(), 42);
     }
 
     #[test]
     fn test_parse_id_range() {
         // Multiword tokens are not supported
-        assert!(parse_id("1-2", 1).is_err());
-        assert!(parse_id("5-7", 1).is_err());
+        assert!(parse_id("1-2").is_err());
+        assert!(parse_id("5-7").is_err());
     }
 
     #[test]
     fn test_parse_id_decimal() {
         // Empty nodes are not supported
-        assert!(parse_id("2.1", 1).is_err());
-        assert!(parse_id("10.5", 1).is_err());
+        assert!(parse_id("2.1").is_err());
+        assert!(parse_id("10.5").is_err());
     }
 
     #[test]
