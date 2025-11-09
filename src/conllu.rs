@@ -73,15 +73,7 @@ impl<R: BufRead> Iterator for CoNLLUReader<R> {
         loop {
             self.line_num += 1;
             match self.lines.next() {
-                None => {
-                    // EOF
-                    if tree_lines.is_empty() {
-                        return None; // No more sentences
-                    } else {
-                        // Last sentence without trailing blank line
-                        break;
-                    }
-                }
+                None => break, // EOF - always break
                 Some(Err(e)) => {
                     return Some(Err(ParseError {
                         line_num: Some(self.line_num),
@@ -92,11 +84,11 @@ impl<R: BufRead> Iterator for CoNLLUReader<R> {
                     let line = line.trim();
 
                     if line.is_empty() {
-                        // Blank line = sentence boundary
+                        // Blank line = sentence boundary if we have content
                         if !tree_lines.is_empty() {
                             break;
                         }
-                        // Skip multiple blank lines
+                        // Skip leading/multiple blank lines
                         continue;
                     }
 
@@ -110,6 +102,11 @@ impl<R: BufRead> Iterator for CoNLLUReader<R> {
                     tree_lines.push((self.line_num, line.to_string()));
                 }
             }
+        }
+
+        // Return None if we broke on EOF with no content
+        if tree_lines.is_empty() {
+            return None;
         }
 
         // Parse the accumulated lines into a tree
