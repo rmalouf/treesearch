@@ -2,7 +2,7 @@
 //!
 //! Run with: cargo run --example query_example
 
-use treesearch::{CoNLLUReader, TreeSearcher};
+use treesearch::{search_query, CoNLLUReader};
 
 fn main() {
     let reader =
@@ -13,11 +13,10 @@ fn main() {
         Xcomp [];
         Verb -[xcomp]-> Xcomp;
     "#;
-    let searcher = TreeSearcher::new();
 
     for tree in reader {
         let tree = tree.expect("Reader error");
-        let matches = searcher.search_query(&tree, query).expect("Search error");
+        let matches = search_query(&tree, query).expect("Search error");
         for result in matches {
             let verb_node = tree.get_node(result.get("Verb").unwrap()).unwrap();
             let xcomp_node = tree.get_node(result.get("Xcomp").unwrap()).unwrap();

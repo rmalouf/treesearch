@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::conllu::CoNLLUReader as RustCoNLLUReader;
-use crate::searcher::TreeSearcher as RustTreeSearcher;
+use crate::searcher::search_query;
 use crate::tree::{Node as RustNode, Tree as RustTree};
 use crate::vm::Match as RustMatch;
 
@@ -231,42 +231,26 @@ impl PyMatch {
     }
 }
 
-/// Tree searcher for pattern matching
-#[pyclass(name = "TreeSearcher")]
-pub struct PyTreeSearcher {
-    inner: RustTreeSearcher,
-}
+/// Search a tree with a query string
+///
+/// Args:
+///     tree: The tree to search
+///     query: The query string (e.g., "Verb [pos='VERB']; Noun [pos='NOUN']; Verb -[nsubj]-> Noun;")
+///
+/// Returns:
+///     List of match results
+#[pyfunction(name = "search_query")]
+fn py_search_query(tree: &PyTree, query: &str) -> PyResult<Vec<PyMatch>> {
+    let Ok(matches) = search_query(&tree.inner, query) else {
+        return Err(PyValueError::new_err(format!("Search error for query: {}", query)));
+    };
 
-#[pymethods]
-impl PyTreeSearcher {
-    /// Create a new tree searcher
-    #[new]
-    fn new() -> Self {
-        PyTreeSearcher {
-            inner: RustTreeSearcher::new(),
-        }
-    }
-
-    /// Search a tree with a query string
-    ///
-    /// Args:
-    ///     tree: The tree to search
-    ///     query: The query string (e.g., "Verb [pos='VERB']; Noun [pos='NOUN']; Verb -[nsubj]-> Noun;")
-    ///
-    /// Returns:
-    ///     List of match results
-    fn search_query(&self, tree: &PyTree, query: &str) -> PyResult<Vec<PyMatch>> {
-        let Ok(matches) = self.inner.search_query(&tree.inner, query) else {
-            return Err(PyValueError::new_err(format!("Search error for query: {}", query)));
-        };
-
-        Ok(matches
-            .map(|m| PyMatch {
-                inner: m,
-                tree: Arc::clone(&tree.inner),
-            })
-            .collect())
-    }
+    Ok(matches
+        .map(|m| PyMatch {
+            inner: m,
+            tree: Arc::clone(&tree.inner),
+        })
+        .collect())
 }
 
 /// CoNLL-U file reader
@@ -327,7 +311,7 @@ fn treesearch(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTree>()?;
     m.add_class::<PyNode>()?;
     m.add_class::<PyMatch>()?;
-    m.add_class::<PyTreeSearcher>()?;
     m.add_class::<PyCoNLLUReader>()?;
+    m.add_function(wrap_pyfunction!(py_search_query, m)?)?;
     Ok(())
 }

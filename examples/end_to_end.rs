@@ -7,7 +7,7 @@
 //!
 //! Run with: cargo run --example end_to_end
 
-use treesearch::{CoNLLUReader, TreeSearcher};
+use treesearch::{search_query, CoNLLUReader};
 
 fn main() {
     println!("=== Treesearch: End-to-End Example ===\n");
@@ -66,10 +66,8 @@ fn main() {
     }
     println!();
 
-    // Step 2: Create searcher
-    println!("🔍 Step 2: Creating searcher...");
-    let searcher = TreeSearcher::new();
-    println!("✅ Searcher ready\n");
+    // Step 2: Ready to search
+    println!("🔍 Step 2: Ready to search...\n");
 
     // Example queries to demonstrate different features
     let queries = vec![
@@ -114,7 +112,7 @@ fn main() {
         println!();
 
         // Step 3: Execute query
-        match searcher.search_query(&tree, query) {
+        match search_query(&tree, query) {
             Ok(matches) => {
                 let matches: Vec<_> = matches.collect();
                 println!("✅ Found {} match(es)", matches.len());

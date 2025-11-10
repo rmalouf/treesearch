@@ -37,129 +37,91 @@ impl std::fmt::Display for SearchError {
 
 impl std::error::Error for SearchError {}
 
-/// Tree searcher combining index lookup and VM execution
-pub struct TreeSearcher {
-    // Stateless - can be reused across searches
+/// Search a tree with a pre-compiled pattern
+///
+/// Returns an iterator over all matches in the tree.
+pub fn search<'a>(tree: &'a Tree, pattern: Pattern) -> impl Iterator<Item = Match> + 'a {
+    // Build index from tree
+    let index = TreeIndex::build(tree);
+
+    // Compile pattern to opcodes
+    let (opcodes, anchor_idx, var_names) = compile_pattern(pattern.clone());
+
+    // Get candidates from index based on anchor element
+    let candidates = get_candidates(tree, &pattern, anchor_idx, &index);
+
+    // Execute VM on each candidate
+    let vm = VM::new(opcodes, var_names);
+    candidates
+        .into_iter()
+        .flat_map(move |node_id| vm.execute(tree, node_id))
 }
 
-impl TreeSearcher {
-    /// Create a new searcher
-    pub fn new() -> Self {
-        Self {}
+/// Search a tree with a query string
+///
+/// Parses the query and then searches the tree.
+pub fn search_query<'a>(
+    tree: &'a Tree,
+    query: &str,
+) -> Result<impl Iterator<Item = Match> + 'a, SearchError> {
+    let pattern = parse_query(query)?;
+    Ok(search(tree, pattern))
+}
+
+/// Get candidate nodes from index based on anchor element
+fn get_candidates(
+    tree: &Tree,
+    pattern: &Pattern,
+    anchor_idx: usize,
+    index: &TreeIndex,
+) -> Vec<NodeId> {
+    if pattern.elements.is_empty() {
+        return Vec::new();
     }
 
-    /// Search a tree with a pre-compiled pattern
-    ///
-    /// Returns an iterator over all matches in the tree.
-    pub fn search<'a>(
-        &self,
-        tree: &'a Tree,
-        pattern: &Pattern,
-    ) -> impl Iterator<Item = Match> + 'a {
-        // Build index from tree
-        let index = TreeIndex::build(tree);
+    let anchor_element = &pattern.elements[anchor_idx];
+    let constraint = &anchor_element.constraints;
 
-        // Compile pattern to opcodes
-        let (opcodes, anchor_idx, var_names) = compile_pattern(pattern.clone());
-
-        // Get candidates from index based on anchor element
-        let candidates = self.get_candidates(tree, pattern, anchor_idx, &index);
-
-        // Execute VM on each candidate
-        let vm = VM::new(opcodes, var_names);
-        candidates
-            .into_iter()
-            .flat_map(move |node_id| vm.execute(tree, node_id))
-    }
-
-    /// Search a tree with a query string
-    ///
-    /// Parses the query and then searches the tree.
-    pub fn search_query<'a>(
-        &self,
-        tree: &'a Tree,
-        query: &str,
-    ) -> Result<impl Iterator<Item = Match> + 'a, SearchError> {
-        let pattern = parse_query(query)?;
-
-        // Build index from tree
-        let index = TreeIndex::build(tree);
-
-        // Compile pattern to opcodes
-        let (opcodes, anchor_idx, var_names) = compile_pattern(pattern.clone());
-
-        // Get candidates from index based on anchor element
-        let candidates = self.get_candidates(tree, &pattern, anchor_idx, &index);
-
-        // Execute VM on each candidate
-        let vm = VM::new(opcodes, var_names);
-        Ok(candidates
-            .into_iter()
-            .flat_map(move |node_id| vm.execute(tree, node_id)))
-    }
-
-    /// Get candidate nodes from index based on anchor element
-    fn get_candidates(
-        &self,
-        tree: &Tree,
-        pattern: &Pattern,
-        anchor_idx: usize,
-        index: &TreeIndex,
-    ) -> Vec<NodeId> {
-        if pattern.elements.is_empty() {
-            return Vec::new();
-        }
-
-        let anchor_element = &pattern.elements[anchor_idx];
-        let constraint = &anchor_element.constraints;
-
-        // Query index based on constraint type
-        match Self::get_candidates_from_constraint(constraint, index) {
-            Some(candidates) => candidates.to_vec(),
-            None => {
-                // No specific constraint - return all nodes
-                (0..tree.nodes.len()).collect()
-            }
+    // Query index based on constraint type
+    match get_candidates_from_constraint(constraint, index) {
+        Some(candidates) => candidates.to_vec(),
+        None => {
+            // No specific constraint - return all nodes
+            (0..tree.nodes.len()).collect()
         }
     }
+}
 
-    /// Get candidates from index based on constraint
-    fn get_candidates_from_constraint<'a>(
-        constraint: &Constraint,
-        index: &'a TreeIndex,
-    ) -> Option<&'a [NodeId]> {
-        match constraint {
-            Constraint::Lemma(lemma) => index.get_by_lemma(lemma),
-            Constraint::POS(pos) => index.get_by_pos(pos),
-            Constraint::Form(form) => index.get_by_form(form),
-            Constraint::DepRel(deprel) => index.get_by_deprel(deprel),
-            Constraint::And(constraints) => {
-                // For And, use the most selective constraint
-                // Try lemma/form first (most selective), then POS/deprel
-                for c in constraints {
-                    if let Some(candidates) = Self::get_candidates_from_constraint(c, index) {
-                        return Some(candidates);
-                    }
+/// Get candidates from index based on constraint
+fn get_candidates_from_constraint<'a>(
+    constraint: &Constraint,
+    index: &'a TreeIndex,
+) -> Option<&'a [NodeId]> {
+    match constraint {
+        Constraint::Lemma(lemma) => index.get_by_lemma(lemma),
+        Constraint::POS(pos) => index.get_by_pos(pos),
+        Constraint::Form(form) => index.get_by_form(form),
+        Constraint::DepRel(deprel) => index.get_by_deprel(deprel),
+        Constraint::And(constraints) => {
+            // For And, use the most selective constraint
+            // Try lemma/form first (most selective), then POS/deprel
+            for c in constraints {
+                if let Some(candidates) = get_candidates_from_constraint(c, index) {
+                    return Some(candidates);
                 }
+            }
+            None
+        }
+        Constraint::Or(constraints) => {
+            // For Or, we'd need to union all candidates
+            // For now, just use the first constraint
+            if let Some(c) = constraints.first() {
+                get_candidates_from_constraint(c, index)
+            } else {
                 None
             }
-            Constraint::Or(constraints) => {
-                // For Or, we'd need to union all candidates
-                // For now, just use the first constraint
-                if let Some(c) = constraints.first() {
-                    Self::get_candidates_from_constraint(c, index)
-                } else {
-                    None
-                }
-            }
-            Constraint::Any => None, // No filtering
         }
-    }
-}
-
-impl Default for TreeSearcher {
-    fn default() -> Self {
-        Self::new()
+        Constraint::Any => None, // No filtering
     }
 }
 
@@ -190,11 +152,10 @@ mod tests {
     #[test]
     fn test_search_simple_query() {
         let tree = create_test_tree();
-        let searcher = TreeSearcher::new();
 
         // Query for VERB nodes
         let query = r#"V [pos="VERB"];"#;
-        let matches: Vec<_> = searcher.search_query(&tree, query).unwrap().collect();
+        let matches: Vec<_> = search_query(&tree, query).unwrap().collect();
 
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].bindings[&0], 0); // "runs"
@@ -203,7 +164,6 @@ mod tests {
     #[test]
     fn test_search_with_edge() {
         let tree = create_test_tree();
-        let searcher = TreeSearcher::new();
 
         // Query for VERB with NOUN child
         let query = r#"
@@ -211,7 +171,7 @@ mod tests {
             N [pos="NOUN"];
             V -[nsubj]-> N;
         "#;
-        let matches: Vec<_> = searcher.search_query(&tree, query).unwrap().collect();
+        let matches: Vec<_> = search_query(&tree, query).unwrap().collect();
 
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].bindings[&0], 0); // V = "runs"
@@ -221,11 +181,10 @@ mod tests {
     #[test]
     fn test_search_with_lemma() {
         let tree = create_test_tree();
-        let searcher = TreeSearcher::new();
 
         // Query for specific lemma
         let query = r#"Dog [lemma="dog"];"#;
-        let matches: Vec<_> = searcher.search_query(&tree, query).unwrap().collect();
+        let matches: Vec<_> = search_query(&tree, query).unwrap().collect();
 
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].bindings[&0], 1); // "dog"
@@ -234,11 +193,10 @@ mod tests {
     #[test]
     fn test_search_no_matches() {
         let tree = create_test_tree();
-        let searcher = TreeSearcher::new();
 
         // Query for something that doesn't exist
         let query = r#"X [pos="PRON"];"#;
-        let matches: Vec<_> = searcher.search_query(&tree, query).unwrap().collect();
+        let matches: Vec<_> = search_query(&tree, query).unwrap().collect();
 
         assert_eq!(matches.len(), 0);
     }
@@ -246,12 +204,11 @@ mod tests {
     #[test]
     fn test_index_filtering() {
         let tree = create_test_tree();
-        let searcher = TreeSearcher::new();
         let index = TreeIndex::build(&tree);
 
         // Get candidates for VERB
         let pattern = parse_query(r#"V [pos="VERB"];"#).unwrap();
-        let candidates = searcher.get_candidates(&tree, &pattern, 0, &index);
+        let candidates = get_candidates(&tree, &pattern, 0, &index);
 
         // Should only return the one VERB node
         assert_eq!(candidates.len(), 1);
@@ -261,7 +218,6 @@ mod tests {
     #[test]
     fn test_search_complex_pattern() {
         let tree = create_test_tree();
-        let searcher = TreeSearcher::new();
 
         // VERB -> NOUN -> ADJ
         let query = r#"
@@ -271,7 +227,7 @@ mod tests {
             V -[nsubj]-> N;
             N -[amod]-> A;
         "#;
-        let matches: Vec<_> = searcher.search_query(&tree, query).unwrap().collect();
+        let matches: Vec<_> = search_query(&tree, query).unwrap().collect();
 
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].bindings[&0], 0); // V = "runs"

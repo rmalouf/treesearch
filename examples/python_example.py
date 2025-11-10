@@ -12,14 +12,11 @@ To run this example:
 2. Run: python examples/python_example.py
 """
 
-from treesearch import CoNLLUReader, TreeSearcher
+from treesearch import CoNLLUReader, search_query
 
 
 def main():
     print("=== Treesearch Python Example ===\n")
-
-    # Create a searcher (reusable across multiple trees)
-    searcher = TreeSearcher()
 
     # Example 1: Simple pattern matching
     print("1. SIMPLE PATTERN MATCHING")
@@ -36,7 +33,7 @@ def main():
 
     match_count = 0
     for tree in reader:
-        for match in searcher.search_query(tree, query1):
+        for match in search_query(tree, query1):
             verb = match.get_node("Verb")
             noun = match.get_node("Noun")
             print(f"   Found: {verb.form} -> {noun.form}")
@@ -59,7 +56,7 @@ def main():
     reader = CoNLLUReader.from_file("examples/lw970831.conll")
 
     for tree in reader:
-        for match in searcher.search_query(tree, query2):
+        for match in search_query(tree, query2):
             verb_node = match.get_node("Verb")
 
             # Get all object dependents
@@ -124,7 +121,7 @@ def main():
     reader = CoNLLUReader.from_file("examples/lw970831.conll")
 
     for tree in reader:
-        matches = searcher.search_query(tree, query4)
+        matches = search_query(tree, query4)
         if matches:
             match = matches[0]  # Get first match
 
