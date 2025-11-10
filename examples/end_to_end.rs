@@ -7,7 +7,7 @@
 //!
 //! Run with: cargo run --example end_to_end
 
-use treesearch::{search_query, CoNLLUReader};
+use treesearch::{CoNLLUReader, search_query};
 
 fn main() {
     println!("=== Treesearch: End-to-End Example ===\n");

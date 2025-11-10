@@ -2,35 +2,25 @@
 //!
 //! Run with: cargo run --example query_example
 
-use treesearch::{search_query, CoNLLUReader};
+use treesearch::{CoNLLUReader, search_query};
 
 fn main() {
     let reader =
         CoNLLUReader::from_file("./examples/lw970831.conll".as_ref()).expect("Can't open file");
 
     let query = r#"
-        Verb [pos="VERB", lemma="help"];
-        Xcomp [];
-        Verb -[xcomp]-> Xcomp;
+        Noun [pos="NOUN"];
+        Adj [pos="ADJ"];
+        Noun -[amod]-> Adj;
     "#;
 
     for tree in reader {
         let tree = tree.expect("Reader error");
         let matches = search_query(&tree, query).expect("Search error");
         for result in matches {
-            let verb_node = tree.get_node(result.get("Verb").unwrap()).unwrap();
-            let xcomp_node = tree.get_node(result.get("Xcomp").unwrap()).unwrap();
-            let to_node = xcomp_node.children_by_deprel(&tree, "aux");
-            match to_node.first() {
-                Some(to_node) => println!(
-                    "{} {} {}",
-                    verb_node.form, to_node.form, xcomp_node.form,
-                ),
-                None => println!(
-                    "{} {}",
-                    verb_node.form, xcomp_node.form
-                )
-            }
+            let verb_node = tree.get_node(result.get("Noun").unwrap()).unwrap();
+            let xcomp_node = tree.get_node(result.get("Adj").unwrap()).unwrap();
+            println!("{} -> {}", verb_node.form, xcomp_node.form)
         }
     }
 }

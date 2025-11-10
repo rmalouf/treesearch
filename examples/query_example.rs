@@ -4,7 +4,7 @@
 
 use treesearch::compiler::compile_pattern;
 use treesearch::vm::VM;
-use treesearch::{parse_query, Node, Tree};
+use treesearch::{Node, Tree, parse_query};
 
 fn main() {
     // Create a test tree: "I help to write code"

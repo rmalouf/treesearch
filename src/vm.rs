@@ -143,11 +143,7 @@ impl<'a> MatchIterator<'a> {
 
             Instruction::CheckPOS(pos) => {
                 let node = tree.get_node_unchecked(state.current_node);
-                if node.pos == *pos {
-                    Ok(false)
-                } else {
-                    Err(())
-                }
+                if node.pos == *pos { Ok(false) } else { Err(()) }
             }
 
             Instruction::CheckForm(form) => {
@@ -246,12 +242,10 @@ impl<'a> MatchIterator<'a> {
                         .children
                         .iter()
                         .position(|&id| id == state.current_node)
-                    {
-                        if pos > 0 {
+                        && pos > 0 {
                             state.current_node = parent.children[pos - 1];
                             return Ok(false);
                         }
-                    }
                 }
                 Err(())
             }
@@ -267,12 +261,10 @@ impl<'a> MatchIterator<'a> {
                         .children
                         .iter()
                         .position(|&id| id == state.current_node)
-                    {
-                        if pos + 1 < parent.children.len() {
+                        && pos + 1 < parent.children.len() {
                             state.current_node = parent.children[pos + 1];
                             return Ok(false);
                         }
-                    }
                 }
                 Err(())
             }
@@ -303,8 +295,7 @@ impl<'a> MatchIterator<'a> {
 
             Instruction::ScanDescendants(constraint) => {
                 const MAX_DEPTH: usize = 7; // Default depth limit
-                let matches =
-                    VM::scan_descendants(state.current_node, constraint, tree, MAX_DEPTH);
+                let matches = VM::scan_descendants(state.current_node, constraint, tree, MAX_DEPTH);
 
                 if matches.is_empty() {
                     return Err(());
@@ -434,10 +425,7 @@ pub struct VM {
 impl VM {
     /// Create a new VM with the given opcodes and variable names
     pub fn new(opcodes: Vec<Instruction>, var_names: Vec<String>) -> Self {
-        Self {
-            opcodes,
-            var_names,
-        }
+        Self { opcodes, var_names }
     }
 
     /// Create a choice point with the given alternatives
@@ -524,11 +512,10 @@ impl VM {
 
         while let Some((node_id, depth)) = queue.pop_front() {
             // If we've found matches and we're at a deeper level, stop
-            if let Some(match_depth) = first_match_depth {
-                if depth > match_depth {
+            if let Some(match_depth) = first_match_depth
+                && depth > match_depth {
                     break;
                 }
-            }
 
             // Check depth limit
             if depth > max_depth {

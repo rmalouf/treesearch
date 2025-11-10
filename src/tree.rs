@@ -91,7 +91,8 @@ impl Node {
     /// # Arguments
     /// * `tree` - Reference to the tree containing this node
     pub fn parent<'a>(&self, tree: &'a Tree) -> Option<&'a Node> {
-        self.parent.map(|parent_id| tree.get_node_unchecked(parent_id))
+        self.parent
+            .map(|parent_id| tree.get_node_unchecked(parent_id))
     }
 
     /// Get all children nodes
@@ -111,8 +112,8 @@ impl Node {
     pub fn new(id: NodeId, form: &str, lemma: &str, pos: &str, deprel: &str) -> Self {
         Self {
             id,
-            position: id,   // Default: position = id
-            token_id: id,   // Default: token_id = id (1-based)
+            position: id, // Default: position = id
+            token_id: id, // Default: token_id = id (1-based)
             form: form.to_string(),
             lemma: lemma.to_string(),
             pos: pos.to_string(),
@@ -255,7 +256,7 @@ impl Tree {
     /// `Ok(None)` if the node exists but has no parent,
     /// or `Err` if the node doesn't exist.
     pub fn parent_id(&self, node_id: NodeId) -> Result<Option<NodeId>, String> {
-        self.get_node(node_id).map(|node| node.parent)
+        Ok(self.get_node(node_id)?.parent)
     }
 
     /// Get the children IDs of a node
@@ -263,7 +264,7 @@ impl Tree {
     /// Returns `Ok(vec)` with the children IDs if the node exists,
     /// or `Err` if the node doesn't exist.
     pub fn children_ids(&self, node_id: NodeId) -> Result<Vec<NodeId>, String> {
-        self.get_node(node_id).map(|node| node.children.clone())
+        Ok(self.get_node(node_id)?.children.clone())
     }
 
     /// Get all nodes in the tree

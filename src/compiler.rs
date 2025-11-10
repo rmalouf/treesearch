@@ -472,9 +472,11 @@ mod tests {
         let (opcodes, _anchor, _var_names) = compile_pattern(pattern);
 
         // Verify no CheckDepRel instruction is generated
-        assert!(!opcodes
-            .iter()
-            .any(|op| matches!(op, Instruction::CheckDepRel(_))));
+        assert!(
+            !opcodes
+                .iter()
+                .any(|op| matches!(op, Instruction::CheckDepRel(_)))
+        );
 
         // Test tree 1: with nsubj relation
         let mut tree1 = Tree::new();
