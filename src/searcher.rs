@@ -81,7 +81,21 @@ impl TreeSearcher {
         query: &str,
     ) -> Result<impl Iterator<Item = Match> + 'a, SearchError> {
         let pattern = parse_query(query)?;
-        Ok(self.search(tree, &pattern))
+
+        // Build index from tree
+        let index = TreeIndex::build(tree);
+
+        // Compile pattern to opcodes
+        let (opcodes, anchor_idx, var_names) = compile_pattern(pattern.clone());
+
+        // Get candidates from index based on anchor element
+        let candidates = self.get_candidates(tree, &pattern, anchor_idx, &index);
+
+        // Execute VM on each candidate
+        let vm = VM::new(opcodes, var_names);
+        Ok(candidates
+            .into_iter()
+            .filter_map(move |node_id| vm.execute(tree, node_id)))
     }
 
     /// Get candidate nodes from index based on anchor element
