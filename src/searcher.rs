@@ -69,7 +69,7 @@ impl TreeSearcher {
         let vm = VM::new(opcodes, var_names);
         candidates
             .into_iter()
-            .filter_map(move |node_id| vm.execute(tree, node_id))
+            .flat_map(move |node_id| vm.execute(tree, node_id))
     }
 
     /// Search a tree with a query string
@@ -95,7 +95,7 @@ impl TreeSearcher {
         let vm = VM::new(opcodes, var_names);
         Ok(candidates
             .into_iter()
-            .filter_map(move |node_id| vm.execute(tree, node_id)))
+            .flat_map(move |node_id| vm.execute(tree, node_id)))
     }
 
     /// Get candidate nodes from index based on anchor element

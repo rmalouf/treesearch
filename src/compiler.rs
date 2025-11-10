@@ -365,10 +365,9 @@ mod tests {
 
         let (opcodes, _anchor, _var_names) = compile_pattern(pattern);
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
+        let mut result = vm.execute(&tree, 0);
 
-        assert!(result.is_some());
-        let match_result = result.unwrap();
+        let match_result = result.next().expect("Should have a match");
         assert_eq!(match_result.bindings[&0], 0);
     }
 
@@ -402,10 +401,9 @@ mod tests {
 
         let (opcodes, _anchor, _var_names) = compile_pattern(pattern);
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
+        let mut result = vm.execute(&tree, 0);
 
-        assert!(result.is_some());
-        let match_result = result.unwrap();
+        let match_result = result.next().expect("Should have a match");
         assert_eq!(match_result.bindings[&0], 0); // verb
         assert_eq!(match_result.bindings[&1], 1); // noun
     }
@@ -445,10 +443,9 @@ mod tests {
 
         let (opcodes, _anchor, _var_names) = compile_pattern(pattern);
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
+        let mut result = vm.execute(&tree, 0);
 
-        assert!(result.is_some());
-        let match_result = result.unwrap();
+        let match_result = result.next().expect("Should have a match");
         assert_eq!(match_result.bindings[&0], 0); // verb
         assert_eq!(match_result.bindings[&1], 2); // adj
     }
@@ -486,8 +483,8 @@ mod tests {
         tree1.set_parent(1, 0);
 
         let vm1 = VM::new(opcodes.clone(), Vec::new());
-        let result1 = vm1.execute(&tree1, 0);
-        assert!(result1.is_some(), "Should match tree with nsubj");
+        let mut result1 = vm1.execute(&tree1, 0);
+        assert!(result1.next().is_some(), "Should match tree with nsubj");
 
         // Test tree 2: with obj relation (different deprel)
         let mut tree2 = Tree::new();
@@ -496,8 +493,8 @@ mod tests {
         tree2.set_parent(1, 0);
 
         let vm2 = VM::new(opcodes.clone(), Vec::new());
-        let result2 = vm2.execute(&tree2, 0);
-        assert!(result2.is_some(), "Should match tree with obj");
+        let mut result2 = vm2.execute(&tree2, 0);
+        assert!(result2.next().is_some(), "Should match tree with obj");
 
         // Test tree 3: with obl relation (yet another deprel)
         let mut tree3 = Tree::new();
@@ -506,8 +503,8 @@ mod tests {
         tree3.set_parent(1, 0);
 
         let vm3 = VM::new(opcodes, Vec::new());
-        let result3 = vm3.execute(&tree3, 0);
-        assert!(result3.is_some(), "Should match tree with obl");
+        let mut result3 = vm3.execute(&tree3, 0);
+        assert!(result3.next().is_some(), "Should match tree with obl");
     }
 
     #[test]
@@ -574,10 +571,9 @@ mod tests {
         assert!(anchor == 0 || anchor == 1);
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
+        let mut result = vm.execute(&tree, 0);
 
-        assert!(result.is_some());
-        let match_result = result.unwrap();
+        let match_result = result.next().expect("Should have a match");
         assert_eq!(match_result.bindings[&0], 0); // help
         assert_eq!(match_result.bindings[&1], 1); // to
         assert_eq!(match_result.bindings[&2], 2); // write
