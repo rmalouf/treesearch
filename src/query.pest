@@ -33,4 +33,4 @@ string_inner = @{ (!("\"" | "\\") ~ ANY)* }
 WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
 
 // Comments (optional, useful for query files)
-COMMENT = _{ "//" ~ (!"\n" ~ ANY)* }
+COMMENT = _{ ("//" | "#") ~ (!"\n" ~ ANY)* }

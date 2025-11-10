@@ -3,13 +3,10 @@
 A toolkit for querying linguistic dependency parses at scale.
 
 Example usage:
-    >>> from treesearch import CoNLLUReader, TreeSearcher
+    >>> from treesearch import CoNLLUReader, search_query
     >>>
     >>> # Read trees from a CoNLL-U file
     >>> reader = CoNLLUReader.from_file("corpus.conllu")
-    >>>
-    >>> # Create a searcher
-    >>> searcher = TreeSearcher()
     >>>
     >>> # Search for a pattern
     >>> query = '''
@@ -19,7 +16,7 @@ Example usage:
     ... '''
     >>>
     >>> for tree in reader:
-    ...     for match in searcher.search_query(tree, query):
+    ...     for match in search_query(tree, query):
     ...         verb = match.get_node("Verb")
     ...         noun = match.get_node("Noun")
     ...         print(f"{verb.form} -> {noun.form}")
@@ -33,7 +30,7 @@ try:
         Tree,
         Node,
         Match,
-        TreeSearcher,
+        search_query,
         CoNLLUReader,
     )
 except ImportError as e:
@@ -50,6 +47,6 @@ __all__ = [
     "Tree",
     "Node",
     "Match",
-    "TreeSearcher",
+    "search_query",
     "CoNLLUReader",
 ]
