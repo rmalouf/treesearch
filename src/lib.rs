@@ -21,7 +21,7 @@ pub mod python;
 pub use conllu::CoNLLUReader;
 pub use parser::parse_query;
 pub use pattern::{Pattern, PatternElement};
-pub use searcher::{search, search_query, SearchError};
+pub use searcher::{SearchError, search, search_query};
 pub use tree::{Features, Node, TokenId, Tree};
 pub use vm::{Instruction, Match, VM};
 

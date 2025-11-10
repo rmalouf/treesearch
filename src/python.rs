@@ -242,7 +242,10 @@ impl PyMatch {
 #[pyfunction(name = "search_query")]
 fn py_search_query(tree: &PyTree, query: &str) -> PyResult<Vec<PyMatch>> {
     let Ok(matches) = search_query(&tree.inner, query) else {
-        return Err(PyValueError::new_err(format!("Search error for query: {}", query)));
+        return Err(PyValueError::new_err(format!(
+            "Search error for query: {}",
+            query
+        )));
     };
 
     Ok(matches
@@ -268,7 +271,10 @@ impl PyCoNLLUReader {
     #[staticmethod]
     fn from_file(path: &str) -> PyResult<Self> {
         let Ok(reader) = RustCoNLLUReader::from_file(&PathBuf::from(path)) else {
-            return Err(PyValueError::new_err(format!("Failed to open file: {}", path)));
+            return Err(PyValueError::new_err(format!(
+                "Failed to open file: {}",
+                path
+            )));
         };
         Ok(PyCoNLLUReader { inner: reader })
     }
@@ -277,9 +283,7 @@ impl PyCoNLLUReader {
     fn __iter__(slf: PyRef<Self>) -> PyResult<PyCoNLLUReaderIterator> {
         // We can't clone the reader, so we need to return self
         // The iterator will consume from the same reader
-        Ok(PyCoNLLUReaderIterator {
-            reader: slf.into(),
-        })
+        Ok(PyCoNLLUReaderIterator { reader: slf.into() })
     }
 }
 
@@ -298,7 +302,9 @@ impl PyCoNLLUReaderIterator {
     fn __next__(&mut self, py: Python) -> PyResult<Option<PyTree>> {
         let mut reader = self.reader.borrow_mut(py);
         match reader.inner.next() {
-            Some(Ok(tree)) => Ok(Some(PyTree { inner: Arc::new(tree) })),
+            Some(Ok(tree)) => Ok(Some(PyTree {
+                inner: Arc::new(tree),
+            })),
             Some(Err(e)) => Err(PyValueError::new_err(format!("Parse error: {}", e))),
             None => Ok(None),
         }

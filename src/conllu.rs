@@ -24,7 +24,11 @@ impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match (&self.line_num, &self.line_content) {
             (Some(num), Some(content)) => {
-                write!(f, "Parse error at line {}: {}\n  Line: {}", num, self.message, content)
+                write!(
+                    f,
+                    "Parse error at line {}: {}\n  Line: {}",
+                    num, self.message, content
+                )
             }
             (Some(num), None) => {
                 write!(f, "Parse error at line {}: {}", num, self.message)

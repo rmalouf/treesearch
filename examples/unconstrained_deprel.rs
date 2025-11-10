@@ -1,6 +1,6 @@
 use treesearch::compiler::compile_pattern;
 use treesearch::vm::VM;
-use treesearch::{parse_query, Node, Tree};
+use treesearch::{Node, Tree, parse_query};
 
 fn main() {
     println!("=== Unconstrained Deprel Demo ===\n");
@@ -83,7 +83,8 @@ fn main() {
     let vm = VM::new(opcodes, var_names);
 
     println!("Match result for unconstrained query:");
-    match vm.execute(&tree, 0).next() { // Start at root (runs)
+    match vm.execute(&tree, 0).next() {
+        // Start at root (runs)
         Some(m) => {
             println!("  SUCCESS! Matched:");
             for (var_name, node_id) in m.iter_named() {
