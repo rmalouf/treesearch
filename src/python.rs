@@ -103,9 +103,13 @@ impl PyNode {
 
     /// Get parent node ID
     fn parent_id(&self) -> PyResult<Option<usize>> {
-        self.tree
-            .parent_id(self.inner.id)
-            .map_err(|e| PyValueError::new_err(e))
+        let Ok(parent_id) = self.tree.parent_id(self.inner.id) else {
+            return Err(PyValueError::new_err(format!(
+                "Failed to get parent of node {}",
+                self.inner.id
+            )));
+        };
+        Ok(parent_id)
     }
 
     /// Get parent node
@@ -118,9 +122,13 @@ impl PyNode {
 
     /// Get child node IDs
     fn children_ids(&self) -> PyResult<Vec<usize>> {
-        self.tree
-            .children_ids(self.inner.id)
-            .map_err(|e| PyValueError::new_err(e))
+        let Ok(children_ids) = self.tree.children_ids(self.inner.id) else {
+            return Err(PyValueError::new_err(format!(
+                "Failed to get children of node {}",
+                self.inner.id
+            )));
+        };
+        Ok(children_ids)
     }
 
     /// Get all children nodes
@@ -248,10 +256,9 @@ impl PyTreeSearcher {
     /// Returns:
     ///     List of match results
     fn search_query(&self, tree: &PyTree, query: &str) -> PyResult<Vec<PyMatch>> {
-        let matches = self
-            .inner
-            .search_query(&tree.inner, query)
-            .map_err(|e| PyValueError::new_err(format!("Search error: {}", e)))?;
+        let Ok(matches) = self.inner.search_query(&tree.inner, query) else {
+            return Err(PyValueError::new_err(format!("Search error for query: {}", query)));
+        };
 
         Ok(matches
             .map(|m| PyMatch {
@@ -276,8 +283,9 @@ impl PyCoNLLUReader {
     ///     path: Path to the CoNLL-U file
     #[staticmethod]
     fn from_file(path: &str) -> PyResult<Self> {
-        let reader = RustCoNLLUReader::from_file(&PathBuf::from(path))
-            .map_err(|e| PyValueError::new_err(format!("Failed to open file: {}", e)))?;
+        let Ok(reader) = RustCoNLLUReader::from_file(&PathBuf::from(path)) else {
+            return Err(PyValueError::new_err(format!("Failed to open file: {}", path)));
+        };
         Ok(PyCoNLLUReader { inner: reader })
     }
 

@@ -266,11 +266,14 @@ fn parse_id(s: &str) -> Result<TokenId, ParseError> {
         });
     }
 
-    s.parse().map_err(|_| ParseError {
-        line_num: None,
-        line_content: None,
-        message: format!("Invalid token ID: {}", s),
-    })
+    let Ok(id) = s.parse() else {
+        return Err(ParseError {
+            line_num: None,
+            line_content: None,
+            message: format!("Invalid token ID: {}", s),
+        });
+    };
+    Ok(id)
 }
 
 /// Parse HEAD field (0 or integer)
@@ -278,11 +281,13 @@ fn parse_head(s: &str) -> Result<Option<NodeId>, ParseError> {
     if s == "0" || s == "_" {
         Ok(None) // Root node
     } else {
-        let head: usize = s.parse().map_err(|_| ParseError {
-            line_num: None,
-            line_content: None,
-            message: format!("Invalid HEAD: {}", s),
-        })?;
+        let Ok(head) = s.parse::<usize>() else {
+            return Err(ParseError {
+                line_num: None,
+                line_content: None,
+                message: format!("Invalid HEAD: {}", s),
+            });
+        };
         // HEAD is 1-indexed in CoNLL-U, convert to 0-indexed NodeIds
         Ok(Some(head - 1))
     }
@@ -296,11 +301,13 @@ fn parse_features(s: &str) -> Result<Features, ParseError> {
 
     let mut feats = Features::new();
     for pair in s.split('|') {
-        let (k, v) = pair.split_once('=').ok_or_else(|| ParseError {
-            line_num: None,
-            line_content: None,
-            message: format!("Invalid FEATS pair (missing '='): {}", pair),
-        })?;
+        let Some((k, v)) = pair.split_once('=') else {
+            return Err(ParseError {
+                line_num: None,
+                line_content: None,
+                message: format!("Invalid FEATS pair (missing '='): {}", pair),
+            });
+        };
         feats.insert(k.to_string(), v.to_string());
     }
     Ok(feats)
@@ -315,17 +322,21 @@ fn parse_deps(s: &str) -> Result<Vec<Dep>, ParseError> {
     }
 
     for pair in s.split('|') {
-        let (head_str, deprel) = pair.split_once(':').ok_or_else(|| ParseError {
-            line_num: None,
-            line_content: None,
-            message: format!("Invalid DEPS pair: {}", pair),
-        })?;
+        let Some((head_str, deprel)) = pair.split_once(':') else {
+            return Err(ParseError {
+                line_num: None,
+                line_content: None,
+                message: format!("Invalid DEPS pair: {}", pair),
+            });
+        };
 
-        let head = head_str.parse::<usize>().map_err(|_| ParseError {
-            line_num: None,
-            line_content: None,
-            message: format!("Invalid DEPS pair: {}", pair),
-        })?;
+        let Ok(head) = head_str.parse::<usize>() else {
+            return Err(ParseError {
+                line_num: None,
+                line_content: None,
+                message: format!("Invalid DEPS pair: {}", pair),
+            });
+        };
 
         // Convert 1-indexed to 0-indexed; 0 means root (None)
         let head_id = if head == 0 { None } else { Some(head - 1) };
@@ -346,11 +357,13 @@ fn parse_misc(s: &str) -> Result<Misc, ParseError> {
 
     let mut misc = Misc::new();
     for pair in s.split('|') {
-        let (k, v) = pair.split_once('=').ok_or_else(|| ParseError {
-            line_num: None,
-            line_content: None,
-            message: format!("Invalid MISC pair (missing '='): {}", pair),
-        })?;
+        let Some((k, v)) = pair.split_once('=') else {
+            return Err(ParseError {
+                line_num: None,
+                line_content: None,
+                message: format!("Invalid MISC pair (missing '='): {}", pair),
+            });
+        };
         misc.insert(k.to_string(), v.to_string());
     }
     Ok(misc)

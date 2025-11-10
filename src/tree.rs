@@ -201,13 +201,14 @@ impl Tree {
     /// Returns `Ok(&Node)` if the node exists, or `Err` with a descriptive message if not.
     /// Use this for external callers where the node ID might be invalid user input.
     pub fn get_node(&self, id: NodeId) -> Result<&Node, String> {
-        self.nodes.get(id).ok_or_else(|| {
-            format!(
+        let Some(node) = self.nodes.get(id) else {
+            return Err(format!(
                 "Node with id {} does not exist (tree has {} nodes)",
                 id,
                 self.nodes.len()
-            )
-        })
+            ));
+        };
+        Ok(node)
     }
 
     /// Get a node by ID (unchecked internal API)
