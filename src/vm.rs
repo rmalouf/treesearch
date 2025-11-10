@@ -106,6 +106,323 @@ impl Match {
     }
 }
 
+/// Iterator over pattern matches
+pub struct MatchIterator<'a> {
+    opcodes: Vec<Instruction>,
+    var_names: Vec<String>,
+    tree: &'a Tree,
+    state: Option<VMState>,
+    seen_matches: HashSet<Vec<(usize, NodeId)>>,
+}
+
+impl<'a> MatchIterator<'a> {
+    /// Execute a single instruction (copied from VM implementation)
+    fn execute_instruction(
+        opcodes: &[Instruction],
+        instruction: &Instruction,
+        state: &mut VMState,
+        tree: &Tree,
+    ) -> Result<bool, ()> {
+        match instruction {
+            Instruction::Match => Ok(true),
+            Instruction::Fail => Err(()),
+
+            Instruction::Bind(pos) => {
+                state.bindings.insert(*pos, state.current_node);
+                Ok(false)
+            }
+
+            Instruction::CheckLemma(lemma) => {
+                let node = tree.get_node_unchecked(state.current_node);
+                if node.lemma == *lemma {
+                    Ok(false)
+                } else {
+                    Err(())
+                }
+            }
+
+            Instruction::CheckPOS(pos) => {
+                let node = tree.get_node_unchecked(state.current_node);
+                if node.pos == *pos {
+                    Ok(false)
+                } else {
+                    Err(())
+                }
+            }
+
+            Instruction::CheckForm(form) => {
+                let node = tree.get_node_unchecked(state.current_node);
+                if node.form == *form {
+                    Ok(false)
+                } else {
+                    Err(())
+                }
+            }
+
+            Instruction::CheckDepRel(deprel) => {
+                let node = tree.get_node_unchecked(state.current_node);
+                if node.deprel == *deprel {
+                    Ok(false)
+                } else {
+                    Err(())
+                }
+            }
+
+            Instruction::MoveToParent => {
+                match tree.parent_id(state.current_node) {
+                    Ok(Some(parent_id)) => {
+                        state.current_node = parent_id;
+                        Ok(false)
+                    }
+                    Ok(None) => Err(()), // Node has no parent - matching fails
+                    Err(e) => panic!(
+                        "VM bug: MoveToParent called on non-existent node {}: {}",
+                        state.current_node, e
+                    ),
+                }
+            }
+
+            Instruction::PushState => {
+                state
+                    .state_stack
+                    .push((state.current_node, state.bindings.clone()));
+                Ok(false)
+            }
+
+            Instruction::RestoreState => {
+                if let Some((node, bindings)) = state.state_stack.pop() {
+                    state.current_node = node;
+                    state.bindings = bindings;
+                    Ok(false)
+                } else {
+                    Err(())
+                }
+            }
+
+            Instruction::MoveToChild(constraint_opt) => {
+                let node = tree.get_node_unchecked(state.current_node);
+
+                // Get all matching children
+                let matching_children: Vec<NodeId> = node
+                    .children
+                    .iter()
+                    .copied()
+                    .filter(|&child_id| {
+                        let child = tree.get_node_unchecked(child_id);
+                        if let Some(constraint) = constraint_opt {
+                            VM::check_constraint(child, constraint)
+                        } else {
+                            true // No constraint means any child matches
+                        }
+                    })
+                    .collect();
+
+                if matching_children.is_empty() {
+                    return Err(());
+                }
+
+                // Order by leftmost position
+                let ordered = VM::order_alternatives(matching_children, tree);
+
+                // Use first match
+                state.current_node = ordered[0];
+
+                // Create choice point if there are alternatives
+                if ordered.len() > 1 {
+                    VM::create_choice_point(state, ordered[1..].to_vec());
+                }
+
+                Ok(false)
+            }
+
+            Instruction::MoveLeft => {
+                // Move to left sibling (previous sibling in parent's children list)
+                let current = tree.get_node_unchecked(state.current_node);
+
+                if let Some(parent_id) = current.parent {
+                    let parent = tree.get_node_unchecked(parent_id);
+
+                    if let Some(pos) = parent
+                        .children
+                        .iter()
+                        .position(|&id| id == state.current_node)
+                    {
+                        if pos > 0 {
+                            state.current_node = parent.children[pos - 1];
+                            return Ok(false);
+                        }
+                    }
+                }
+                Err(())
+            }
+
+            Instruction::MoveRight => {
+                // Move to right sibling (next sibling in parent's children list)
+                let current = tree.get_node_unchecked(state.current_node);
+
+                if let Some(parent_id) = current.parent {
+                    let parent = tree.get_node_unchecked(parent_id);
+
+                    if let Some(pos) = parent
+                        .children
+                        .iter()
+                        .position(|&id| id == state.current_node)
+                    {
+                        if pos + 1 < parent.children.len() {
+                            state.current_node = parent.children[pos + 1];
+                            return Ok(false);
+                        }
+                    }
+                }
+                Err(())
+            }
+
+            Instruction::Jump(offset) => {
+                // Offset can be negative (backwards jump) or positive (forwards jump)
+                let new_ip = (state.ip as isize) + offset;
+                if new_ip >= 0 && (new_ip as usize) < opcodes.len() {
+                    state.ip = new_ip as usize;
+                    Ok(false)
+                } else {
+                    Err(())
+                }
+            }
+
+            Instruction::Choice => {
+                // Choice creates a backtrack point with alternatives
+                // For now, this is a placeholder - proper implementation needs alternatives
+                // This will be fully implemented in Task 3
+                Ok(false)
+            }
+
+            Instruction::Commit => {
+                // Discard all choice points (cut operation)
+                state.backtrack_stack.clear();
+                Ok(false)
+            }
+
+            Instruction::ScanDescendants(constraint) => {
+                const MAX_DEPTH: usize = 7; // Default depth limit
+                let matches =
+                    VM::scan_descendants(state.current_node, constraint, tree, MAX_DEPTH);
+
+                if matches.is_empty() {
+                    return Err(());
+                }
+
+                // Order by leftmost position
+                let ordered = VM::order_alternatives(matches, tree);
+
+                // Use first match
+                state.current_node = ordered[0];
+
+                // Create choice point if there are alternatives
+                if ordered.len() > 1 {
+                    VM::create_choice_point(state, ordered[1..].to_vec());
+                }
+
+                Ok(false)
+            }
+
+            Instruction::ScanAncestors(constraint) => {
+                const MAX_DEPTH: usize = 7; // Default depth limit
+                let matches = VM::scan_ancestors(state.current_node, constraint, tree, MAX_DEPTH);
+
+                if matches.is_empty() {
+                    return Err(());
+                }
+
+                // Ancestors are already ordered by proximity, just use first
+                state.current_node = matches[0];
+
+                // Ancestors typically only return one match (closest)
+                // but if we change that in the future, handle alternatives
+                if matches.len() > 1 {
+                    VM::create_choice_point(state, matches[1..].to_vec());
+                }
+
+                Ok(false)
+            }
+
+            Instruction::ScanSiblings(constraint, direction) => {
+                let matches = VM::scan_siblings(state.current_node, constraint, tree, *direction);
+
+                if matches.is_empty() {
+                    return Err(());
+                }
+
+                // Siblings are already ordered by proximity
+                state.current_node = matches[0];
+
+                // Create choice point if there are alternatives
+                if matches.len() > 1 {
+                    VM::create_choice_point(state, matches[1..].to_vec());
+                }
+
+                Ok(false)
+            }
+        }
+    }
+}
+
+impl<'a> Iterator for MatchIterator<'a> {
+    type Item = Match;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let state = self.state.as_mut()?;
+
+        loop {
+            if state.ip >= self.opcodes.len() {
+                return None; // Ran off end of program
+            }
+
+            let instruction = &self.opcodes[state.ip];
+
+            match Self::execute_instruction(&self.opcodes, instruction, state, self.tree) {
+                Ok(true) => {
+                    // Match found - create canonical representation for deduplication
+                    let mut bindings_vec: Vec<(usize, NodeId)> =
+                        state.bindings.iter().map(|(&k, &v)| (k, v)).collect();
+                    bindings_vec.sort_by_key(|&(k, _)| k);
+
+                    // Check if we've seen this match before
+                    if self.seen_matches.insert(bindings_vec) {
+                        // New match - save it and force backtracking for next iteration
+                        let match_result = Match {
+                            bindings: state.bindings.clone(),
+                            var_names: self.var_names.clone(),
+                        };
+
+                        // Force backtracking to find next match
+                        if !VM::backtrack(state) {
+                            self.state = None; // No more alternatives
+                        }
+
+                        return Some(match_result);
+                    } else {
+                        // Duplicate match - force backtracking and continue
+                        if !VM::backtrack(state) {
+                            self.state = None;
+                            return None;
+                        }
+                    }
+                }
+                Ok(false) => {
+                    // Continue execution
+                    state.ip += 1;
+                }
+                Err(_) => {
+                    // Instruction failed, try backtracking
+                    if !VM::backtrack(state) {
+                        self.state = None;
+                        return None; // No more alternatives
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// The pattern matching virtual machine
 pub struct VM {
     /// Compiled opcodes
@@ -156,36 +473,14 @@ impl VM {
         nodes_with_pos.into_iter().map(|(id, _)| id).collect()
     }
 
-    /// Execute the VM starting from the given node
-    pub fn execute(&self, tree: &Tree, start_node: NodeId) -> Option<Match> {
-        let mut state = VMState::new(start_node);
-
-        loop {
-            if state.ip >= self.opcodes.len() {
-                return None; // Ran off end of program
-            }
-
-            let instruction = &self.opcodes[state.ip];
-
-            match self.execute_instruction(instruction, &mut state, tree) {
-                Ok(true) => {
-                    // Match found - take ownership of bindings since we're returning
-                    return Some(Match {
-                        bindings: std::mem::take(&mut state.bindings),
-                        var_names: self.var_names.clone(),
-                    });
-                }
-                Ok(false) => {
-                    // Continue execution
-                    state.ip += 1;
-                }
-                Err(_) => {
-                    // Instruction failed, try backtracking
-                    if !Self::backtrack(&mut state) {
-                        return None; // No more alternatives
-                    }
-                }
-            }
+    /// Execute the VM starting from the given node, returning an iterator over all matches
+    pub fn execute<'a>(&self, tree: &'a Tree, start_node: NodeId) -> MatchIterator<'a> {
+        MatchIterator {
+            opcodes: self.opcodes.clone(),
+            var_names: self.var_names.clone(),
+            tree,
+            state: Some(VMState::new(start_node)),
+            seen_matches: HashSet::new(),
         }
     }
 
@@ -344,254 +639,6 @@ impl VM {
             .collect()
     }
 
-    /// Execute a single instruction
-    fn execute_instruction(
-        &self,
-        instruction: &Instruction,
-        state: &mut VMState,
-        tree: &Tree,
-    ) -> Result<bool, ()> {
-        match instruction {
-            Instruction::Match => Ok(true),
-            Instruction::Fail => Err(()),
-
-            Instruction::Bind(pos) => {
-                state.bindings.insert(*pos, state.current_node);
-                Ok(false)
-            }
-
-            Instruction::CheckLemma(lemma) => {
-                let node = tree.get_node_unchecked(state.current_node);
-                if node.lemma == *lemma {
-                    Ok(false)
-                } else {
-                    Err(())
-                }
-            }
-
-            Instruction::CheckPOS(pos) => {
-                let node = tree.get_node_unchecked(state.current_node);
-                if node.pos == *pos {
-                    Ok(false)
-                } else {
-                    Err(())
-                }
-            }
-
-            Instruction::CheckForm(form) => {
-                let node = tree.get_node_unchecked(state.current_node);
-                if node.form == *form {
-                    Ok(false)
-                } else {
-                    Err(())
-                }
-            }
-
-            Instruction::CheckDepRel(deprel) => {
-                let node = tree.get_node_unchecked(state.current_node);
-                if node.deprel == *deprel {
-                    Ok(false)
-                } else {
-                    Err(())
-                }
-            }
-
-            Instruction::MoveToParent => {
-                match tree.parent_id(state.current_node) {
-                    Ok(Some(parent_id)) => {
-                        state.current_node = parent_id;
-                        Ok(false)
-                    }
-                    Ok(None) => Err(()), // Node has no parent - matching fails
-                    Err(e) => panic!(
-                        "VM bug: MoveToParent called on non-existent node {}: {}",
-                        state.current_node, e
-                    ),
-                }
-            }
-
-            Instruction::PushState => {
-                state
-                    .state_stack
-                    .push((state.current_node, state.bindings.clone()));
-                Ok(false)
-            }
-
-            Instruction::RestoreState => {
-                if let Some((node, bindings)) = state.state_stack.pop() {
-                    state.current_node = node;
-                    state.bindings = bindings;
-                    Ok(false)
-                } else {
-                    Err(())
-                }
-            }
-
-            Instruction::MoveToChild(constraint_opt) => {
-                let node = tree.get_node_unchecked(state.current_node);
-
-                // Get all matching children
-                let matching_children: Vec<NodeId> = node
-                    .children
-                    .iter()
-                    .copied()
-                    .filter(|&child_id| {
-                        let child = tree.get_node_unchecked(child_id);
-                        if let Some(constraint) = constraint_opt {
-                            Self::check_constraint(child, constraint)
-                        } else {
-                            true // No constraint means any child matches
-                        }
-                    })
-                    .collect();
-
-                if matching_children.is_empty() {
-                    return Err(());
-                }
-
-                // Order by leftmost position
-                let ordered = Self::order_alternatives(matching_children, tree);
-
-                // Use first match
-                state.current_node = ordered[0];
-
-                // Create choice point if there are alternatives
-                if ordered.len() > 1 {
-                    Self::create_choice_point(state, ordered[1..].to_vec());
-                }
-
-                Ok(false)
-            }
-
-            Instruction::MoveLeft => {
-                // Move to left sibling (previous sibling in parent's children list)
-                let current = tree.get_node_unchecked(state.current_node);
-
-                if let Some(parent_id) = current.parent {
-                    let parent = tree.get_node_unchecked(parent_id);
-
-                    if let Some(pos) = parent
-                        .children
-                        .iter()
-                        .position(|&id| id == state.current_node)
-                    {
-                        if pos > 0 {
-                            state.current_node = parent.children[pos - 1];
-                            return Ok(false);
-                        }
-                    }
-                }
-                Err(())
-            }
-
-            Instruction::MoveRight => {
-                // Move to right sibling (next sibling in parent's children list)
-                let current = tree.get_node_unchecked(state.current_node);
-
-                if let Some(parent_id) = current.parent {
-                    let parent = tree.get_node_unchecked(parent_id);
-
-                    if let Some(pos) = parent
-                        .children
-                        .iter()
-                        .position(|&id| id == state.current_node)
-                    {
-                        if pos + 1 < parent.children.len() {
-                            state.current_node = parent.children[pos + 1];
-                            return Ok(false);
-                        }
-                    }
-                }
-                Err(())
-            }
-
-            Instruction::Jump(offset) => {
-                // Offset can be negative (backwards jump) or positive (forwards jump)
-                let new_ip = (state.ip as isize) + offset;
-                if new_ip >= 0 && (new_ip as usize) < self.opcodes.len() {
-                    state.ip = new_ip as usize;
-                    Ok(false)
-                } else {
-                    Err(())
-                }
-            }
-
-            Instruction::Choice => {
-                // Choice creates a backtrack point with alternatives
-                // For now, this is a placeholder - proper implementation needs alternatives
-                // This will be fully implemented in Task 3
-                Ok(false)
-            }
-
-            Instruction::Commit => {
-                // Discard all choice points (cut operation)
-                state.backtrack_stack.clear();
-                Ok(false)
-            }
-
-            Instruction::ScanDescendants(constraint) => {
-                const MAX_DEPTH: usize = 7; // Default depth limit
-                let matches =
-                    Self::scan_descendants(state.current_node, constraint, tree, MAX_DEPTH);
-
-                if matches.is_empty() {
-                    return Err(());
-                }
-
-                // Order by leftmost position
-                let ordered = Self::order_alternatives(matches, tree);
-
-                // Use first match
-                state.current_node = ordered[0];
-
-                // Create choice point if there are alternatives
-                if ordered.len() > 1 {
-                    Self::create_choice_point(state, ordered[1..].to_vec());
-                }
-
-                Ok(false)
-            }
-
-            Instruction::ScanAncestors(constraint) => {
-                const MAX_DEPTH: usize = 7; // Default depth limit
-                let matches = Self::scan_ancestors(state.current_node, constraint, tree, MAX_DEPTH);
-
-                if matches.is_empty() {
-                    return Err(());
-                }
-
-                // Ancestors are already ordered by proximity, just use first
-                state.current_node = matches[0];
-
-                // Ancestors typically only return one match (closest)
-                // but if we change that in the future, handle alternatives
-                if matches.len() > 1 {
-                    Self::create_choice_point(state, matches[1..].to_vec());
-                }
-
-                Ok(false)
-            }
-
-            Instruction::ScanSiblings(constraint, direction) => {
-                let matches = Self::scan_siblings(state.current_node, constraint, tree, *direction);
-
-                if matches.is_empty() {
-                    return Err(());
-                }
-
-                // Siblings are already ordered by proximity
-                state.current_node = matches[0];
-
-                // Create choice point if there are alternatives
-                if matches.len() > 1 {
-                    Self::create_choice_point(state, matches[1..].to_vec());
-                }
-
-                Ok(false)
-            }
-        }
-    }
-
     /// Attempt to backtrack to a previous choice point
     fn backtrack(state: &mut VMState) -> bool {
         if let Some(mut choice) = state.backtrack_stack.pop() {
@@ -656,9 +703,8 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
-
-        assert!(result.is_some());
+        let matches: Vec<_> = vm.execute(&tree, 0).collect();
+        assert_eq!(matches.len(), 1);
     }
 
     #[test]
@@ -674,8 +720,8 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
-        assert!(result.is_some());
+        let matches: Vec<_> = vm.execute(&tree, 0).collect();
+        assert_eq!(matches.len(), 1);
 
         // Test failure case
         let opcodes_fail = vec![
@@ -683,8 +729,8 @@ mod tests {
             Instruction::Match,
         ];
         let vm_fail = VM::new(opcodes_fail, Vec::new());
-        let result_fail = vm_fail.execute(&tree, 0);
-        assert!(result_fail.is_none());
+        let matches_fail: Vec<_> = vm_fail.execute(&tree, 0).collect();
+        assert_eq!(matches_fail.len(), 0);
     }
 
     #[test]
@@ -700,8 +746,8 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
-        assert!(result.is_some());
+        let matches: Vec<_> = vm.execute(&tree, 0).collect();
+        assert_eq!(matches.len(), 1);
 
         // Test failure case
         let opcodes_fail = vec![
@@ -709,8 +755,8 @@ mod tests {
             Instruction::Match,
         ];
         let vm_fail = VM::new(opcodes_fail, Vec::new());
-        let result_fail = vm_fail.execute(&tree, 0);
-        assert!(result_fail.is_none());
+        let matches_fail: Vec<_> = vm_fail.execute(&tree, 0).collect();
+        assert_eq!(matches_fail.len(), 0);
     }
 
     #[test]
@@ -726,10 +772,8 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
-
-        assert!(result.is_some());
-        let match_result = result.unwrap();
+        let mut result = vm.execute(&tree, 0);
+        let match_result = result.next().expect("Should have a match");
         assert_eq!(match_result.bindings[&0], 1); // Should be at child 1 (dog)
     }
 
@@ -746,10 +790,9 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
-
-        assert!(result.is_some());
-        let match_result = result.unwrap();
+        let matches: Vec<_> = vm.execute(&tree, 0).collect();
+        assert_eq!(matches.len(), 1);
+        let match_result = &matches[0];
         assert_eq!(match_result.bindings[&0], 1); // Should be at child 1 (dog/NOUN)
     }
 
@@ -765,9 +808,8 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
-
-        assert!(result.is_none()); // Should fail - no PRON child
+        let matches: Vec<_> = vm.execute(&tree, 0).collect();
+        assert_eq!(matches.len(), 0); // Should fail - no PRON child
     }
 
     #[test]
@@ -784,10 +826,9 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 1); // Start at node 1 (dog)
-
-        assert!(result.is_some());
-        let match_result = result.unwrap();
+        let matches: Vec<_> = vm.execute(&tree, 1).collect(); // Start at node 1 (dog)
+        assert_eq!(matches.len(), 1);
+        let match_result = &matches[0];
         assert_eq!(match_result.bindings[&0], 0); // Should be at parent (runs)
     }
 
@@ -805,10 +846,9 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 2); // Start at node 2 (quickly)
-
-        assert!(result.is_some());
-        let match_result = result.unwrap();
+        let matches: Vec<_> = vm.execute(&tree, 2).collect(); // Start at node 2 (quickly)
+        assert_eq!(matches.len(), 1);
+        let match_result = &matches[0];
         assert_eq!(match_result.bindings[&0], 1);
 
         // Now test MoveRight: start at child 1, move right to child 2
@@ -821,10 +861,9 @@ mod tests {
         ];
 
         let vm2 = VM::new(opcodes2, Vec::new());
-        let result2 = vm2.execute(&tree, 1); // Start at node 1 (dog)
-
-        assert!(result2.is_some());
-        let match_result2 = result2.unwrap();
+        let matches2: Vec<_> = vm2.execute(&tree, 1).collect(); // Start at node 1 (dog)
+        assert_eq!(matches2.len(), 1);
+        let match_result2 = &matches2[0];
         assert_eq!(match_result2.bindings[&0], 2);
     }
 
@@ -840,9 +879,8 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 1);
-
-        assert!(result.is_none());
+        let matches: Vec<_> = vm.execute(&tree, 1).collect();
+        assert_eq!(matches.len(), 0);
     }
 
     #[test]
@@ -857,9 +895,8 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 2);
-
-        assert!(result.is_none());
+        let matches: Vec<_> = vm.execute(&tree, 2).collect();
+        assert_eq!(matches.len(), 0);
     }
 
     #[test]
@@ -878,9 +915,8 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
-
-        assert!(result.is_some());
+        let matches: Vec<_> = vm.execute(&tree, 0).collect();
+        assert_eq!(matches.len(), 1);
     }
 
     #[test]
@@ -897,9 +933,8 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
-
-        assert!(result.is_some());
+        let matches: Vec<_> = vm.execute(&tree, 0).collect();
+        assert_eq!(matches.len(), 1);
     }
 
     #[test]
@@ -919,10 +954,9 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
-
-        assert!(result.is_some());
-        let match_result = result.unwrap();
+        let matches: Vec<_> = vm.execute(&tree, 0).collect();
+        assert_eq!(matches.len(), 1);
+        let match_result = &matches[0];
         assert_eq!(match_result.bindings[&0], 0); // Should be back at root
     }
 
@@ -942,10 +976,9 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
-
-        assert!(result.is_some());
-        let match_result = result.unwrap();
+        let matches: Vec<_> = vm.execute(&tree, 0).collect();
+        assert_eq!(matches.len(), 1);
+        let match_result = &matches[0];
         assert_eq!(match_result.bindings[&0], 1);
     }
 
@@ -965,10 +998,9 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
+        let mut result = vm.execute(&tree, 0);
 
-        assert!(result.is_some());
-        let match_result = result.unwrap();
+        let match_result = result.next().expect("Should have a match");
         assert_eq!(match_result.bindings[&0], 1);
     }
 
@@ -1019,10 +1051,9 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
+        let mut result = vm.execute(&tree, 0);
 
-        assert!(result.is_some());
-        let match_result = result.unwrap();
+        let match_result = result.next().expect("Should have a match");
         assert_eq!(match_result.bindings[&0], 3); // Should find "big" (ADJ)
     }
 
@@ -1040,10 +1071,9 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
+        let mut result = vm.execute(&tree, 0);
 
-        assert!(result.is_some());
-        let match_result = result.unwrap();
+        let match_result = result.next().expect("Should have a match");
         assert_eq!(match_result.bindings[&0], 8);
     }
 
@@ -1059,9 +1089,9 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
+        let mut result = vm.execute(&tree, 0);
 
-        assert!(result.is_none()); // Should fail
+        assert!(result.next().is_none()); // Should fail
     }
 
     #[test]
@@ -1078,10 +1108,9 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
+        let mut result = vm.execute(&tree, 0);
 
-        assert!(result.is_some());
-        let match_result = result.unwrap();
+        let match_result = result.next().expect("Should have a match");
         assert_eq!(match_result.bindings[&0], 2); // Should find "quickly" at depth 1
     }
 
@@ -1098,10 +1127,9 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 3); // Start at node 3
+        let mut result = vm.execute(&tree, 3); // Start at node 3
 
-        assert!(result.is_some());
-        let match_result = result.unwrap();
+        let match_result = result.next().expect("Should have a match");
         assert_eq!(match_result.bindings[&0], 0); // Should find root (runs/VERB)
     }
 
@@ -1119,10 +1147,9 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 8);
+        let mut result = vm.execute(&tree, 8);
 
-        assert!(result.is_some());
-        let match_result = result.unwrap();
+        let match_result = result.next().expect("Should have a match");
         assert_eq!(match_result.bindings[&0], 7); // Should find "extremely" (closest ADV)
     }
 
@@ -1138,9 +1165,9 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 3);
+        let mut result = vm.execute(&tree, 3);
 
-        assert!(result.is_none());
+        assert!(result.next().is_none());
     }
 
     #[test]
@@ -1156,10 +1183,9 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 1);
+        let mut result = vm.execute(&tree, 1);
 
-        assert!(result.is_some());
-        let match_result = result.unwrap();
+        let match_result = result.next().expect("Should have a match");
         assert_eq!(match_result.bindings[&0], 2); // Should find node 2 (quickly/ADV)
     }
 
@@ -1176,10 +1202,9 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 2);
+        let mut result = vm.execute(&tree, 2);
 
-        assert!(result.is_some());
-        let match_result = result.unwrap();
+        let match_result = result.next().expect("Should have a match");
         assert_eq!(match_result.bindings[&0], 1); // Should find node 1 (dog/NOUN)
     }
 
@@ -1195,9 +1220,9 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 1);
+        let mut result = vm.execute(&tree, 1);
 
-        assert!(result.is_none());
+        assert!(result.next().is_none());
     }
 
     #[test]
@@ -1212,9 +1237,9 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
+        let mut result = vm.execute(&tree, 0);
 
-        assert!(result.is_none()); // Should fail - root has no siblings
+        assert!(result.next().is_none()); // Should fail - root has no siblings
     }
 
     #[test]
@@ -1234,10 +1259,9 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
+        let mut result = vm.execute(&tree, 0);
 
-        assert!(result.is_some());
-        let match_result = result.unwrap();
+        let match_result = result.next().expect("Should have a match");
         assert_eq!(match_result.bindings[&0], 0); // VERB = runs
         assert_eq!(match_result.bindings[&1], 3); // ADJ = big
         assert_eq!(match_result.bindings[&2], 1); // NOUN = dog
@@ -1280,10 +1304,9 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
+        let mut result = vm.execute(&tree, 0);
 
-        assert!(result.is_some());
-        let match_result = result.unwrap();
+        let match_result = result.next().expect("Should have a match");
         // Should have backtracked through DET(1), ADJ(2), and found NOUN(3)
         assert_eq!(match_result.bindings[&0], 3);
     }
@@ -1302,10 +1325,9 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
+        let mut result = vm.execute(&tree, 0);
 
-        assert!(result.is_some());
-        let match_result = result.unwrap();
+        let match_result = result.next().expect("Should have a match");
         assert_eq!(match_result.bindings[&0], 2); // Should find node 2 (big/ADJ)
     }
 
@@ -1323,9 +1345,9 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
+        let mut result = vm.execute(&tree, 0);
 
-        assert!(result.is_none()); // Should fail after exhausting all alternatives
+        assert!(result.next().is_none()); // Should fail after exhausting all alternatives
     }
 
     #[test]
@@ -1341,10 +1363,9 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
+        let mut result = vm.execute(&tree, 0);
 
-        assert!(result.is_some());
-        let match_result = result.unwrap();
+        let match_result = result.next().expect("Should have a match");
         assert_eq!(match_result.bindings[&0], 2); // Should find ADJ directly
     }
 
@@ -1363,9 +1384,9 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
+        let mut result = vm.execute(&tree, 0);
 
-        assert!(result.is_none()); // Should fail - can't backtrack after commit
+        assert!(result.next().is_none()); // Should fail - can't backtrack after commit
     }
 
     #[test]
@@ -1403,10 +1424,9 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
+        let mut result = vm.execute(&tree, 0);
 
-        assert!(result.is_some());
-        let match_result = result.unwrap();
+        let match_result = result.next().expect("Should have a match");
         assert_eq!(match_result.bindings[&0], 5); // Should find gc3 after backtracking
     }
 
@@ -1444,10 +1464,9 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
+        let mut result = vm.execute(&tree, 0);
 
-        assert!(result.is_some());
-        let match_result = result.unwrap();
+        let match_result = result.next().expect("Should have a match");
         assert_eq!(match_result.bindings[&0], 5); // Should find "quick" after backtracking
     }
 
@@ -1488,7 +1507,7 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0).unwrap(); // Start at root (NodeId 0)
+        let result = vm.execute(&tree, 0).next().expect("Should have a match"); // Start at root (NodeId 0)
 
         assert_eq!(result.bindings[&0], 0); // VERB = NodeId 0 (root)
         assert_eq!(result.bindings[&1], 2); // NOUN = NodeId 2 (position 0, leftmost!)
@@ -1509,10 +1528,10 @@ mod tests {
         ];
 
         let vm = VM::new(opcodes, Vec::new());
-        let result = vm.execute(&tree, 0);
+        let mut result = vm.execute(&tree, 0);
 
-        assert!(result.is_some());
-        assert_eq!(result.unwrap().bindings[&0], 3);
+        let match_result = result.next().expect("Should have a match");
+        assert_eq!(match_result.bindings[&0], 3);
     }
 
     #[test]
@@ -1527,7 +1546,7 @@ mod tests {
         let vm = VM::new(opcodes, var_names);
 
         let tree = create_test_tree();
-        let result = vm.execute(&tree, 0).expect("Match should succeed");
+        let result = vm.execute(&tree, 0).next().expect("Match should succeed");
 
         // Access by name
         assert_eq!(result.get("Verb"), Some(0));
@@ -1549,7 +1568,7 @@ mod tests {
         let vm = VM::new(opcodes, var_names);
 
         let tree = create_test_tree();
-        let result = vm.execute(&tree, 0).expect("Match should succeed");
+        let result = vm.execute(&tree, 0).next().expect("Match should succeed");
 
         // Access both bindings by name
         assert_eq!(result.get("V"), Some(0));
@@ -1571,7 +1590,7 @@ mod tests {
         let vm = VM::new(opcodes, var_names);
 
         let tree = create_test_tree();
-        let result = vm.execute(&tree, 0).expect("Match should succeed");
+        let result = vm.execute(&tree, 0).next().expect("Match should succeed");
 
         // Collect named bindings
         let named: Vec<(&str, NodeId)> = result.iter_named().collect();
@@ -1584,5 +1603,93 @@ mod tests {
             .any(|(name, id)| *name == "Subject" && *id == 1);
         assert!(has_verb);
         assert!(has_subject);
+    }
+
+    #[test]
+    fn test_multiple_matches_returned() {
+        // Create a tree with multiple matching children:
+        // 0: runs (VERB)
+        //   ├─ 1: dog (NOUN)
+        //   ├─ 2: cat (NOUN)
+        //   └─ 3: bird (NOUN)
+        let mut tree = Tree::new();
+        tree.add_node(Node::new(0, "runs", "run", "VERB", "root"));
+        tree.add_node(Node::new(1, "dog", "dog", "NOUN", "nsubj"));
+        tree.add_node(Node::new(2, "cat", "cat", "NOUN", "conj"));
+        tree.add_node(Node::new(3, "bird", "bird", "NOUN", "conj"));
+        tree.set_parent(1, 0);
+        tree.set_parent(2, 0);
+        tree.set_parent(3, 0);
+
+        // Pattern: VERB with NOUN child (should match all three NOUNs)
+        let opcodes = vec![
+            Instruction::CheckPOS("VERB".to_string()),
+            Instruction::Bind(0),
+            Instruction::PushState,
+            Instruction::MoveToChild(Some(Constraint::POS("NOUN".to_string()))),
+            Instruction::Bind(1),
+            Instruction::Match,
+        ];
+        let var_names = vec!["Verb".to_string(), "Noun".to_string()];
+        let vm = VM::new(opcodes, var_names);
+
+        // Collect all matches
+        let matches: Vec<_> = vm.execute(&tree, 0).collect();
+
+        // Should find 3 matches (one for each NOUN child)
+        assert_eq!(matches.len(), 3, "Should find all three NOUN children");
+
+        // All matches should bind VERB to node 0
+        for m in &matches {
+            assert_eq!(m.bindings[&0], 0, "All matches should bind Verb to node 0");
+        }
+
+        // The three matches should bind Noun to nodes 1, 2, and 3
+        let noun_bindings: Vec<NodeId> = matches.iter().map(|m| m.bindings[&1]).collect();
+        assert!(noun_bindings.contains(&1), "Should match 'dog' (node 1)");
+        assert!(noun_bindings.contains(&2), "Should match 'cat' (node 2)");
+        assert!(noun_bindings.contains(&3), "Should match 'bird' (node 3)");
+    }
+
+    #[test]
+    fn test_all_matches_with_descendants() {
+        // Create a tree with multiple matching descendants at different depths:
+        // 0: runs (VERB)
+        //   ├─ 1: dog (NOUN)
+        //   │    └─ 3: big (ADJ)
+        //   └─ 2: cat (NOUN)
+        //        └─ 4: small (ADJ)
+        let mut tree = Tree::new();
+        tree.add_node(Node::new(0, "runs", "run", "VERB", "root"));
+        tree.add_node(Node::new(1, "dog", "dog", "NOUN", "nsubj"));
+        tree.add_node(Node::new(2, "cat", "cat", "NOUN", "obj"));
+        tree.add_node(Node::new(3, "big", "big", "ADJ", "amod"));
+        tree.add_node(Node::new(4, "small", "small", "ADJ", "amod"));
+        tree.set_parent(1, 0);
+        tree.set_parent(2, 0);
+        tree.set_parent(3, 1);
+        tree.set_parent(4, 2);
+
+        // Pattern: VERB ... ADJ (descendant relation)
+        let opcodes = vec![
+            Instruction::CheckPOS("VERB".to_string()),
+            Instruction::Bind(0),
+            Instruction::ScanDescendants(Constraint::POS("ADJ".to_string())),
+            Instruction::Bind(1),
+            Instruction::Match,
+        ];
+        let var_names = vec!["Verb".to_string(), "Adj".to_string()];
+        let vm = VM::new(opcodes, var_names);
+
+        // Collect all matches
+        let matches: Vec<_> = vm.execute(&tree, 0).collect();
+
+        // Should find 2 matches (both ADJs at depth 2)
+        assert_eq!(matches.len(), 2, "Should find both ADJ descendants");
+
+        // Check we got both adjectives
+        let adj_bindings: Vec<NodeId> = matches.iter().map(|m| m.bindings[&1]).collect();
+        assert!(adj_bindings.contains(&3), "Should match 'big' (node 3)");
+        assert!(adj_bindings.contains(&4), "Should match 'small' (node 4)");
     }
 }

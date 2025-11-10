@@ -62,7 +62,7 @@ fn main() {
     let vm = VM::new(opcodes, var_names);
     let anchor_node = 0; // Start at "help"
 
-    match vm.execute(&tree, anchor_node) {
+    match vm.execute(&tree, anchor_node).next() {
         Some(result) => {
             println!("Match found!");
             // Use the new iter_named() method to get variable names automatically

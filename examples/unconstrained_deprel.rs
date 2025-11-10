@@ -81,10 +81,9 @@ fn main() {
 
     // Try the unconstrained query
     let vm = VM::new(opcodes, var_names);
-    let result = vm.execute(&tree, 0); // Start at root (runs)
 
     println!("Match result for unconstrained query:");
-    match result {
+    match vm.execute(&tree, 0).next() { // Start at root (runs)
         Some(m) => {
             println!("  SUCCESS! Matched:");
             for (var_name, node_id) in m.iter_named() {
