@@ -39,18 +39,22 @@ pub fn parse_query(input: &str) -> Result<Pattern, ParseError> {
     let mut pattern = Pattern::new();
 
     // Get the query rule (there should be exactly one)
-    let query_pair = pairs.next().ok_or_else(|| ParseError {
-        message: "No query found".to_string(),
-    })?;
+    let Some(query_pair) = pairs.next() else {
+        return Err(ParseError {
+            message: "No query found".to_string(),
+        });
+    };
 
     // Process all statements in the query
     for statement in query_pair.into_inner() {
         match statement.as_rule() {
             Rule::statement => {
                 // statement contains either node_decl or edge_decl
-                let inner = statement.into_inner().next().ok_or_else(|| ParseError {
-                    message: "Empty statement".to_string(),
-                })?;
+                let Some(inner) = statement.into_inner().next() else {
+                    return Err(ParseError {
+                        message: "Empty statement".to_string(),
+                    });
+                };
 
                 match inner.as_rule() {
                     Rule::node_decl => {
@@ -76,17 +80,18 @@ pub fn parse_query(input: &str) -> Result<Pattern, ParseError> {
 fn parse_node_decl(pair: pest::iterators::Pair<Rule>) -> Result<PatternElement, ParseError> {
     let mut inner = pair.into_inner();
 
-    let ident = inner
-        .next()
-        .ok_or_else(|| ParseError {
+    let Some(ident_pair) = inner.next() else {
+        return Err(ParseError {
             message: "Expected identifier in node declaration".to_string(),
-        })?
-        .as_str()
-        .to_string();
+        });
+    };
+    let ident = ident_pair.as_str().to_string();
 
-    let constraint_list = inner.next().ok_or_else(|| ParseError {
-        message: "Expected constraint list".to_string(),
-    })?;
+    let Some(constraint_list) = inner.next() else {
+        return Err(ParseError {
+            message: "Expected constraint list".to_string(),
+        });
+    };
 
     let constraints = parse_constraint_list(constraint_list)?;
 
@@ -111,26 +116,26 @@ fn parse_constraint_list(pair: pest::iterators::Pair<Rule>) -> Result<Constraint
 fn parse_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, ParseError> {
     let mut inner = pair.into_inner();
 
-    let key = inner
-        .next()
-        .ok_or_else(|| ParseError {
+    let Some(key_pair) = inner.next() else {
+        return Err(ParseError {
             message: "Expected constraint key".to_string(),
-        })?
-        .as_str();
+        });
+    };
+    let key = key_pair.as_str();
 
-    let value_pair = inner.next().ok_or_else(|| ParseError {
-        message: "Expected constraint value".to_string(),
-    })?;
+    let Some(value_pair) = inner.next() else {
+        return Err(ParseError {
+            message: "Expected constraint value".to_string(),
+        });
+    };
 
     // Extract string from string_literal rule
-    let value = value_pair
-        .into_inner()
-        .next()
-        .ok_or_else(|| ParseError {
+    let Some(value_inner) = value_pair.into_inner().next() else {
+        return Err(ParseError {
             message: "Expected string inner".to_string(),
-        })?
-        .as_str()
-        .to_string();
+        });
+    };
+    let value = value_inner.as_str().to_string();
 
     match key {
         "lemma" => Ok(Constraint::Lemma(value)),
@@ -147,29 +152,29 @@ fn parse_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, Par
 fn parse_edge_decl(pair: pest::iterators::Pair<Rule>) -> Result<PatternEdge, ParseError> {
     let mut inner = pair.into_inner();
 
-    let from = inner
-        .next()
-        .ok_or_else(|| ParseError {
+    let Some(from_pair) = inner.next() else {
+        return Err(ParseError {
             message: "Expected source node in edge".to_string(),
-        })?
-        .as_str()
-        .to_string();
+        });
+    };
+    let from = from_pair.as_str().to_string();
 
     // The next element could be edge_label (if present) or the target node
-    let next = inner.next().ok_or_else(|| ParseError {
-        message: "Expected edge label or target node".to_string(),
-    })?;
+    let Some(next) = inner.next() else {
+        return Err(ParseError {
+            message: "Expected edge label or target node".to_string(),
+        });
+    };
 
     let (label, to) = if next.as_rule() == Rule::edge_label {
         // We have a label, so get the target node next
         let label_str = next.as_str().to_string();
-        let to_node = inner
-            .next()
-            .ok_or_else(|| ParseError {
+        let Some(to_pair) = inner.next() else {
+            return Err(ParseError {
                 message: "Expected target node in edge".to_string(),
-            })?
-            .as_str()
-            .to_string();
+            });
+        };
+        let to_node = to_pair.as_str().to_string();
         (Some(label_str), to_node)
     } else {
         // No label, this is the target node
