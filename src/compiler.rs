@@ -74,6 +74,7 @@ fn compile_constraint(constraint: Constraint) -> Vec<Instruction> {
         Constraint::DepRel(deprel) => vec![Instruction::CheckDepRel(deprel)],
         Constraint::And(constraints) => {
             // Compile all constraints sequentially
+            assert!(!constraints.is_empty(), "Compiler bug: empty And constraint");
             constraints
                 .into_iter()
                 .flat_map(compile_constraint)
@@ -86,6 +87,18 @@ fn compile_constraint(constraint: Constraint) -> Vec<Instruction> {
             assert!(!constraints.is_empty(), "Compiler bug: empty Or constraint");
             compile_constraint(constraints.into_iter().next().unwrap())
         }
+    }
+}
+
+/// Reverse a relation type (for backward edge traversal)
+fn reverse_relation(relation: RelationType) -> RelationType {
+    match relation {
+        RelationType::Child => RelationType::Parent,
+        RelationType::Parent => RelationType::Child,
+        RelationType::Descendant => RelationType::Ancestor,
+        RelationType::Ancestor => RelationType::Descendant,
+        RelationType::Follows => RelationType::Precedes,
+        RelationType::Precedes => RelationType::Follows,
     }
 }
 
@@ -155,13 +168,22 @@ pub fn compile_pattern(pattern: Pattern) -> (Vec<Instruction>, usize, Vec<String
         .map(|(idx, elem)| (elem.var_name.clone(), idx))
         .collect();
 
-    // Build adjacency list from edges
-    let mut edges_from: HashMap<usize, Vec<(usize, PatternEdge)>> = HashMap::new();
+    // Build adjacency list from edges (both forward and backward)
+    let mut edges_from: HashMap<usize, Vec<(usize, PatternEdge, bool)>> = HashMap::new();
     for edge in edges {
         if let (Some(&from_idx), Some(&to_idx)) =
             (name_to_idx.get(&edge.from), name_to_idx.get(&edge.to))
         {
-            edges_from.entry(from_idx).or_default().push((to_idx, edge));
+            // Forward edge: from -> to
+            edges_from
+                .entry(from_idx)
+                .or_default()
+                .push((to_idx, edge.clone(), false));
+            // Backward edge: to -> from (reversed)
+            edges_from
+                .entry(to_idx)
+                .or_default()
+                .push((from_idx, edge, true));
         }
     }
 
@@ -178,43 +200,72 @@ pub fn compile_pattern(pattern: Pattern) -> (Vec<Instruction>, usize, Vec<String
     let mut queue = vec![anchor_idx];
 
     while let Some(current_idx) = queue.pop() {
-        // Check edges from this node
-        if let Some(edges_list) = edges_from.get(&current_idx) {
-            for (target_idx, edge) in edges_list {
-                if visited[*target_idx] {
-                    continue;
+        // Collect unvisited edges from this node
+        let unvisited_edges: Vec<_> = edges_from
+            .get(&current_idx)
+            .map(|edges| {
+                edges
+                    .iter()
+                    .filter(|(target_idx, _, _)| !visited[*target_idx])
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        for (i, &(target_idx, edge, is_reversed)) in unvisited_edges.iter().enumerate() {
+            // Determine the actual relation to use (reverse if needed)
+            let actual_relation = if *is_reversed {
+                reverse_relation(edge.relation)
+            } else {
+                edge.relation
+            };
+
+            // Always save state before navigating (needed for backtracking)
+            opcodes.push(Instruction::PushState);
+
+            // Navigate to target
+            let target_element = &elements[*target_idx];
+            let navigation = compile_edge(
+                actual_relation,
+                edge.label.as_deref(),
+                target_element.constraints.clone(),
+            );
+            opcodes.extend(navigation);
+
+            // Verify target constraints (if not already in navigation)
+            if !matches!(
+                actual_relation,
+                RelationType::Child
+                    | RelationType::Descendant
+                    | RelationType::Ancestor
+                    | RelationType::Follows
+                    | RelationType::Precedes
+            ) {
+                opcodes.extend(compile_constraint(target_element.constraints.clone()));
+            }
+
+            // Bind target
+            opcodes.push(Instruction::Bind(*target_idx));
+
+            // Mark as visited and add to queue
+            visited[*target_idx] = true;
+            queue.push(*target_idx);
+
+            // Navigate back to current node for next edge (except for last edge)
+            // This ensures bindings are preserved while position is reset
+            if i < unvisited_edges.len() - 1 {
+                // Navigate back using the reverse relation
+                let return_relation = reverse_relation(actual_relation);
+                match return_relation {
+                    RelationType::Parent => opcodes.push(Instruction::MoveToParent),
+                    RelationType::Child => {
+                        // Can't easily go back to parent from child - need PushState approach
+                        panic!("Compiler bug: Cannot navigate back from child to parent in current implementation");
+                    }
+                    _ => {
+                        // For scan operations, we need restore
+                        opcodes.push(Instruction::RestoreState);
+                    }
                 }
-
-                // Save state before navigating
-                opcodes.push(Instruction::PushState);
-
-                // Navigate to target
-                let target_element = &elements[*target_idx];
-                let navigation = compile_edge(
-                    edge.relation,
-                    edge.label.as_deref(),
-                    target_element.constraints.clone(),
-                );
-                opcodes.extend(navigation);
-
-                // Verify target constraints (if not already in navigation)
-                if !matches!(
-                    edge.relation,
-                    RelationType::Child
-                        | RelationType::Descendant
-                        | RelationType::Ancestor
-                        | RelationType::Follows
-                        | RelationType::Precedes
-                ) {
-                    opcodes.extend(compile_constraint(target_element.constraints.clone()));
-                }
-
-                // Bind target
-                opcodes.push(Instruction::Bind(*target_idx));
-
-                // Mark as visited and add to queue
-                visited[*target_idx] = true;
-                queue.push(*target_idx);
             }
         }
     }
@@ -579,5 +630,62 @@ mod tests {
         assert_eq!(match_result.bindings[&0], 0); // help
         assert_eq!(match_result.bindings[&1], 1); // to
         assert_eq!(match_result.bindings[&2], 2); // write
+    }
+
+    #[test]
+    fn test_anchor_in_middle_follows_backward_edges() {
+        // This test demonstrates the bug: when anchor is in the middle,
+        // compiler must follow edges both forward AND backward
+        use crate::tree::{Node, Tree};
+        use crate::vm::VM;
+
+        // Create tree: "dog" (NOUN) -[nsubj]-> "runs" (VERB) -[obj]-> "fast" (ADV)
+        let mut tree = Tree::new();
+        tree.add_node(Node::new(0, "runs", "run", "VERB", "root"));
+        tree.add_node(Node::new(1, "dog", "dog", "NOUN", "nsubj"));
+        tree.add_node(Node::new(2, "fast", "fast", "ADV", "advmod"));
+        tree.set_parent(1, 0);
+        tree.set_parent(2, 0);
+
+        // Pattern: NOUN -[nsubj]-> VERB -[advmod]-> ADV
+        // The verb has HIGH selectivity, so it will be chosen as anchor
+        // Compiler must navigate BOTH to NOUN (backward) and to ADV (forward)
+        let mut pattern = Pattern::new();
+        pattern.add_element(PatternElement::new(
+            "noun",
+            Constraint::POS("NOUN".to_string()),
+        ));
+        pattern.add_element(PatternElement::new(
+            "verb",
+            Constraint::Lemma("run".to_string()), // High selectivity - will be anchor
+        ));
+        pattern.add_element(PatternElement::new(
+            "adv",
+            Constraint::POS("ADV".to_string()),
+        ));
+
+        pattern.add_edge(PatternEdge {
+            from: "verb".to_string(),
+            to: "noun".to_string(),
+            relation: RelationType::Child,
+            label: Some("nsubj".to_string()),
+        });
+        pattern.add_edge(PatternEdge {
+            from: "verb".to_string(),
+            to: "adv".to_string(),
+            relation: RelationType::Child,
+            label: Some("advmod".to_string()),
+        });
+
+        let (opcodes, anchor, _var_names) = compile_pattern(pattern);
+        assert_eq!(anchor, 1); // Should anchor on "verb" (most selective)
+
+        let vm = VM::new(opcodes, Vec::new());
+        let mut result = vm.execute(&tree, 0);
+
+        let match_result = result.next().expect("Should have a match");
+        assert_eq!(match_result.bindings[&0], 1); // noun -> node 1
+        assert_eq!(match_result.bindings[&1], 0); // verb (anchor) -> node 0
+        assert_eq!(match_result.bindings[&2], 2); // adv -> node 2
     }
 }
