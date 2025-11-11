@@ -6,51 +6,44 @@ Treesearch is a high-performance toolkit for querying linguistic dependency pars
 
 **Author**: Rob Malouf (rmalouf@sdsu.edu)
 **License**: MIT
-**Status**: Phase 0 - Algorithm-First Implementation
+**Status**: Rewriting matching algorithm as constraint satisfaction problem
 
 ## Current Development Phase
 
-**Phase 0: Algorithm-First Implementation** ✅ 95% COMPLETE (Nov 2025)
+**VM Rewrite** (Nov 2025)
 
-The project has **successfully completed** the core pattern matching VM implementation. All major Phase 0 objectives achieved, with bonus completion of the query parser (originally planned for Phase 1).
+The project is undergoing a fundamental redesign. The previous VM-based approach has been removed in favor of treating pattern matching as a constraint satisfaction problem.
 
-### Phase 0 Progress
-- ✅ Project structure setup
-- ✅ VM instruction execution (ALL instructions working)
-- ✅ Wildcard search with BFS (shortest-path guarantees)
-- ✅ Backtracking implementation (full support)
-- ✅ Pattern compiler (anchor selection, bytecode generation)
-- ✅ **BONUS: Query language parser** (Phase 1 item completed early!)
-- ✅ Test fixtures (56 tests passing)
-- ⏳ TreeSearcher integration (pending)
-- ⏳ Performance benchmarking (pending)
-
-**Current Status**: Ready to begin Phase 1 (CoNLL-U integration)
+### Current Status
+- ✅ Query language parser (can parse queries)
+- ✅ Pattern AST representation
+- ✅ CoNLL-U parsing and tree structures
+- ✅ Inverted indices for candidate lookup
+- 🔄 **Rewriting matcher as CSP solver** (in progress)
 
 ## Architecture
 
 ### Core Design Principles
 
-1. **Two-phase matching strategy**: Index lookup → VM verification
-2. **Deterministic match semantics**: Leftmost, shortest-path matching
-3. **Efficient wildcard handling**: Avoids exponential blowup
-4. **File-level parallelization**: Using rayon
-5. **Error handling strategy**:
+1. **Constraint satisfaction approach**: Pattern matching as CSP solving
+2. **Index-based candidate lookup**: Inverted indices for fast initial filtering
+3. **File-level parallelization**: Using rayon
+4. **Error handling strategy**:
    - **User input errors** (malformed queries, invalid CoNLL-U, missing files) → `Result::Err` with clear message
-   - **Internal bugs** (invalid bytecode, violated invariants, unreachable states) → `panic!` with descriptive message
+   - **Internal bugs** (violated invariants, unreachable states) → `panic!` with descriptive message
    - **Never silently skip or provide fallback values** - all errors must be loud and visible
 
 ### Key Components
 
 #### Rust Core (`src/`)
 - `lib.rs` - Main library entry point with module declarations
-- `tree.rs` - Minimal tree data structures for representing dependency parses (122 lines)
-- `pattern.rs` - Pattern AST representation (146 lines)
-- `vm.rs` - Virtual machine executor with instruction set (1,436 lines, 39 tests) ✅
-- `compiler.rs` - Pattern compilation to VM bytecode (523 lines, 11 tests) ✅
-- `parser.rs` - Query language parser using Pest (264 lines, 6 tests) ✅
-- `query.pest` - Pest grammar for query language ✅
-- `index.rs` - Inverted indices for fast candidate lookup (116 lines) ✅
+- `tree.rs` - Tree data structures for representing dependency parses
+- `pattern.rs` - Pattern AST representation
+- `parser.rs` - Query language parser using Pest
+- `query.pest` - Pest grammar for query language
+- `index.rs` - Inverted indices for fast candidate lookup
+- `conllu.rs` - CoNLL-U file parsing
+- `searcher.rs` - Main search coordination (to be rewritten as CSP solver)
 
 #### Python Bindings (`python/`)
 - PyO3-based bindings (Phase 1, not yet implemented)
@@ -58,9 +51,7 @@ The project has **successfully completed** the core pattern matching VM implemen
 
 #### Planning Documents (`plans/`)
 - `PROJECT_SUMMARY.md` - Overall project roadmap and design
-- `PHASE_0_IMPLEMENTATION_PLAN.md` - Current phase details
-- `pattern_matching_vm_design.md` - VM architecture and instruction set
-- `SETUP_NOTES.md` - Setup and configuration notes
+- `PHASE_1_PLAN.md` - Next phase planning
 
 ## Directory Structure
 
@@ -111,36 +102,31 @@ maturin develop
 
 ## Key Design Decisions
 
-### 1. Algorithm-First Approach
-The project deliberately implements the matching VM before parsing/query language to ensure optimal performance from the start.
+### 1. Constraint Satisfaction Approach
+Pattern matching is treated as a constraint satisfaction problem (CSP). Each pattern element represents a variable that must be bound to a tree node, subject to constraints from node attributes and edge relationships.
 
-### 2. Virtual Machine Architecture
-Pattern matching uses a stack-based VM with specialized instructions for tree navigation, avoiding regex-style backtracking where possible.
+### 2. Index-Based Candidate Generation
+Inverted indices quickly generate candidate nodes for each pattern variable, providing the initial domains for the CSP solver.
 
-### 3. Two-Phase Matching
-- **Phase 1**: Inverted indices quickly find candidate nodes
-- **Phase 2**: VM verifies complete pattern match
-
-### 4. Deterministic Matching
-Always returns leftmost, shortest-path matches to ensure reproducible results.
+### 3. Performance Focus
+Designed to handle very large corpora (500M+ tokens) with file-level parallelization using rayon.
 
 ## Working with This Codebase
 
-### Current Architecture (Phase 0 Complete)
+### Current Architecture (In Progress)
 
 ```
-Query String  →  Parser (pest)  →  Pattern AST  →  Compiler  →  Bytecode  →  VM  →  Match
-                    ✅                ✅              ✅           ✅         ✅      ✅
+Query String  →  Parser  →  Pattern AST  →  CSP Solver  →  Matches
+                   ✅          ✅              🔄             🔄
 ```
 
-All core components working. Index exists but needs TreeSearcher integration.
+Index exists for candidate lookup. CSP solver needs to be implemented.
 
 ### When Adding Features
-1. Core VM and compiler are stable - avoid changes unless necessary
-2. Focus on Phase 1 items: CoNLL-U parsing, TreeSearcher, Python bindings
-3. Add tests following existing patterns (56 tests provide good examples)
-4. Add benchmarks in `benches/` (currently empty, needs implementation)
-5. Update planning docs when design decisions change
+1. CSP solver is the current focus - this is the core matching algorithm
+2. Add tests as you implement
+3. Add benchmarks in `benches/` to measure performance
+4. Update planning docs when design decisions change
 
 ### Code Style
 - Rust: Standard rustfmt style
@@ -159,16 +145,18 @@ All core components working. Index exists but needs TreeSearcher integration.
 Searches for structural patterns in dependency parse trees (linguistic data). Think of it as a specialized query engine for tree-structured linguistic annotations.
 
 **What's Working Now**:
-- ✅ Complete pattern matching VM with all instructions
 - ✅ Query language parser (can parse queries like `Help [lemma="help"]; To [lemma="to"]; Help -[xcomp]-> To;`)
-- ✅ Pattern compilation with anchor selection
-- ✅ Backtracking for ambiguous patterns
-- ✅ BFS wildcard search (descendants, ancestors, siblings)
+- ✅ Pattern AST representation
+- ✅ CoNLL-U file parsing
+- ✅ Tree data structures
+- ✅ Inverted indices for candidate lookup
+
+### What's Being Rewritten
+- 🔄 Pattern matching algorithm (moving from VM to CSP approach)
 
 ### What's Still Needed
-- ⏳ TreeSearcher integration (combine index + compiler + VM)
-- ⏳ CoNLL-U parser (currently using minimal test fixtures)
-- ⏳ Python bindings (Phase 1)
+- ⏳ CSP solver implementation
+- ⏳ Python bindings
 - ⏳ Performance benchmarks
 
 ### Performance Goals
@@ -183,31 +171,24 @@ This is for corpus linguistics research, where researchers need to find specific
 
 1. **First time setup**:
    ```bash
-   cargo check              # Compiles without warnings
-   cargo test               # 56 tests pass
-   cargo run --example query_example  # See working demo
+   cargo check              # Check compilation
+   cargo test               # Run tests
    ```
 
 2. **Understanding the codebase**: Start with these files in order:
    - `README.md` - User-level overview
    - `plans/PROJECT_SUMMARY.md` - Design rationale and current status
-   - `plans/PHASE_0_PROGRESS.md` - Detailed progress notes
-   - `examples/query_example.rs` - Working example of query → execution
-   - `src/vm.rs` - Core VM implementation (well-tested)
-   - `src/compiler.rs` - Pattern compilation
    - `src/parser.rs` - Query language parsing
+   - `src/pattern.rs` - Pattern AST
+   - `src/tree.rs` - Tree data structures
+   - `src/conllu.rs` - CoNLL-U parsing
+   - `src/index.rs` - Inverted indices
+   - `src/searcher.rs` - Search coordination (being rewritten)
 
 3. **Making changes**:
-   - Phase 0 core is stable - avoid changing VM/compiler unless necessary
-   - Focus on Phase 1: CoNLL-U parsing, TreeSearcher, Python bindings
-   - Follow existing test patterns (56 tests provide good examples)
+   - Current focus: Rewriting pattern matching as CSP solver
    - Run `cargo test` and `cargo check` before committing
-   - Update planning docs if design changes
-
-4. **Running examples**:
-   ```bash
-   cargo run --example query_example
-   ```
+   - Update planning docs when design changes
 
 ## References
 
