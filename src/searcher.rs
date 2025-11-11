@@ -57,7 +57,6 @@ pub fn search_query<'a>(
     Ok(search(tree, pattern))
 }
 
-
 // Tests will be rewritten once CSP solver is implemented
 #[cfg(test)]
 mod tests {

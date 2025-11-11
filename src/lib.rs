@@ -17,7 +17,7 @@ pub mod python;
 // Re-exports for convenience
 pub use conllu::CoNLLUReader;
 pub use parser::parse_query;
-pub use pattern::{Pattern, PatternElement};
+pub use pattern::{Pattern, PatternNode};
 pub use searcher::{SearchError, search, search_query};
 pub use tree::{Features, Node, TokenId, Tree};
 
