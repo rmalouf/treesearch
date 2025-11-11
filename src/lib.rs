@@ -5,7 +5,6 @@
 
 // Core modules
 pub mod conllu; // CoNLL-U file parsing
-pub mod index; // Inverted indices for candidate lookup
 pub mod parser; // Query language parser
 pub mod pattern; // Pattern AST
 pub mod searcher;
