@@ -18,15 +18,14 @@ The project is undergoing a fundamental redesign. The previous VM-based approach
 - ✅ Query language parser (can parse queries)
 - ✅ Pattern AST representation
 - ✅ CoNLL-U parsing and tree structures
-- ✅ Inverted indices for candidate lookup
-- 🔄 **Rewriting matcher as CSP solver** (in progress)
+- 🔄 **Implementing CSP solver for exhaustive matching** (in progress)
 
 ## Architecture
 
 ### Core Design Principles
 
-1. **Constraint satisfaction approach**: Pattern matching as CSP solving
-2. **Index-based candidate lookup**: Inverted indices for fast initial filtering
+1. **Constraint satisfaction approach**: Pattern matching as CSP solving with exhaustive search
+2. **All solutions**: Find ALL possible matches, no filtering or pruning based on leftmost/shortest/etc.
 3. **File-level parallelization**: Using rayon
 4. **Error handling strategy**:
    - **User input errors** (malformed queries, invalid CoNLL-U, missing files) → `Result::Err` with clear message
@@ -41,9 +40,8 @@ The project is undergoing a fundamental redesign. The previous VM-based approach
 - `pattern.rs` - Pattern AST representation
 - `parser.rs` - Query language parser using Pest
 - `query.pest` - Pest grammar for query language
-- `index.rs` - Inverted indices for fast candidate lookup
 - `conllu.rs` - CoNLL-U file parsing
-- `searcher.rs` - Main search coordination (to be rewritten as CSP solver)
+- `searcher.rs` - CSP solver for pattern matching (to be implemented)
 
 #### Python Bindings (`python/`)
 - PyO3-based bindings (Phase 1, not yet implemented)
@@ -105,8 +103,8 @@ maturin develop
 ### 1. Constraint Satisfaction Approach
 Pattern matching is treated as a constraint satisfaction problem (CSP). Each pattern element represents a variable that must be bound to a tree node, subject to constraints from node attributes and edge relationships.
 
-### 2. Index-Based Candidate Generation
-Inverted indices quickly generate candidate nodes for each pattern variable, providing the initial domains for the CSP solver.
+### 2. Exhaustive Search
+The CSP solver finds ALL possible matches. No pruning strategies like "leftmost" or "shortest path" - we want every valid solution.
 
 ### 3. Performance Focus
 Designed to handle very large corpora (500M+ tokens) with file-level parallelization using rayon.
@@ -116,11 +114,11 @@ Designed to handle very large corpora (500M+ tokens) with file-level paralleliza
 ### Current Architecture (In Progress)
 
 ```
-Query String  →  Parser  →  Pattern AST  →  CSP Solver  →  Matches
-                   ✅          ✅              🔄             🔄
+Query String  →  Parser  →  Pattern AST  →  CSP Solver  →  All Matches
+                   ✅          ✅              🔄              🔄
 ```
 
-Index exists for candidate lookup. CSP solver needs to be implemented.
+CSP solver needs to be implemented to find all possible matches exhaustively.
 
 ### When Adding Features
 1. CSP solver is the current focus - this is the core matching algorithm
@@ -146,10 +144,9 @@ Searches for structural patterns in dependency parse trees (linguistic data). Th
 
 **What's Working Now**:
 - ✅ Query language parser (can parse queries like `Help [lemma="help"]; To [lemma="to"]; Help -[xcomp]-> To;`)
-- ✅ Pattern AST representation
+- ✅ Pattern AST representation with constraints
 - ✅ CoNLL-U file parsing
 - ✅ Tree data structures
-- ✅ Inverted indices for candidate lookup
 
 ### What's Being Rewritten
 - 🔄 Pattern matching algorithm (moving from VM to CSP approach)
@@ -182,8 +179,7 @@ This is for corpus linguistics research, where researchers need to find specific
    - `src/pattern.rs` - Pattern AST
    - `src/tree.rs` - Tree data structures
    - `src/conllu.rs` - CoNLL-U parsing
-   - `src/index.rs` - Inverted indices
-   - `src/searcher.rs` - Search coordination (being rewritten)
+   - `src/searcher.rs` - CSP solver (to be implemented)
 
 3. **Making changes**:
    - Current focus: Rewriting pattern matching as CSP solver

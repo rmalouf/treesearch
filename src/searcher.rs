@@ -2,14 +2,11 @@
 //!
 //! The search pipeline:
 //! 1. Parse query string into Pattern
-//! 2. Build index from tree
-//! 3. Generate candidate domains from index
-//! 4. Solve CSP to find matches
-//! 5. Yield matches
+//! 2. Solve CSP to find ALL matches (exhaustive search)
+//! 3. Yield matches
 //!
-//! TODO: Reimplement as CSP solver
+//! TODO: Implement CSP solver
 
-use crate::index::TreeIndex;
 use crate::parser::parse_query;
 use crate::pattern::{Constraint, Pattern};
 use crate::tree::{NodeId, Tree};
@@ -60,62 +57,6 @@ pub fn search_query<'a>(
     Ok(search(tree, pattern))
 }
 
-/// Get candidate nodes from index based on anchor element
-fn get_candidates(
-    tree: &Tree,
-    pattern: &Pattern,
-    anchor_idx: usize,
-    index: &TreeIndex,
-) -> Vec<NodeId> {
-    if pattern.elements.is_empty() {
-        return Vec::new();
-    }
-
-    let anchor_element = &pattern.elements[anchor_idx];
-    let constraint = &anchor_element.constraints;
-
-    // Query index based on constraint type
-    match get_candidates_from_constraint(constraint, index) {
-        Some(candidates) => candidates.to_vec(),
-        None => {
-            // No specific constraint - return all nodes
-            (0..tree.nodes.len()).collect()
-        }
-    }
-}
-
-/// Get candidates from index based on constraint
-fn get_candidates_from_constraint<'a>(
-    constraint: &Constraint,
-    index: &'a TreeIndex,
-) -> Option<&'a [NodeId]> {
-    match constraint {
-        Constraint::Lemma(lemma) => index.get_by_lemma(lemma),
-        Constraint::POS(pos) => index.get_by_pos(pos),
-        Constraint::Form(form) => index.get_by_form(form),
-        Constraint::DepRel(deprel) => index.get_by_deprel(deprel),
-        Constraint::And(constraints) => {
-            // For And, use the most selective constraint
-            // Try lemma/form first (most selective), then POS/deprel
-            for c in constraints {
-                if let Some(candidates) = get_candidates_from_constraint(c, index) {
-                    return Some(candidates);
-                }
-            }
-            None
-        }
-        Constraint::Or(constraints) => {
-            // For Or, we'd need to union all candidates
-            // For now, just use the first constraint
-            if let Some(c) = constraints.first() {
-                get_candidates_from_constraint(c, index)
-            } else {
-                None
-            }
-        }
-        Constraint::Any => None, // No filtering
-    }
-}
 
 // Tests will be rewritten once CSP solver is implemented
 #[cfg(test)]
