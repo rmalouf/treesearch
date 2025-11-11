@@ -146,6 +146,26 @@ fn compile_edge(
 
 /// Compile a pattern into VM opcodes
 /// Returns (opcodes, anchor_index, var_names)
+///
+/// # Current Limitations
+///
+/// The compiler has a known limitation when the anchor node has edges in certain
+/// combinations that require navigating back using a Child relation. Specifically:
+///
+/// 1. **Parent edge + Child edge from anchor**: If the anchor has both a Parent edge
+///    (to its parent) and a Child edge (to a child), the compiler cannot navigate
+///    back from the parent to continue to the child.
+///
+/// 2. **Multiple Parent edges from anchor**: If the anchor has multiple Parent edges,
+///    the compiler cannot navigate back after visiting the first parent.
+///
+/// These cases will panic with "Cannot navigate back from child to parent".
+///
+/// **Workaround**: These patterns still work if the anchor is selected differently
+/// (e.g., by adjusting selectivity so a node with only Child edges becomes the anchor).
+///
+/// See tests: `test_anchor_with_parent_edge_and_child_edge_panics` and
+/// `test_anchor_with_multiple_parent_edges_panics`
 pub fn compile_pattern(pattern: Pattern) -> (Vec<Instruction>, usize, Vec<String>) {
     if pattern.elements.is_empty() {
         return (vec![Instruction::Match], 0, Vec::new());
@@ -258,8 +278,17 @@ pub fn compile_pattern(pattern: Pattern) -> (Vec<Instruction>, usize, Vec<String
                 match return_relation {
                     RelationType::Parent => opcodes.push(Instruction::MoveToParent),
                     RelationType::Child => {
-                        // Can't easily go back to parent from child - need PushState approach
-                        panic!("Compiler bug: Cannot navigate back from child to parent in current implementation");
+                        // LIMITATION: Cannot navigate back when return requires Child relation.
+                        // This happens when:
+                        // 1. Anchor has Parent edge (navigates to parent), then needs to
+                        //    navigate back (Child) to process another edge
+                        // 2. Multiple Parent edges from anchor
+                        // See compile_pattern() docs and panic detection tests for details.
+                        panic!(
+                            "Compiler limitation: Cannot navigate back from child to parent in current implementation. \
+                             This occurs when the anchor has multiple edges that require returning via Child relation. \
+                             Try adjusting pattern to select a different anchor."
+                        );
                     }
                     _ => {
                         // For scan operations, we need restore
@@ -630,6 +659,83 @@ mod tests {
         assert_eq!(match_result.bindings[&0], 0); // help
         assert_eq!(match_result.bindings[&1], 1); // to
         assert_eq!(match_result.bindings[&2], 2); // write
+    }
+
+    #[test]
+    #[should_panic(expected = "Compiler limitation: Cannot navigate back from child to parent")]
+    fn test_anchor_with_parent_edge_and_child_edge_panics() {
+        // This test detects a limitation: when anchor has both a parent edge
+        // and a child edge, the compiler can't navigate back from the parent
+        // Pattern: VERB (anchor) <- NOUN (parent), VERB -> ADV (child)
+        let mut pattern = Pattern::new();
+        pattern.add_element(PatternElement::new(
+            "verb",
+            Constraint::Lemma("run".to_string()), // High selectivity - will be anchor
+        ));
+        pattern.add_element(PatternElement::new(
+            "noun",
+            Constraint::POS("NOUN".to_string()),
+        ));
+        pattern.add_element(PatternElement::new(
+            "adv",
+            Constraint::POS("ADV".to_string()),
+        ));
+
+        // Edge 1: VERB has parent NOUN (Parent relation from verb to noun)
+        pattern.add_edge(PatternEdge {
+            from: "verb".to_string(),
+            to: "noun".to_string(),
+            relation: RelationType::Parent,
+            label: Some("nsubj".to_string()),
+        });
+        // Edge 2: VERB has child ADV (Child relation from verb to adv)
+        pattern.add_edge(PatternEdge {
+            from: "verb".to_string(),
+            to: "adv".to_string(),
+            relation: RelationType::Child,
+            label: Some("advmod".to_string()),
+        });
+
+        // This will panic when trying to navigate back from parent to child
+        compile_pattern(pattern);
+    }
+
+    #[test]
+    #[should_panic(expected = "Compiler limitation: Cannot navigate back from child to parent")]
+    fn test_anchor_with_multiple_parent_edges_panics() {
+        // This test detects another case: anchor with multiple parent edges
+        // Pattern: ADJ (parent1) <- NOUN (anchor) -> VERB (parent2)
+        let mut pattern = Pattern::new();
+        pattern.add_element(PatternElement::new(
+            "noun",
+            Constraint::Lemma("dog".to_string()), // High selectivity - will be anchor
+        ));
+        pattern.add_element(PatternElement::new(
+            "adj",
+            Constraint::POS("ADJ".to_string()),
+        ));
+        pattern.add_element(PatternElement::new(
+            "verb",
+            Constraint::POS("VERB".to_string()),
+        ));
+
+        // Edge 1: NOUN has parent ADJ
+        pattern.add_edge(PatternEdge {
+            from: "noun".to_string(),
+            to: "adj".to_string(),
+            relation: RelationType::Parent,
+            label: None,
+        });
+        // Edge 2: NOUN has parent VERB (second parent edge)
+        pattern.add_edge(PatternEdge {
+            from: "noun".to_string(),
+            to: "verb".to_string(),
+            relation: RelationType::Parent,
+            label: None,
+        });
+
+        // This will panic when trying to navigate back after first parent edge
+        compile_pattern(pattern);
     }
 
     #[test]
