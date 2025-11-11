@@ -5,7 +5,7 @@
 use pest::Parser;
 use pest_derive::Parser;
 
-use crate::pattern::{Constraint, Pattern, PatternEdge, PatternElement, RelationType};
+use crate::pattern::{Constraint, Pattern, PatternEdge, PatternNode, RelationType};
 
 #[derive(Parser)]
 #[grammar = "query.pest"]
@@ -59,7 +59,7 @@ pub fn parse_query(input: &str) -> Result<Pattern, ParseError> {
                 match inner.as_rule() {
                     Rule::node_decl => {
                         let element = parse_node_decl(inner)?;
-                        pattern.add_element(element);
+                        pattern.add_node(element);
                     }
                     Rule::edge_decl => {
                         let edge = parse_edge_decl(inner)?;
@@ -73,11 +73,12 @@ pub fn parse_query(input: &str) -> Result<Pattern, ParseError> {
         }
     }
 
+    pattern.compile_pattern();
     Ok(pattern)
 }
 
 /// Parse a node declaration: Name [constraint, constraint];
-fn parse_node_decl(pair: pest::iterators::Pair<Rule>) -> Result<PatternElement, ParseError> {
+fn parse_node_decl(pair: pest::iterators::Pair<Rule>) -> Result<PatternNode, ParseError> {
     let mut inner = pair.into_inner();
 
     let Some(ident_pair) = inner.next() else {
@@ -95,7 +96,7 @@ fn parse_node_decl(pair: pest::iterators::Pair<Rule>) -> Result<PatternElement, 
 
     let constraints = parse_constraint_list(constraint_list)?;
 
-    Ok(PatternElement::new(&ident, constraints))
+    Ok(PatternNode::new(&ident, constraints))
 }
 
 /// Parse constraint list: may be empty or comma-separated constraints
@@ -195,14 +196,16 @@ fn parse_edge_decl(pair: pest::iterators::Pair<Rule>) -> Result<PatternEdge, Par
 mod tests {
     use super::*;
 
+
+
     #[test]
     fn test_parse_empty_constraint() {
         let query = "Node [];";
         let pattern = parse_query(query).unwrap();
 
-        assert_eq!(pattern.elements.len(), 1);
-        assert_eq!(pattern.elements[0].var_name, "Node");
-        assert!(pattern.elements[0].constraints.is_any());
+        assert_eq!(pattern.nodes.len(), 1);
+        assert_eq!(pattern.nodes[0].var_name, "Node");
+        assert!(pattern.nodes[0].constraints.is_any());
     }
 
     #[test]
@@ -210,10 +213,10 @@ mod tests {
         let query = r#"Verb [pos="VERB"];"#;
         let pattern = parse_query(query).unwrap();
 
-        assert_eq!(pattern.elements.len(), 1);
-        assert_eq!(pattern.elements[0].var_name, "Verb");
+        assert_eq!(pattern.nodes.len(), 1);
+        assert_eq!(pattern.nodes[0].var_name, "Verb");
         assert_eq!(
-            pattern.elements[0].constraints,
+            pattern.nodes[0].constraints,
             Constraint::POS("VERB".to_string())
         );
     }
@@ -223,10 +226,10 @@ mod tests {
         let query = r#"Help [lemma="help", pos="VERB"];"#;
         let pattern = parse_query(query).unwrap();
 
-        assert_eq!(pattern.elements.len(), 1);
-        assert_eq!(pattern.elements[0].var_name, "Help");
+        assert_eq!(pattern.nodes.len(), 1);
+        assert_eq!(pattern.nodes[0].var_name, "Help");
 
-        match &pattern.elements[0].constraints {
+        match &pattern.nodes[0].constraints {
             Constraint::And(constraints) => {
                 assert_eq!(constraints.len(), 2);
                 assert_eq!(constraints[0], Constraint::Lemma("help".to_string()));
@@ -245,7 +248,8 @@ mod tests {
         "#;
         let pattern = parse_query(query).unwrap();
 
-        assert_eq!(pattern.elements.len(), 2);
+        assert!(pattern.compiled);
+        assert_eq!(pattern.nodes.len(), 2);
         assert_eq!(pattern.edges.len(), 1);
 
         let edge = &pattern.edges[0];
@@ -264,7 +268,7 @@ mod tests {
         "#;
         let pattern = parse_query(query).unwrap();
 
-        assert_eq!(pattern.elements.len(), 2);
+        assert_eq!(pattern.nodes.len(), 2);
         assert_eq!(pattern.edges.len(), 1);
 
         let edge = &pattern.edges[0];
@@ -285,7 +289,7 @@ mod tests {
         "#;
         let pattern = parse_query(query).unwrap();
 
-        assert_eq!(pattern.elements.len(), 3);
+        assert_eq!(pattern.nodes.len(), 3);
         assert_eq!(pattern.edges.len(), 2);
 
         // First edge has a label
@@ -308,13 +312,13 @@ mod tests {
         "#;
         let pattern = parse_query(query).unwrap();
 
-        assert_eq!(pattern.elements.len(), 3);
+        assert_eq!(pattern.nodes.len(), 3);
         assert_eq!(pattern.edges.len(), 2);
 
         // Verify nodes
-        assert_eq!(pattern.elements[0].var_name, "Help");
-        assert_eq!(pattern.elements[1].var_name, "To");
-        assert_eq!(pattern.elements[2].var_name, "YHead");
+        assert_eq!(pattern.nodes[0].var_name, "Help");
+        assert_eq!(pattern.nodes[1].var_name, "To");
+        assert_eq!(pattern.nodes[2].var_name, "YHead");
 
         // Verify edges
         assert_eq!(pattern.edges[0].from, "Help");
@@ -333,21 +337,21 @@ mod tests {
         "#;
         let pattern = parse_query(query).unwrap();
 
-        assert_eq!(pattern.elements.len(), 4);
+        assert_eq!(pattern.nodes.len(), 4);
         assert_eq!(
-            pattern.elements[0].constraints,
+            pattern.nodes[0].constraints,
             Constraint::Lemma("run".to_string())
         );
         assert_eq!(
-            pattern.elements[1].constraints,
+            pattern.nodes[1].constraints,
             Constraint::POS("VERB".to_string())
         );
         assert_eq!(
-            pattern.elements[2].constraints,
+            pattern.nodes[2].constraints,
             Constraint::Form("running".to_string())
         );
         assert_eq!(
-            pattern.elements[3].constraints,
+            pattern.nodes[3].constraints,
             Constraint::DepRel("nsubj".to_string())
         );
     }
