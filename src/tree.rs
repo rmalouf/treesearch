@@ -5,8 +5,8 @@
 
 use std::collections::HashMap;
 
-/// Unique identifier for a node (index in tree's nodes vector)
-pub type NodeId = usize;
+/// Unique identifier for a word (index in tree's words vector)
+pub type WordId = usize;
 
 /// Token ID from CoNLL-U file (1-based integer)
 pub type TokenId = usize;
@@ -17,21 +17,18 @@ pub type Features = HashMap<String, String>;
 /// Enhanced dependency (for DEPS field)
 #[derive(Debug, Clone, PartialEq)]
 pub struct Dep {
-    pub head: Option<NodeId>,
+    pub head: Option<WordId>,
     pub deprel: String,
 }
 
 /// Miscellaneous annotations (key=value pairs)
 pub type Misc = HashMap<String, String>;
 
-/// A node in a dependency tree
+/// A word in a dependency tree
 #[derive(Debug, Clone)]
-pub struct Node {
-    // Node identifier (index in tree)
-    pub id: NodeId,
-
-    // Linear position for leftmost semantics (Phase 1)
-    pub position: usize,
+pub struct Word {
+    // Word identifier (index in tree)
+    pub id: WordId,
 
     // CoNLL-U ID field (1-based token number from file)
     pub token_id: TokenId,
@@ -47,11 +44,11 @@ pub struct Node {
     pub misc: Misc,           // MISC (miscellaneous)
 
     // Tree structure (computed from HEAD field)
-    pub(crate) parent: Option<NodeId>,
-    pub(crate) children: Vec<NodeId>,
+    pub(crate) parent: Option<WordId>,
+    pub(crate) children: Vec<WordId>,
 }
 
-impl Node {
+impl Word {
     /// Get all children with a specific dependency relation
     ///
     /// Returns all children that have the specified dependency relation.
@@ -59,61 +56,57 @@ impl Node {
     /// coordinated structures).
     ///
     /// # Arguments
-    /// * `tree` - Reference to the tree containing this node
+    /// * `tree` - Reference to the tree containing this word
     /// * `deprel` - The dependency relation name to search for (e.g., "conj", "obl")
     ///
     /// # Examples
     /// ```
-    /// # use treesearch::{Tree, Node};
+    /// # use treesearch::{Tree, Word};
     /// let mut tree = Tree::new();
-    /// tree.add_node(Node::new(0, "and", "and", "CCONJ", "root"));
-    /// tree.add_node(Node::new(1, "cats", "cat", "NOUN", "conj"));
-    /// tree.add_node(Node::new(2, "dogs", "dog", "NOUN", "conj"));
+    /// tree.add_word(Word::new(0, "and", "and", "CCONJ", "root"));
+    /// tree.add_word(Word::new(1, "cats", "cat", "NOUN", "conj"));
+    /// tree.add_word(Word::new(2, "dogs", "dog", "NOUN", "conj"));
     /// tree.set_parent(1, 0);
     /// tree.set_parent(2, 0);
     ///
-    /// let coord = tree.get_node(0).unwrap();
+    /// let coord = tree.get_word(0).unwrap();
     /// let conjuncts = coord.children_by_deprel(&tree, "conj");
     /// assert_eq!(conjuncts.len(), 2);
     /// ```
-    pub fn children_by_deprel<'a>(&self, tree: &'a Tree, deprel: &str) -> Vec<&'a Node> {
+    pub fn children_by_deprel<'a>(&self, tree: &'a Tree, deprel: &str) -> Vec<&'a Word> {
         self.children
             .iter()
-            .map(|&id| tree.get_node_unchecked(id))
+            .map(|&id| &tree.words[id])
             .filter(|child| child.deprel == deprel)
             .collect()
     }
 
-    /// Get the parent node
+    /// Get the parent word
     ///
-    /// Returns the parent node if one exists.
-    ///
-    /// # Arguments
-    /// * `tree` - Reference to the tree containing this node
-    pub fn parent<'a>(&self, tree: &'a Tree) -> Option<&'a Node> {
-        self.parent
-            .map(|parent_id| tree.get_node_unchecked(parent_id))
-    }
-
-    /// Get all children nodes
-    ///
-    /// Returns all children of this node.
+    /// Returns the parent word if one exists.
     ///
     /// # Arguments
-    /// * `tree` - Reference to the tree containing this node
-    pub fn children<'a>(&self, tree: &'a Tree) -> Vec<&'a Node> {
-        self.children
-            .iter()
-            .map(|&id| tree.get_node_unchecked(id))
-            .collect()
+    /// * `tree` - Reference to the tree containing this word
+    pub fn parent<'a>(&self, tree: &'a Tree) -> Option<&'a Word> {
+        let id = self.parent?;
+        Some(&tree.words[id])
     }
 
-    /// Create a new node with minimal attributes (for Phase 0 compatibility)
-    pub fn new(id: NodeId, form: &str, lemma: &str, pos: &str, deprel: &str) -> Self {
+    /// Get all child words
+    ///
+    /// Returns all children of this word.
+    ///
+    /// # Arguments
+    /// * `tree` - Reference to the tree containing this word
+    pub fn children<'a>(&self, tree: &'a Tree) -> Vec<&'a Word> {
+        self.children.iter().map(|&id| &tree.words[id]).collect()
+    }
+
+    /// Create a new word with minimal attributes
+    pub fn new(id: WordId, form: &str, lemma: &str, pos: &str, deprel: &str) -> Self {
         Self {
             id,
-            position: id, // Default: position = id
-            token_id: id, // Default: token_id = id (1-based)
+            token_id: id,
             form: form.to_string(),
             lemma: lemma.to_string(),
             pos: pos.to_string(),
@@ -127,11 +120,10 @@ impl Node {
         }
     }
 
-    /// Create a new node with full CoNLL-U fields
+    /// Create a new word with full CoNLL-U fields
     #[allow(clippy::too_many_arguments)]
     pub fn with_full_fields(
-        id: NodeId,
-        position: usize,
+        id: WordId,
         token_id: TokenId,
         form: String,
         lemma: String,
@@ -144,7 +136,6 @@ impl Node {
     ) -> Self {
         Self {
             id,
-            position,
             token_id,
             form,
             lemma,
@@ -163,8 +154,8 @@ impl Node {
 /// A dependency tree (sentence)
 #[derive(Debug, Clone)]
 pub struct Tree {
-    pub(crate) nodes: Vec<Node>,
-    pub root_id: Option<NodeId>,
+    pub(crate) words: Vec<Word>,
+    pub root_id: Option<WordId>,
 
     // Sentence metadata (from CoNLL-U comments)
     pub sentence_text: Option<String>,
@@ -175,7 +166,7 @@ impl Tree {
     /// Create a new empty tree
     pub fn new() -> Self {
         Self {
-            nodes: Vec::new(),
+            words: Vec::new(),
             root_id: None,
             sentence_text: None,
             metadata: HashMap::new(),
@@ -185,101 +176,89 @@ impl Tree {
     /// Create a new tree with sentence metadata
     pub fn with_metadata(sentence_text: Option<String>, metadata: HashMap<String, String>) -> Self {
         Self {
-            nodes: Vec::new(),
+            words: Vec::new(),
             root_id: None,
             sentence_text,
             metadata,
         }
     }
 
-    /// Add a node to the tree
-    pub fn add_node(&mut self, node: Node) {
-        self.nodes.push(node);
+    /// Add a word to the tree
+    pub fn add_word(&mut self, word: Word) {
+        self.words.push(word);
     }
 
-    /// Get a node by ID (safe external API)
+    /// Get a word by ID (safe external API)
     ///
-    /// Returns `Ok(&Node)` if the node exists, or `Err` with a descriptive message if not.
-    /// Use this for external callers where the node ID might be invalid user input.
-    pub fn get_node(&self, id: NodeId) -> Result<&Node, String> {
-        let Some(node) = self.nodes.get(id) else {
+    /// Returns `Ok(&Word)` if the word exists, or `Err` with a descriptive message if not.
+    /// Use this for external callers where the word ID might be invalid user input.
+    pub fn get_word(&self, id: WordId) -> Result<&Word, String> {
+        let Some(word) = self.words.get(id) else {
             return Err(format!(
-                "Node with id {} does not exist (tree has {} nodes)",
+                "Word with id {} does not exist (tree has {} words)",
                 id,
-                self.nodes.len()
+                self.words.len()
             ));
         };
-        Ok(node)
+        Ok(word)
     }
 
-    /// Get a node by ID (unchecked internal API)
-    ///
-    /// Returns a reference to the node, panicking if the ID is invalid.
-    /// This is for internal use where invalid IDs indicate bugs, not user errors.
+    /// Set the parent of a word
     ///
     /// # Panics
     ///
-    /// Panics if the node ID is out of bounds.
-    pub(crate) fn get_node_unchecked(&self, id: NodeId) -> &Node {
-        &self.nodes[id]
-    }
-
-    /// Set the parent of a node
-    ///
-    /// # Panics
-    ///
-    /// Panics if either the child node or parent node doesn't exist.
-    /// This is an internal API for tree construction - invalid node IDs indicate a bug.
-    pub fn set_parent(&mut self, child_id: NodeId, parent_id: NodeId) {
-        // Validate both nodes exist
+    /// Panics if either the child word or parent word doesn't exist.
+    /// This is an internal API for tree construction - invalid word IDs indicate a bug.
+    pub fn set_parent(&mut self, child_id: WordId, parent_id: WordId) {
+        // Validate both words exist
         assert!(
-            child_id < self.nodes.len(),
-            "Child node with id {} does not exist (tree has {} nodes)",
+            child_id < self.words.len(),
+            "Child word with id {} does not exist (tree has {} words)",
             child_id,
-            self.nodes.len()
+            self.words.len()
         );
         assert!(
-            parent_id < self.nodes.len(),
-            "Parent node with id {} does not exist (tree has {} nodes)",
+            parent_id < self.words.len(),
+            "Parent words with id {} does not exist (tree has {} words)",
             parent_id,
-            self.nodes.len()
+            self.words.len()
         );
 
         // Both exist, safe to modify
-        self.nodes[child_id].parent = Some(parent_id);
-        self.nodes[parent_id].children.push(child_id);
+        self.words[child_id].parent = Some(parent_id);
+        self.words[parent_id].children.push(child_id);
     }
 
-    /// Get the parent ID of a node
+    /// Get the parent ID of a word
     ///
-    /// Returns `Ok(Some(parent_id))` if the node exists and has a parent,
-    /// `Ok(None)` if the node exists but has no parent,
-    /// or `Err` if the node doesn't exist.
-    pub fn parent_id(&self, node_id: NodeId) -> Result<Option<NodeId>, String> {
-        Ok(self.get_node(node_id)?.parent)
+    /// Returns `Ok(Some(parent_id))` if the word exists and has a parent,
+    /// `Ok(None)` if the word exists but has no parent,
+    /// or `Err` if the word doesn't exist.
+    pub fn parent_id(&self, word_id: WordId) -> Result<Option<WordId>, String> {
+        Ok(self.get_word(word_id)?.parent)
     }
 
-    /// Get the children IDs of a node
+    /// Get the children IDs of a word
     ///
-    /// Returns `Ok(vec)` with the children IDs if the node exists,
-    /// or `Err` if the node doesn't exist.
-    pub fn children_ids(&self, node_id: NodeId) -> Result<Vec<NodeId>, String> {
-        Ok(self.get_node(node_id)?.children.clone())
+    /// Returns `Ok(vec)` with the children IDs if the word exists,
+    /// or `Err` if the word doesn't exist.
+    pub fn children_ids(&self, word_id: WordId) -> Result<Vec<WordId>, String> {
+        Ok(self.get_word(word_id)?.children.clone())
     }
 
-    /// Get all nodes in the tree
-    pub fn nodes(&self) -> &[Node] {
-        &self.nodes
-    }
+    // /// Get all words in the tree
+    // pub fn words(&self) -> &[Word] {
+    //     &self.words
+    // }
 
-    /// Get the number of nodes in the tree
+    /// Get the number of words in the tree
     pub fn len(&self) -> usize {
-        self.nodes.len()
+        self.words.len()
     }
 
     /// Check if the tree is empty
     pub fn is_empty(&self) -> bool {
-        self.nodes.is_empty()
+        self.words.is_empty()
     }
 }
 
@@ -296,14 +275,14 @@ mod tests {
     #[test]
     fn test_tree_creation() {
         let mut tree = Tree::new();
-        let root = Node::new(0, "runs", "run", "VERB", "root");
-        let child = Node::new(1, "dog", "dog", "NOUN", "nsubj");
+        let root = Word::new(0, "runs", "run", "VERB", "root");
+        let child = Word::new(1, "dog", "dog", "NOUN", "nsubj");
 
-        tree.add_node(root);
-        tree.add_node(child);
+        tree.add_word(root);
+        tree.add_word(child);
         tree.set_parent(1, 0);
 
-        assert_eq!(tree.nodes.len(), 2);
+        assert_eq!(tree.words.len(), 2);
         assert_eq!(tree.parent_id(1).unwrap(), Some(0));
         assert_eq!(tree.children_ids(0).unwrap().len(), 1);
     }
@@ -311,15 +290,15 @@ mod tests {
     #[test]
     fn test_children_by_deprel_multiple_matches() {
         let mut tree = Tree::new();
-        tree.add_node(Node::new(0, "and", "and", "CCONJ", "root"));
-        tree.add_node(Node::new(1, "cats", "cat", "NOUN", "conj"));
-        tree.add_node(Node::new(2, "dogs", "dog", "NOUN", "conj"));
-        tree.add_node(Node::new(3, "birds", "bird", "NOUN", "conj"));
+        tree.add_word(Word::new(0, "and", "and", "CCONJ", "root"));
+        tree.add_word(Word::new(1, "cats", "cat", "NOUN", "conj"));
+        tree.add_word(Word::new(2, "dogs", "dog", "NOUN", "conj"));
+        tree.add_word(Word::new(3, "birds", "bird", "NOUN", "conj"));
         tree.set_parent(1, 0);
         tree.set_parent(2, 0);
         tree.set_parent(3, 0);
 
-        let coord = tree.get_node(0).unwrap();
+        let coord = tree.get_word(0).unwrap();
 
         let conjuncts = coord.children_by_deprel(&tree, "conj");
         assert_eq!(conjuncts.len(), 3);
@@ -331,13 +310,13 @@ mod tests {
     #[test]
     fn test_children_by_deprel_single_match() {
         let mut tree = Tree::new();
-        tree.add_node(Node::new(0, "runs", "run", "VERB", "root"));
-        tree.add_node(Node::new(1, "dog", "dog", "NOUN", "nsubj"));
-        tree.add_node(Node::new(2, "quickly", "quickly", "ADV", "advmod"));
+        tree.add_word(Word::new(0, "runs", "run", "VERB", "root"));
+        tree.add_word(Word::new(1, "dog", "dog", "NOUN", "nsubj"));
+        tree.add_word(Word::new(2, "quickly", "quickly", "ADV", "advmod"));
         tree.set_parent(1, 0);
         tree.set_parent(2, 0);
 
-        let verb = tree.get_node(0).unwrap();
+        let verb = tree.get_word(0).unwrap();
 
         let subjects = verb.children_by_deprel(&tree, "nsubj");
         assert_eq!(subjects.len(), 1);
@@ -347,11 +326,11 @@ mod tests {
     #[test]
     fn test_children_by_deprel_no_matches() {
         let mut tree = Tree::new();
-        tree.add_node(Node::new(0, "runs", "run", "VERB", "root"));
-        tree.add_node(Node::new(1, "dog", "dog", "NOUN", "nsubj"));
+        tree.add_word(Word::new(0, "runs", "run", "VERB", "root"));
+        tree.add_word(Word::new(1, "dog", "dog", "NOUN", "nsubj"));
         tree.set_parent(1, 0);
 
-        let verb = tree.get_node(0).unwrap();
+        let verb = tree.get_word(0).unwrap();
 
         let objects = verb.children_by_deprel(&tree, "obj");
         assert_eq!(objects.len(), 0);
@@ -360,17 +339,17 @@ mod tests {
     #[test]
     fn test_children_by_deprel_mixed_children() {
         let mut tree = Tree::new();
-        tree.add_node(Node::new(0, "runs", "run", "VERB", "root"));
-        tree.add_node(Node::new(1, "dog", "dog", "NOUN", "nsubj"));
-        tree.add_node(Node::new(2, "park", "park", "NOUN", "obl"));
-        tree.add_node(Node::new(3, "store", "store", "NOUN", "obl"));
-        tree.add_node(Node::new(4, "quickly", "quickly", "ADV", "advmod"));
+        tree.add_word(Word::new(0, "runs", "run", "VERB", "root"));
+        tree.add_word(Word::new(1, "dog", "dog", "NOUN", "nsubj"));
+        tree.add_word(Word::new(2, "park", "park", "NOUN", "obl"));
+        tree.add_word(Word::new(3, "store", "store", "NOUN", "obl"));
+        tree.add_word(Word::new(4, "quickly", "quickly", "ADV", "advmod"));
         tree.set_parent(1, 0);
         tree.set_parent(2, 0);
         tree.set_parent(3, 0);
         tree.set_parent(4, 0);
 
-        let verb = tree.get_node(0).unwrap();
+        let verb = tree.get_word(0).unwrap();
 
         // Should only return obl children
         let obliques = verb.children_by_deprel(&tree, "obl");

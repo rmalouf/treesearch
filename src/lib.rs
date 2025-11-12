@@ -19,7 +19,7 @@ pub use conllu::CoNLLUReader;
 pub use parser::parse_query;
 pub use pattern::{Pattern, PatternNode};
 pub use searcher::{SearchError, search, search_query};
-pub use tree::{Features, Node, TokenId, Tree};
+pub use tree::{Features, TokenId, Tree, Word};
 
 #[cfg(test)]
 mod tests {

@@ -83,14 +83,18 @@ pub struct PatternEdge {
 /// A complete pattern to match against dependency trees
 #[derive(Debug, Clone)]
 pub struct Pattern {
-    /// Number of variables
-    n_vars: usize,
-    /// Var name -> var index mapping
-    var_names: HashMap<String, usize>,
-    /// Out edge indices by variable
-    out_edges: Vec<Vec<usize>>,
-    /// In edge indices by variable
-    in_edges: Vec<Vec<usize>>,
+    /// Number of nodes
+    pub n_nodes: usize,
+    /// Node name -> NodeId
+    pub node_names: HashMap<String, usize>,
+    /// Out edge indices by node
+    pub out_edges: Vec<Vec<usize>>,
+    /// In edge indices by node
+    pub in_edges: Vec<Vec<usize>>,
+
+    pub required_parents: Vec<Vec<String>>,
+    pub required_children: Vec<Vec<String>>,
+
     /// Pattern elements (nodes)
     pub nodes: Vec<PatternNode>,
     /// Edges connecting the elements
@@ -102,10 +106,12 @@ pub struct Pattern {
 impl Pattern {
     pub fn new() -> Self {
         Self {
-            n_vars: 0,
-            var_names: HashMap::new(),
+            n_nodes: 0,
+            node_names: HashMap::new(),
             in_edges: Vec::new(),
             out_edges: Vec::new(),
+            required_parents: Vec::new(),
+            required_children: Vec::new(),
             nodes: Vec::new(),
             edges: Vec::new(),
             compiled: false,
@@ -123,29 +129,42 @@ impl Pattern {
     }
 
     pub fn compile_pattern(&mut self) {
-
         assert!(!self.compiled, "Can't compile pattern more than once!");
 
         // Compile nodes
+        self.n_nodes = self.nodes.len();
         for node in self.nodes.iter() {
-            let var_name = &node.var_name;
-            if !self.var_names.contains_key(var_name) {
-                self.var_names.insert(var_name.clone(), self.n_vars);
+            let node_name = &node.var_name;
+            if !self.node_names.contains_key(node_name) {
+                self.node_names.insert(node_name.clone(), self.n_nodes);
                 self.out_edges.push(Vec::new());
                 self.in_edges.push(Vec::new());
-                self.n_vars += 1;
+                self.n_nodes += 1;
             }
+            // TODO: check for duplicate nodes
         }
 
         // Compile edges
         for (edge_index, edge) in self.edges.iter().enumerate() {
-            let from_index = self.var_names.get(&edge.from).unwrap();
-            let to_index = self.var_names.get(&edge.from).unwrap();
-            self.out_edges[*from_index].push(edge_index);
-            self.in_edges[*to_index].push(edge_index);
-        }
+            let from_node_id = self.node_names.get(&edge.from).unwrap();
+            let to_node_id = self.node_names.get(&edge.from).unwrap();
+            self.out_edges[*from_node_id].push(edge_index);
+            self.in_edges[*to_node_id].push(edge_index);
+            if let Some(label) = &edge.label {
+                self.required_parents[*to_node_id].push(label.clone());
+                self.required_children[*from_node_id].push(label.clone());
+            }
 
-        self.compiled = true;
+            // Remove duplicates
+            for node_id in 0..self.n_nodes {
+                self.required_children[node_id].sort_unstable();
+                self.required_children[node_id].dedup();
+                self.required_parents[node_id].sort_unstable();
+                self.required_parents[node_id].dedup();
+            }
+
+            self.compiled = true;
+        }
     }
 
     /// Get the index of an element by variable name
@@ -183,7 +202,7 @@ mod tests {
 
         pattern.compile_pattern();
 
-        assert_eq!(pattern.var_names.len(), 2);
+        assert_eq!(pattern.node_names.len(), 2);
         assert_eq!(pattern.nodes.len(), 2);
         assert_eq!(pattern.edges.len(), 1);
         // TODO: add more assertions
