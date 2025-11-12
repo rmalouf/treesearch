@@ -6,7 +6,7 @@
 //!
 //! CoNLL-U format: https://universaldependencies.org/format.html
 
-use crate::tree::{Dep, Features, Misc, Node, NodeId, TokenId, Tree};
+use crate::tree::{Dep, Features, Misc, TokenId, Tree, Word, WordId};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Lines};
@@ -157,12 +157,12 @@ fn parse_tree(
     metadata: HashMap<String, String>,
 ) -> Result<Tree, ParseError> {
     let mut tree = Tree::with_metadata(sentence_text, metadata);
-    let mut nodes = Vec::new();
+    let mut words = Vec::new();
 
-    // Parse each line into a Node
+    // Parse each line into a Word
     for (line_num, line) in lines {
-        match parse_line(&line, nodes.len()) {
-            Ok(node) => nodes.push(node),
+        match parse_line(&line, words.len()) {
+            Ok(word) => words.push(word),
             Err(mut e) => {
                 e.line_num = Some(line_num);
                 e.line_content = Some(line);
@@ -172,19 +172,19 @@ fn parse_tree(
     }
 
     // Build tree structure from HEAD relationships
-    for node in nodes {
-        tree.add_node(node);
+    for word in words {
+        tree.add_word(word);
     }
 
     // Set up parent-child relationships
-    let node_count = tree.nodes.len();
+    let node_count = tree.words.len();
     for i in 0..node_count {
-        if let Some(parent_id) = tree.nodes[i].parent {
+        if let Some(parent_id) = tree.words[i].parent {
             if parent_id < node_count {
                 tree.set_parent(i, parent_id);
             }
         } else {
-            // Node with no parent is root
+            // Word with no parent is root
             tree.root_id = Some(i);
         }
     }
@@ -192,9 +192,9 @@ fn parse_tree(
     Ok(tree)
 }
 
-/// Parse a single CoNLL-U line into a Node
+/// Parse a single CoNLL-U line into a Word
 /// Errors on multiword tokens and empty nodes (not yet supported)
-fn parse_line(line: &str, node_id: NodeId) -> Result<Node, ParseError> {
+fn parse_line(line: &str, word_id: WordId) -> Result<Word, ParseError> {
     let fields: Vec<&str> = line.split('\t').collect();
 
     if fields.len() != 10 {
@@ -243,14 +243,13 @@ fn parse_line(line: &str, node_id: NodeId) -> Result<Node, ParseError> {
     // Field 9: MISC
     let misc = parse_misc(fields[9])?;
 
-    let mut node = Node::with_full_fields(
-        node_id, node_id, // Position = node_id for now
-        token_id, form, lemma, pos, xpos, feats, deprel, deps, misc,
+    let mut word = Word::with_full_fields(
+        word_id, token_id, form, lemma, pos, xpos, feats, deprel, deps, misc,
     );
 
-    node.parent = head;
+    word.parent = head;
 
-    Ok(node)
+    Ok(word)
 }
 
 /// Parse ID field (single integer only)
@@ -281,9 +280,9 @@ fn parse_id(s: &str) -> Result<TokenId, ParseError> {
 }
 
 /// Parse HEAD field (0 or integer)
-fn parse_head(s: &str) -> Result<Option<NodeId>, ParseError> {
+fn parse_head(s: &str) -> Result<Option<WordId>, ParseError> {
     if s == "0" || s == "_" {
-        Ok(None) // Root node
+        Ok(None) // Root word
     } else {
         let Ok(head) = s.parse::<usize>() else {
             return Err(ParseError {
@@ -292,7 +291,7 @@ fn parse_head(s: &str) -> Result<Option<NodeId>, ParseError> {
                 message: format!("Invalid HEAD: {}", s),
             });
         };
-        // HEAD is 1-indexed in CoNLL-U, convert to 0-indexed NodeIds
+        // HEAD is 1-indexed in CoNLL-U, convert to 0-indexed WordIds
         Ok(Some(head - 1))
     }
 }
@@ -390,19 +389,19 @@ mod tests {
         let mut reader = CoNLLUReader::from_string(conllu);
         let tree = reader.next().unwrap().unwrap();
 
-        assert_eq!(tree.nodes.len(), 4);
+        assert_eq!(tree.words.len(), 4);
         assert_eq!(tree.sentence_text, Some("The dog runs.".to_string()));
         assert_eq!(tree.root_id, Some(2)); // "runs" is root
 
         // Check nodes
-        assert_eq!(tree.nodes[0].form, "The");
-        assert_eq!(tree.nodes[0].lemma, "the");
-        assert_eq!(tree.nodes[0].pos, "DET");
-        assert_eq!(tree.nodes[0].deprel, "det");
+        assert_eq!(tree.words[0].form, "The");
+        assert_eq!(tree.words[0].lemma, "the");
+        assert_eq!(tree.words[0].pos, "DET");
+        assert_eq!(tree.words[0].deprel, "det");
 
-        assert_eq!(tree.nodes[2].form, "runs");
-        assert_eq!(tree.nodes[2].parent, None); // root
-        assert_eq!(tree.nodes[2].children.len(), 2); // dog, . (The is child of dog, not runs)
+        assert_eq!(tree.words[2].form, "runs");
+        assert_eq!(tree.words[2].parent, None); // root
+        assert_eq!(tree.words[2].children.len(), 2); // dog, . (The is child of dog, not runs)
     }
 
     #[test]
@@ -415,12 +414,12 @@ mod tests {
         let mut reader = CoNLLUReader::from_string(conllu);
         let tree = reader.next().unwrap().unwrap();
 
-        assert_eq!(tree.nodes.len(), 2);
+        assert_eq!(tree.words.len(), 2);
 
         // Check features
-        assert_eq!(tree.nodes[0].feats.get("Number"), Some(&"Plur".to_string()));
-        assert_eq!(tree.nodes[1].feats.get("Number"), Some(&"Plur".to_string()));
-        assert_eq!(tree.nodes[1].feats.get("Tense"), Some(&"Pres".to_string()));
+        assert_eq!(tree.words[0].feats.get("Number"), Some(&"Plur".to_string()));
+        assert_eq!(tree.words[1].feats.get("Number"), Some(&"Plur".to_string()));
+        assert_eq!(tree.words[1].feats.get("Tense"), Some(&"Pres".to_string()));
     }
 
     #[test]

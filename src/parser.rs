@@ -196,8 +196,6 @@ fn parse_edge_decl(pair: pest::iterators::Pair<Rule>) -> Result<PatternEdge, Par
 mod tests {
     use super::*;
 
-
-
     #[test]
     fn test_parse_empty_constraint() {
         let query = "Node [];";
