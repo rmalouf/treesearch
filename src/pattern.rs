@@ -94,12 +94,6 @@ pub struct Pattern {
     pub out_edges: Vec<Vec<usize>>,
     /// Incoming edge constraint indices by variable
     pub in_edges: Vec<Vec<usize>>,
-
-    /// Required parent deprels by variable
-    pub required_parents: Vec<Vec<String>>,
-    /// Required child deprels by variable
-    pub required_children: Vec<Vec<String>>,
-
     /// Pattern variables
     pub vars: Vec<PatternVar>,
     /// Edge constraints connecting the variables
@@ -115,8 +109,6 @@ impl Pattern {
             var_names: HashMap::new(),
             in_edges: Vec::new(),
             out_edges: Vec::new(),
-            required_parents: Vec::new(),
-            required_children: Vec::new(),
             vars: Vec::new(),
             edge_constraints: Vec::new(),
             compiled: false,
@@ -144,8 +136,6 @@ impl Pattern {
                 self.var_names.insert(var_name.clone(), var_id);
                 self.out_edges.push(Vec::new());
                 self.in_edges.push(Vec::new());
-                self.required_parents.push(Vec::new());
-                self.required_children.push(Vec::new());
             }
             // TODO: check for duplicate variables
         }
@@ -157,17 +147,19 @@ impl Pattern {
             self.out_edges[*from_var_id].push(edge_index);
             self.in_edges[*to_var_id].push(edge_index);
             if let Some(label) = &edge_constraint.label {
-                self.required_parents[*to_var_id].push(label.clone());
-                self.required_children[*from_var_id].push(label.clone());
-            }
-        }
+                // add deprel constraint to destination variable
+                let deprel_constraint = Constraint::DepRel(label.clone());
+                let dest_var = &mut self.vars[*to_var_id];
 
-        // Remove duplicates from required lists
-        for var_id in 0..self.n_vars {
-            self.required_children[var_id].sort_unstable();
-            self.required_children[var_id].dedup();
-            self.required_parents[var_id].sort_unstable();
-            self.required_parents[var_id].dedup();
+                if matches!(dest_var.constraints, Constraint::Any) {
+                    dest_var.constraints = deprel_constraint;
+                } else if let Constraint::And(ref mut conjuncts) = dest_var.constraints {
+                    conjuncts.push(deprel_constraint);
+                } else {
+                    let old = std::mem::replace(&mut dest_var.constraints, Constraint::Any);
+                    dest_var.constraints = Constraint::And(vec![old, deprel_constraint]);
+                }
+            }
         }
 
         self.compiled = true;
