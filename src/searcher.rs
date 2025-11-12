@@ -8,7 +8,7 @@
 //! TODO: Implement CSP solver
 
 use crate::parser::parse_query;
-use crate::pattern::{Constraint, Pattern};
+use crate::pattern::{Constraint, Pattern, VarId};
 use crate::tree::Word;
 use crate::tree::{Tree, WordId};
 use std::collections::HashMap;
@@ -35,10 +35,11 @@ impl std::fmt::Display for SearchError {
 
 impl std::error::Error for SearchError {}
 
-/// A match is a binding from pattern variable indices to tree word IDs
-pub type Match = HashMap<usize, WordId>;
+/// A match is a binding from pattern variable IDs (VarId) to tree word IDs (WordId)
+pub type Match = HashMap<VarId, WordId>;
 
-fn satisfies_node_constraint(word: &Word, constraint: &Constraint) -> bool {
+/// Check if a tree word satisfies a pattern variable's constraint
+fn satisfies_constraint(word: &Word, constraint: &Constraint) -> bool {
     match constraint {
         Constraint::Lemma(lemma) => word.lemma == *lemma,
         Constraint::POS(pos) => word.pos == *pos,
@@ -46,255 +47,266 @@ fn satisfies_node_constraint(word: &Word, constraint: &Constraint) -> bool {
         Constraint::DepRel(deprel) => word.deprel == *deprel,
         Constraint::And(constraints) => constraints
             .iter()
-            .all(|constraint| satisfies_node_constraint(word, constraint)),
+            .all(|constraint| satisfies_constraint(word, constraint)),
         Constraint::Or(constraints) => constraints
             .iter()
-            .any(|constraint| satisfies_node_constraint(word, constraint)),
+            .any(|constraint| satisfies_constraint(word, constraint)),
         Constraint::Any => true, // No filtering
     }
 }
 
-/* WORKING VERSION
+/* WORKING VERSION - CSP solver sketch with correct terminology
 
 /// Enumerate all matches
 pub fn enumerate<'a>(&self, tree: &'a Tree, pattern: Pattern) -> Vec<Match>
 {
-    // Initial candidate domains (node consistency)
-    let mut domains: Vec<Vec<usize>> = vec![Vec::new(); pattern.n_vars];
-    for (node_id, node) in pattern.nodes.iter().enumerate() {
+    // Initial candidate domains (variable-word consistency)
+    let mut domains: Vec<Vec<WordId>> = vec![Vec::new(); pattern.n_vars];
+    for (var_id, var) in pattern.vars.iter().enumerate() {
         for (word_id, word) in tree.words.iter().enumerate() {
             // TODO: check required_parents and required_children
-            if satisfies_node_constraint(word, &node.constraints) {
-                domains[node_id].push(word_id);
+            if satisfies_constraint(word, &var.constraints) {
+                domains[var_id].push(word_id);
             }
         }
-        if domains[node_id].is_empty() {
+        if domains[var_id].is_empty() {
             return Vec::new(); // no solution possible
         }
     }
 
     // DFS with forward-checking
-    let mut assign: Vec<Option<usize>> = vec![None; pattern.n_nodes];
-    self.dfs(tree, pattern,&mut assign, &domains)
+    let mut assign: Vec<Option<WordId>> = vec![None; pattern.n_vars];
+    self.dfs(tree, pattern, &mut assign, &domains)
 }
 
 fn dfs(&self,
           tree: &Tree,
           pattern: &Pattern,
-          assign: &mut [Option<usize>],
-          domains: &[Vec<usize>],
+          assign: &mut [Option<WordId>],
+          domains: &[Vec<WordId>],
 )
 {
-    // 1) Pick an unassigned node with Minimum Remaining Values (MRV)
-    let mut mrv_node: Option<usize> = None;
+    // 1) Pick an unassigned variable with Minimum Remaining Values (MRV)
+    let mut mrv_var: Option<VarId> = None;
     let mut best_rv = usize::MAX;
-    for node_id in 0..pattern.n_nodes {
-        if assign[node_id].is_some() { continue; }
-        let rv = domains[node_id].len();
+    for var_id in 0..pattern.n_vars {
+        if assign[var_id].is_some() { continue; }
+        let rv = domains[var_id].len();
         if rv < best_rv {
             best_rv = rv;
-            mrv_node = Some(node_id);
+            mrv_var = Some(var_id);
         }
     }
 
-    // No more nodes to assign
-    if mrv_node.is_none() {
+    // No more variables to assign
+    if mrv_var.is_none() {
         return vec![assign.clone()];
     }
 
-    let next_node = mrv_node.unwrap();
+    let next_var = mrv_var.unwrap();
 
-    // 2) Try each candidate value `word_id` for node `next_node`
-    'candidates: for &word_id in &domains[next_node] {
+    // 2) Try each candidate word for this variable
+    'candidates: for &word_id in &domains[next_var] {
 
         // Check arc consistency with already-assigned neighbors (early prune)
-        for &e_id in &pattern.out_edge[next_node] {
-            let e = pattern.edges[e_id];
-            if let Some(n) = assign[e.to] {
-                if !edge_holds(g, e, a, b) { continue 'candidates; }
+        for &edge_idx in &pattern.out_edges[next_var] {
+            let edge_constraint = &pattern.edge_constraints[edge_idx];
+            if let Some(target_word_id) = assign[edge_constraint.to] {
+                if !edge_holds(tree, edge_constraint, word_id, target_word_id) {
+                    continue 'candidates;
+                }
             }
         }
-        for &e_id in &pattern.in_edge[next_node] {
-            let e = p.edges[e_id];
-            if let Some(n) = assign[e.from] {
-                if !edge_holds(g, e, b, a) { continue 'candidates; }
+        for &edge_idx in &pattern.in_edges[next_var] {
+            let edge_constraint = &pattern.edge_constraints[edge_idx];
+            if let Some(source_word_id) = assign[edge_constraint.from] {
+                if !edge_holds(tree, edge_constraint, source_word_id, word_id) {
+                    continue 'candidates;
+                }
             }
         }
 
-        // 3) Create next state: assign v:=a, mark used, and forward-check neighbors
+        // 3) Create next state: assign var := word_id, mark used, forward-check neighbors
         let mut assign2 = assign.to_vec();
-        assign2[v] = Some(a);
+        assign2[next_var] = Some(word_id);
 
         let mut used2 = used.to_vec();
-        used2[a] = true;
+        used2[word_id] = true;
 
-        // Forward-check: build pruned domains'
-        let mut dom2: Vec<Vec<usize>> = domains.to_vec();
-        // AllDiff: remove `a` from all other unassigned vars
-        for u in 0..p.k {
-            if u == v || assign2[u].is_some() { continue; }
-            dom2[u].retain(|&cand| cand != a);
-            if dom2[u].is_empty() { continue 'candidates; }
+        // Forward-check: build pruned domains
+        let mut dom2: Vec<Vec<WordId>> = domains.to_vec();
+        // AllDiff: remove word_id from all other unassigned vars
+        for var_id in 0..pattern.n_vars {
+            if var_id == next_var || assign2[var_id].is_some() { continue; }
+            dom2[var_id].retain(|&cand| cand != word_id);
+            if dom2[var_id].is_empty() { continue 'candidates; }
         }
 
-        // Propagate along pattern edges touching v
-        // v as src
-        for &ei in &p.out_by_var[v] {
-            let e = p.edges[ei];
-            let j = e.dst;
-            if assign2[j].is_some() { continue; }
-            dom2[j].retain(|&b| edge_holds(g, e, a, b) && !used2[b]);
-            if dom2[j].is_empty() { continue 'candidates; }
+        // Propagate along edge constraints touching next_var
+        // next_var as source
+        for &edge_idx in &pattern.out_edges[next_var] {
+            let edge_constraint = &pattern.edge_constraints[edge_idx];
+            let target_var = edge_constraint.to;
+            if assign2[target_var].is_some() { continue; }
+            dom2[target_var].retain(|&w| edge_holds(tree, edge_constraint, word_id, w) && !used2[w]);
+            if dom2[target_var].is_empty() { continue 'candidates; }
         }
-        // v as dst
-        for &ei in &p.in_by_var[v] {
-            let e = p.edges[ei];
-            let i = e.src;
-            if assign2[i].is_some() { continue; }
-            dom2[i].retain(|&b| edge_holds(g, e, b, a) && !used2[b]);
-            if dom2[i].is_empty() { continue 'candidates; }
+        // next_var as target
+        for &edge_idx in &pattern.in_edges[next_var] {
+            let edge_constraint = &pattern.edge_constraints[edge_idx];
+            let source_var = edge_constraint.from;
+            if assign2[source_var].is_some() { continue; }
+            dom2[source_var].retain(|&w| edge_holds(tree, edge_constraint, w, word_id) && !used2[w]);
+            if dom2[source_var].is_empty() { continue 'candidates; }
         }
 
         // Recurse
-        self.dfs(p, g, &mut assign2, &dom2, &used2, on_solution);
+        self.dfs(tree, pattern, &mut assign2, &dom2, &used2, on_solution);
     }
 }
 
 
 */
 
-/* CHATGPT VERSION
-
+/* ALTERNATIVE VERSION - with degree compatibility check
 
 /// Enumerate all matches
-pub fn enumerate<'a>(&self, tree: &'a Tree, pattern: Pattern)
+pub fn enumerate<'a>(&self, tree: &'a Tree, pattern: Pattern) -> Vec<Match>
     {
-        // Initial candidate domains (node consistency)
-        let mut domains: Vec<Vec<usize>> = vec![Vec::new(); pattern.n_vars];
-        for var_index in 0..pattern.n_vars {
-            for (node_index, node) in tree.nodes.iter().enumerate() {
-                if satisfies_node_constraint(node, )
-                if !Self::degree_compatible(p, g, v, a) { continue; }
-                domains[v].push(a);
+        // Initial candidate domains (variable-word consistency)
+        let mut domains: Vec<Vec<WordId>> = vec![Vec::new(); pattern.n_vars];
+        for var_id in 0..pattern.n_vars {
+            for (word_id, word) in tree.words.iter().enumerate() {
+                if satisfies_constraint(word, &pattern.vars[var_id].constraints) {
+                    if !Self::degree_compatible(&pattern, tree, var_id, word_id) { continue; }
+                    domains[var_id].push(word_id);
+                }
             }
-            if domains[v].is_empty() {
-                return; // no solution possible
+            if domains[var_id].is_empty() {
+                return Vec::new(); // no solution possible
             }
         }
 
-        // 2) DFS with forward-checking & AllDiff
-        let mut assign: Vec<Option<usize>> = vec![None; p.k];
-        let used = vec![false; g.n]; // AllDiff marker
-        self.dfs(p, g, &mut assign, &domains, &used, &mut on_solution);
+        // DFS with forward-checking & AllDiff
+        let mut assign: Vec<Option<WordId>> = vec![None; pattern.n_vars];
+        let used = vec![false; tree.words.len()]; // AllDiff marker
+        self.dfs(&pattern, tree, &mut assign, &domains, &used, &mut on_solution)
     }
 
-    /// Necessary (cheap) filter: does node `a` have the required parent/child labels for var `v`?
-    fn degree_compatible(p: &Pattern, g: &SentGraph, v: usize, a: usize) -> bool {
-        for &r in &p.req_child[v]  { if !g.has_child_with_rel(a, r)  { return false; } }
-        for &r in &p.req_parent[v] { if !g.has_parent_with_rel(a, r) { return false; } }
+    /// Check if word has the required parent/child deprels for this variable
+    fn degree_compatible(pattern: &Pattern, tree: &Tree, var_id: VarId, word_id: WordId) -> bool {
+        for deprel in &pattern.required_children[var_id] {
+            if !tree.has_child_with_deprel(word_id, deprel) { return false; }
+        }
+        for deprel in &pattern.required_parents[var_id] {
+            if !tree.has_parent_with_deprel(word_id, deprel) { return false; }
+        }
         true
     }
 
     fn dfs<F>(&self,
-              p: &Pattern,
-              g: &SentGraph,
-              assign: &mut [Option<usize>],
-              domains: &[Vec<usize>],
+              pattern: &Pattern,
+              tree: &Tree,
+              assign: &mut [Option<WordId>],
+              domains: &[Vec<WordId>],
               used: &[bool],
               on_solution: &mut F)
     where
-        F: FnMut(&[usize]),
+        F: FnMut(&[WordId]),
     {
-        // 1) Pick an unassigned var with MRV (smallest domain)
-        let mut next_v: Option<usize> = None;
+        // 1) Pick an unassigned variable with MRV (smallest domain)
+        let mut next_var: Option<VarId> = None;
         let mut best_size = usize::MAX;
-        for v in 0..p.k {
-            if assign[v].is_some() { continue; }
-            let sz = domains[v].len();
+        for var_id in 0..pattern.n_vars {
+            if assign[var_id].is_some() { continue; }
+            let sz = domains[var_id].len();
             if sz < best_size {
                 best_size = sz;
-                next_v = Some(v);
+                next_var = Some(var_id);
             }
         }
 
         // Done?
-        if next_v.is_none() {
-            // collect solution
-            let mut sol = vec![0usize; p.k];
-            for v in 0..p.k {
-                sol[v] = assign[v].expect("all assigned");
+        if next_var.is_none() {
+            // Collect solution
+            let mut sol = vec![0usize; pattern.n_vars];
+            for var_id in 0..pattern.n_vars {
+                sol[var_id] = assign[var_id].expect("all assigned");
             }
             on_solution(&sol);
             return;
         }
 
-        let v = next_v.unwrap();
+        let var_id = next_var.unwrap();
 
-        // 2) Try each candidate value `a` for var `v`
-        'candidates: for &a in &domains[v] {
-            if used[a] { continue; } // AllDiff
+        // 2) Try each candidate word for this variable
+        'candidates: for &word_id in &domains[var_id] {
+            if used[word_id] { continue; } // AllDiff
 
             // Check consistency with already-assigned neighbors (early prune)
-            for &ei in &p.out_by_var[v] {
-                let e = p.edges[ei];
-                if let Some(b) = assign[e.dst] {
-                    if !edge_holds(g, e, a, b) { continue 'candidates; }
+            for &edge_idx in &pattern.out_edges[var_id] {
+                let edge_constraint = &pattern.edge_constraints[edge_idx];
+                if let Some(target_word_id) = assign[edge_constraint.to] {
+                    if !edge_holds(tree, edge_constraint, word_id, target_word_id) {
+                        continue 'candidates;
+                    }
                 }
             }
-            for &ei in &p.in_by_var[v] {
-                let e = p.edges[ei];
-                if let Some(b) = assign[e.src] {
-                    if !edge_holds(g, e, b, a) { continue 'candidates; }
+            for &edge_idx in &pattern.in_edges[var_id] {
+                let edge_constraint = &pattern.edge_constraints[edge_idx];
+                if let Some(source_word_id) = assign[edge_constraint.from] {
+                    if !edge_holds(tree, edge_constraint, source_word_id, word_id) {
+                        continue 'candidates;
+                    }
                 }
             }
 
-            // 3) Create next state: assign v:=a, mark used, and forward-check neighbors
+            // 3) Create next state: assign var := word_id, mark used, forward-check neighbors
             let mut assign2 = assign.to_vec();
-            assign2[v] = Some(a);
+            assign2[var_id] = Some(word_id);
 
             let mut used2 = used.to_vec();
-            used2[a] = true;
+            used2[word_id] = true;
 
-            // Forward-check: build pruned domains'
-            let mut dom2: Vec<Vec<usize>> = domains.to_vec();
-            // AllDiff: remove `a` from all other unassigned vars
-            for u in 0..p.k {
-                if u == v || assign2[u].is_some() { continue; }
-                dom2[u].retain(|&cand| cand != a);
-                if dom2[u].is_empty() { continue 'candidates; }
+            // Forward-check: build pruned domains
+            let mut dom2: Vec<Vec<WordId>> = domains.to_vec();
+            // AllDiff: remove word_id from all other unassigned vars
+            for other_var in 0..pattern.n_vars {
+                if other_var == var_id || assign2[other_var].is_some() { continue; }
+                dom2[other_var].retain(|&cand| cand != word_id);
+                if dom2[other_var].is_empty() { continue 'candidates; }
             }
 
-            // Propagate along pattern edges touching v
-            // v as src
-            for &ei in &p.out_by_var[v] {
-                let e = p.edges[ei];
-                let j = e.dst;
-                if assign2[j].is_some() { continue; }
-                dom2[j].retain(|&b| edge_holds(g, e, a, b) && !used2[b]);
-                if dom2[j].is_empty() { continue 'candidates; }
+            // Propagate along edge constraints touching var_id
+            // var_id as source
+            for &edge_idx in &pattern.out_edges[var_id] {
+                let edge_constraint = &pattern.edge_constraints[edge_idx];
+                let target_var = edge_constraint.to;
+                if assign2[target_var].is_some() { continue; }
+                dom2[target_var].retain(|&w| edge_holds(tree, edge_constraint, word_id, w) && !used2[w]);
+                if dom2[target_var].is_empty() { continue 'candidates; }
             }
-            // v as dst
-            for &ei in &p.in_by_var[v] {
-                let e = p.edges[ei];
-                let i = e.src;
-                if assign2[i].is_some() { continue; }
-                dom2[i].retain(|&b| edge_holds(g, e, b, a) && !used2[b]);
-                if dom2[i].is_empty() { continue 'candidates; }
+            // var_id as target
+            for &edge_idx in &pattern.in_edges[var_id] {
+                let edge_constraint = &pattern.edge_constraints[edge_idx];
+                let source_var = edge_constraint.from;
+                if assign2[source_var].is_some() { continue; }
+                dom2[source_var].retain(|&w| edge_holds(tree, edge_constraint, w, word_id) && !used2[w]);
+                if dom2[source_var].is_empty() { continue 'candidates; }
             }
 
             // Recurse
-            self.dfs(p, g, &mut assign2, &dom2, &used2, on_solution);
+            self.dfs(pattern, tree, &mut assign2, &dom2, &used2, on_solution);
         }
     }
 }
 
-/// Check if edge constraint holds between (src=a, dst=b).
+/// Check if an edge constraint holds between source and target words in the tree
 #[inline]
-fn edge_holds(g: &SentGraph, e: Edge, a: usize, b: usize) -> bool {
-    match e.dir {
-        Dir::Child  => g.children[a].iter().any(|&(c, r)| c == b && r == e.rel),
-        Dir::Parent => g.parent[a].is_some_and(|(p, r)| p == b && r == e.rel),
-    }
+fn edge_holds(tree: &Tree, edge_constraint: &EdgeConstraint, source_word_id: WordId, target_word_id: WordId) -> bool {
+    // TODO: implement based on RelationType and optional label
+    // This is a placeholder - needs to check tree structure for the required relation
+    true
 }
 */
 

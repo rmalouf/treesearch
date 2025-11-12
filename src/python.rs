@@ -1,6 +1,13 @@
 //! Python bindings for treesearch
 //!
 //! This module provides PyO3-based Python bindings for the Rust core.
+//!
+//! NOTE: This file is currently OUT OF SYNC with the core Rust API.
+//! The Python bindings need to be rewritten to match the current architecture
+//! (CSP-based matching, updated Tree/Word API). This is planned for Phase 1+.
+//! For now, this module is commented out to avoid compilation errors.
+
+/* DISABLED - NEEDS REWRITE FOR NEW API
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -11,9 +18,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::conllu::CoNLLUReader as RustCoNLLUReader;
-use crate::searcher::search_query;
-use crate::tree::{Node as RustNode, Tree as RustTree};
-use crate::vm::Match as RustMatch;
+use crate::searcher::{search_query, Match as RustMatch};
+use crate::tree::{Tree as RustTree, Word as RustWord};
 
 /// A dependency tree
 #[pyclass(name = "Tree")]
@@ -50,10 +56,10 @@ impl PyTree {
     }
 }
 
-/// A node in a dependency tree
+/// A node (word) in a dependency tree
 #[pyclass(name = "Node")]
 pub struct PyNode {
-    inner: RustNode,
+    inner: RustWord,
     tree: Arc<RustTree>,
 }
 
@@ -321,3 +327,5 @@ fn treesearch(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_search_query, m)?)?;
     Ok(())
 }
+
+*/

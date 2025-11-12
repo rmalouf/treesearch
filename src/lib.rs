@@ -17,9 +17,9 @@ pub mod python;
 // Re-exports for convenience
 pub use conllu::CoNLLUReader;
 pub use parser::parse_query;
-pub use pattern::{Pattern, PatternNode};
-pub use searcher::{SearchError, search, search_query};
-pub use tree::{Features, TokenId, Tree, Word};
+pub use pattern::{Constraint, EdgeConstraint, Pattern, PatternVar, RelationType, VarId};
+pub use searcher::{search, search_query, Match, SearchError};
+pub use tree::{Features, TokenId, Tree, Word, WordId};
 
 #[cfg(test)]
 mod tests {
