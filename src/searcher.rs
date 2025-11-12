@@ -54,7 +54,116 @@ fn satisfies_node_constraint(word: &Word, constraint: &Constraint) -> bool {
     }
 }
 
-/*
+/* WORKING VERSION
+
+/// Enumerate all matches
+pub fn enumerate<'a>(&self, tree: &'a Tree, pattern: Pattern) -> Vec<Match>
+{
+    // Initial candidate domains (node consistency)
+    let mut domains: Vec<Vec<usize>> = vec![Vec::new(); pattern.n_vars];
+    for (node_id, node) in pattern.nodes.iter().enumerate() {
+        for (word_id, word) in tree.words.iter().enumerate() {
+            // TODO: check required_parents and required_children
+            if satisfies_node_constraint(word, &node.constraints) {
+                domains[node_id].push(word_id);
+            }
+        }
+        if domains[node_id].is_empty() {
+            return Vec::new(); // no solution possible
+        }
+    }
+
+    // DFS with forward-checking
+    let mut assign: Vec<Option<usize>> = vec![None; pattern.n_nodes];
+    self.dfs(tree, pattern,&mut assign, &domains)
+}
+
+fn dfs(&self,
+          tree: &Tree,
+          pattern: &Pattern,
+          assign: &mut [Option<usize>],
+          domains: &[Vec<usize>],
+)
+{
+    // 1) Pick an unassigned node with Minimum Remaining Values (MRV)
+    let mut mrv_node: Option<usize> = None;
+    let mut best_rv = usize::MAX;
+    for node_id in 0..pattern.n_nodes {
+        if assign[node_id].is_some() { continue; }
+        let rv = domains[node_id].len();
+        if rv < best_rv {
+            best_rv = rv;
+            mrv_node = Some(node_id);
+        }
+    }
+
+    // No more nodes to assign
+    if mrv_node.is_none() {
+        return vec![assign.clone()];
+    }
+
+    let next_node = mrv_node.unwrap();
+
+    // 2) Try each candidate value `word_id` for node `next_node`
+    'candidates: for &word_id in &domains[next_node] {
+
+        // Check arc consistency with already-assigned neighbors (early prune)
+        for &e_id in &pattern.out_edge[next_node] {
+            let e = pattern.edges[e_id];
+            if let Some(n) = assign[e.to] {
+                if !edge_holds(g, e, a, b) { continue 'candidates; }
+            }
+        }
+        for &e_id in &pattern.in_edge[next_node] {
+            let e = p.edges[e_id];
+            if let Some(n) = assign[e.from] {
+                if !edge_holds(g, e, b, a) { continue 'candidates; }
+            }
+        }
+
+        // 3) Create next state: assign v:=a, mark used, and forward-check neighbors
+        let mut assign2 = assign.to_vec();
+        assign2[v] = Some(a);
+
+        let mut used2 = used.to_vec();
+        used2[a] = true;
+
+        // Forward-check: build pruned domains'
+        let mut dom2: Vec<Vec<usize>> = domains.to_vec();
+        // AllDiff: remove `a` from all other unassigned vars
+        for u in 0..p.k {
+            if u == v || assign2[u].is_some() { continue; }
+            dom2[u].retain(|&cand| cand != a);
+            if dom2[u].is_empty() { continue 'candidates; }
+        }
+
+        // Propagate along pattern edges touching v
+        // v as src
+        for &ei in &p.out_by_var[v] {
+            let e = p.edges[ei];
+            let j = e.dst;
+            if assign2[j].is_some() { continue; }
+            dom2[j].retain(|&b| edge_holds(g, e, a, b) && !used2[b]);
+            if dom2[j].is_empty() { continue 'candidates; }
+        }
+        // v as dst
+        for &ei in &p.in_by_var[v] {
+            let e = p.edges[ei];
+            let i = e.src;
+            if assign2[i].is_some() { continue; }
+            dom2[i].retain(|&b| edge_holds(g, e, b, a) && !used2[b]);
+            if dom2[i].is_empty() { continue 'candidates; }
+        }
+
+        // Recurse
+        self.dfs(p, g, &mut assign2, &dom2, &used2, on_solution);
+    }
+}
+
+
+*/
+
+/* CHATGPT VERSION
 
 
 /// Enumerate all matches
