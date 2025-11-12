@@ -1,12 +1,15 @@
 //! Pattern representation and compilation
 //!
-//! This module defines the AST for dependency tree patterns and
-//! handles compilation to VM opcodes.
+//! This module defines the AST for dependency tree patterns used
+//! in the CSP-based matching algorithm.
 
 use std::collections::HashMap;
 use std::fmt::Debug;
 
-/// A constraint on a node's attributes
+/// Type alias for pattern variable identifiers (indices into Pattern.vars)
+pub type VarId = usize;
+
+/// A constraint on a variable's attributes (node attributes in matched tree)
 #[derive(Debug, Clone, PartialEq)]
 pub enum Constraint {
     /// Match any node
@@ -32,16 +35,16 @@ impl Constraint {
     }
 }
 
-/// A pattern element representing a node in the pattern
+/// A pattern variable representing a node in the dependency tree
 #[derive(Debug, Clone)]
-pub struct PatternNode {
-    /// Variable name to bind matched node to
+pub struct PatternVar {
+    /// Variable name to bind matched tree node to
     pub var_name: String,
-    /// Constraints that the node must satisfy
+    /// Constraints that the matched tree node must satisfy
     pub constraints: Constraint,
 }
 
-impl PatternNode {
+impl PatternVar {
     pub fn new(var_name: &str, constraints: Constraint) -> Self {
         Self {
             var_name: var_name.to_string(),
@@ -67,38 +70,40 @@ pub enum RelationType {
     Follows,
 }
 
-/// An edge in the pattern graph
+/// A constraint on the structural relationship between two pattern variables
 #[derive(Debug, Clone)]
-pub struct PatternEdge {
-    /// Source node (by variable name)
+pub struct EdgeConstraint {
+    /// Source variable (by variable name)
     pub from: String,
-    /// Target node (by variable name)
+    /// Target variable (by variable name)
     pub to: String,
-    /// Type of relation
+    /// Type of structural relation required
     pub relation: RelationType,
-    /// Optional constraint on the edge label (e.g., deprel)
+    /// Optional constraint on the edge label (e.g., deprel in the tree)
     pub label: Option<String>,
 }
 
 /// A complete pattern to match against dependency trees
 #[derive(Debug, Clone)]
 pub struct Pattern {
-    /// Number of nodes
-    pub n_nodes: usize,
-    /// Node name -> NodeId
-    pub node_names: HashMap<String, usize>,
-    /// Out edge indices by node
+    /// Number of variables in the pattern
+    pub n_vars: usize,
+    /// Variable name -> VarId mapping
+    pub var_names: HashMap<String, VarId>,
+    /// Outgoing edge constraint indices by variable
     pub out_edges: Vec<Vec<usize>>,
-    /// In edge indices by node
+    /// Incoming edge constraint indices by variable
     pub in_edges: Vec<Vec<usize>>,
 
+    /// Required parent deprels by variable
     pub required_parents: Vec<Vec<String>>,
+    /// Required child deprels by variable
     pub required_children: Vec<Vec<String>>,
 
-    /// Pattern elements (nodes)
-    pub nodes: Vec<PatternNode>,
-    /// Edges connecting the elements
-    pub edges: Vec<PatternEdge>,
+    /// Pattern variables
+    pub vars: Vec<PatternVar>,
+    /// Edge constraints connecting the variables
+    pub edge_constraints: Vec<EdgeConstraint>,
     /// Already compiled?
     pub(crate) compiled: bool,
 }
@@ -106,70 +111,71 @@ pub struct Pattern {
 impl Pattern {
     pub fn new() -> Self {
         Self {
-            n_nodes: 0,
-            node_names: HashMap::new(),
+            n_vars: 0,
+            var_names: HashMap::new(),
             in_edges: Vec::new(),
             out_edges: Vec::new(),
             required_parents: Vec::new(),
             required_children: Vec::new(),
-            nodes: Vec::new(),
-            edges: Vec::new(),
+            vars: Vec::new(),
+            edge_constraints: Vec::new(),
             compiled: false,
         }
     }
 
-    /// Add a pattern node
-    pub fn add_node(&mut self, node: PatternNode) {
-        self.nodes.push(node);
+    /// Add a pattern variable
+    pub fn add_var(&mut self, var: PatternVar) {
+        self.vars.push(var);
     }
 
-    /// Add an edge between nodes
-    pub fn add_edge(&mut self, edge: PatternEdge) {
-        self.edges.push(edge);
+    /// Add an edge constraint between variables
+    pub fn add_edge_constraint(&mut self, edge_constraint: EdgeConstraint) {
+        self.edge_constraints.push(edge_constraint);
     }
 
     pub fn compile_pattern(&mut self) {
         assert!(!self.compiled, "Can't compile pattern more than once!");
 
-        // Compile nodes
-        self.n_nodes = self.nodes.len();
-        for node in self.nodes.iter() {
-            let node_name = &node.var_name;
-            if !self.node_names.contains_key(node_name) {
-                self.node_names.insert(node_name.clone(), self.n_nodes);
+        // Compile variables - build var_names mapping and initialize edge/required vectors
+        self.n_vars = self.vars.len();
+        for (var_id, var) in self.vars.iter().enumerate() {
+            let var_name = &var.var_name;
+            if !self.var_names.contains_key(var_name) {
+                self.var_names.insert(var_name.clone(), var_id);
                 self.out_edges.push(Vec::new());
                 self.in_edges.push(Vec::new());
-                self.n_nodes += 1;
+                self.required_parents.push(Vec::new());
+                self.required_children.push(Vec::new());
             }
-            // TODO: check for duplicate nodes
+            // TODO: check for duplicate variables
         }
 
-        // Compile edges
-        for (edge_index, edge) in self.edges.iter().enumerate() {
-            let from_node_id = self.node_names.get(&edge.from).unwrap();
-            let to_node_id = self.node_names.get(&edge.from).unwrap();
-            self.out_edges[*from_node_id].push(edge_index);
-            self.in_edges[*to_node_id].push(edge_index);
-            if let Some(label) = &edge.label {
-                self.required_parents[*to_node_id].push(label.clone());
-                self.required_children[*from_node_id].push(label.clone());
+        // Compile edge constraints
+        for (edge_index, edge_constraint) in self.edge_constraints.iter().enumerate() {
+            let from_var_id = self.var_names.get(&edge_constraint.from).unwrap();
+            let to_var_id = self.var_names.get(&edge_constraint.to).unwrap();
+            self.out_edges[*from_var_id].push(edge_index);
+            self.in_edges[*to_var_id].push(edge_index);
+            if let Some(label) = &edge_constraint.label {
+                self.required_parents[*to_var_id].push(label.clone());
+                self.required_children[*from_var_id].push(label.clone());
             }
-
-            // Remove duplicates
-            for node_id in 0..self.n_nodes {
-                self.required_children[node_id].sort_unstable();
-                self.required_children[node_id].dedup();
-                self.required_parents[node_id].sort_unstable();
-                self.required_parents[node_id].dedup();
-            }
-
-            self.compiled = true;
         }
+
+        // Remove duplicates from required lists
+        for var_id in 0..self.n_vars {
+            self.required_children[var_id].sort_unstable();
+            self.required_children[var_id].dedup();
+            self.required_parents[var_id].sort_unstable();
+            self.required_parents[var_id].dedup();
+        }
+
+        self.compiled = true;
     }
 
-    /// Get the index of an element by variable name
-    pub fn element_index(&self, var_name: &str) -> Option<usize> {
-        self.nodes.iter().position(|e| e.var_name == var_name)
+    /// Get the VarId of a variable by its name
+    pub fn var_id(&self, var_name: &str) -> Option<VarId> {
+        self.vars.iter().position(|v| v.var_name == var_name)
     }
 }
 
@@ -187,13 +193,13 @@ mod tests {
     fn test_pattern_creation() {
         let mut pattern = Pattern::new();
 
-        let verb = PatternNode::new("verb", Constraint::POS("VERB".to_string()));
-        let noun = PatternNode::new("noun", Constraint::POS("NOUN".to_string()));
+        let verb = PatternVar::new("verb", Constraint::POS("VERB".to_string()));
+        let noun = PatternVar::new("noun", Constraint::POS("NOUN".to_string()));
 
-        pattern.add_node(verb);
-        pattern.add_node(noun);
+        pattern.add_var(verb);
+        pattern.add_var(noun);
 
-        pattern.add_edge(PatternEdge {
+        pattern.add_edge_constraint(EdgeConstraint {
             from: "verb".to_string(),
             to: "noun".to_string(),
             relation: RelationType::Child,
@@ -202,9 +208,9 @@ mod tests {
 
         pattern.compile_pattern();
 
-        assert_eq!(pattern.node_names.len(), 2);
-        assert_eq!(pattern.nodes.len(), 2);
-        assert_eq!(pattern.edges.len(), 1);
+        assert_eq!(pattern.var_names.len(), 2);
+        assert_eq!(pattern.vars.len(), 2);
+        assert_eq!(pattern.edge_constraints.len(), 1);
         // TODO: add more assertions
     }
 }

@@ -177,10 +177,10 @@ fn parse_tree(
     }
 
     // Set up parent-child relationships
-    let node_count = tree.words.len();
-    for i in 0..node_count {
+    let word_count = tree.words.len();
+    for i in 0..word_count {
         if let Some(parent_id) = tree.words[i].parent {
-            if parent_id < node_count {
+            if parent_id < word_count {
                 tree.set_parent(i, parent_id);
             }
         } else {
