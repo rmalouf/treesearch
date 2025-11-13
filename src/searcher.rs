@@ -122,9 +122,10 @@ fn dfs(
             continue;
         }
 
-        // Assign var <- word_id and update domains
         let mut new_assign = assign.to_vec();
         let mut new_domains = domains.to_vec();
+
+        // Assign var <- word_id and update domains
         new_assign[next_var] = Some(word_id);
 
         // AllDifferent: Remove word_id from all other unassigned variable domains
@@ -138,36 +139,58 @@ fn dfs(
         }
 
         // Forward-check: Propagate along edge constraints touching next_var
-        for &edge_idx in &pattern.out_edges[next_var] {
-            let edge_constraint = &pattern.edge_constraints[edge_idx];
-            let target_var_id = pattern.var_names[&edge_constraint.to];
-            if new_assign[target_var_id].is_some() {
-                continue;
-            }
-            new_domains[target_var_id]
-                .retain(|&w| satisfies_arc_constraint(tree, word_id, w, &edge_constraint.relation));
-            if new_domains[target_var_id].is_empty() {
-                continue 'candidates;
-            }
-        }
-
-        for &edge_idx in &pattern.in_edges[next_var] {
-            let edge_constraint = &pattern.edge_constraints[edge_idx];
-            let source_var_id = pattern.var_names[&edge_constraint.from];
-            if new_assign[source_var_id].is_some() {
-                continue;
-            }
-            new_domains[source_var_id]
-                .retain(|&w| satisfies_arc_constraint(tree, w, word_id, &edge_constraint.relation));
-            if new_domains[source_var_id].is_empty() {
-                continue 'candidates;
-            }
+        if !forward_check(
+            tree,
+            pattern,
+            next_var,
+            word_id,
+            &mut new_assign,
+            &mut new_domains,
+        ) {
+            continue;
         }
 
         // Recurse
         solutions.extend(dfs(tree, pattern, &new_assign, &new_domains));
     }
     solutions
+}
+
+fn forward_check(
+    tree: &Tree,
+    pattern: &Pattern,
+    next_var: usize,
+    word_id: WordId,
+    new_assign: &mut [Option<WordId>],
+    new_domains: &mut [Vec<WordId>],
+) -> bool {
+    // Forward-check: Propagate along edge constraints touching next_var
+    for &edge_idx in &pattern.out_edges[next_var] {
+        let edge_constraint = &pattern.edge_constraints[edge_idx];
+        let target_var_id = pattern.var_names[&edge_constraint.to];
+        if new_assign[target_var_id].is_some() {
+            continue;
+        }
+        new_domains[target_var_id]
+            .retain(|&w| satisfies_arc_constraint(tree, word_id, w, &edge_constraint.relation));
+        if new_domains[target_var_id].is_empty() {
+            return false;
+        }
+    }
+
+    for &edge_idx in &pattern.in_edges[next_var] {
+        let edge_constraint = &pattern.edge_constraints[edge_idx];
+        let source_var_id = pattern.var_names[&edge_constraint.from];
+        if new_assign[source_var_id].is_some() {
+            continue;
+        }
+        new_domains[source_var_id]
+            .retain(|&w| satisfies_arc_constraint(tree, w, word_id, &edge_constraint.relation));
+        if new_domains[source_var_id].is_empty() {
+            return false;
+        }
+    }
+    true
 }
 
 fn check_arc_consistency(
