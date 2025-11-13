@@ -11,7 +11,9 @@
 
 fn main() {
     println!("=== Unconstrained Deprel Demo ===\n");
-    println!("This example is currently disabled and needs to be rewritten for the new CSP-based API.");
+    println!(
+        "This example is currently disabled and needs to be rewritten for the new CSP-based API."
+    );
     println!("\nThe new approach will demonstrate:");
     println!("  1. Constrained edge labels: Verb -[nsubj]-> Noun");
     println!("  2. Unconstrained edges: Verb -> Noun (any deprel)");
