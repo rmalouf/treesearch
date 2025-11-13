@@ -86,23 +86,23 @@ pub fn enumerate(tree: &Tree, pattern: &Pattern) -> Vec<Match> {
     }
 
     // DFS with forward-checking
-    let mut assign: Vec<Option<WordId>> = vec![None; pattern.n_vars];
-    dfs(tree, pattern, &mut assign, &domains)
+    let assign: Vec<Option<WordId>> = vec![None; pattern.n_vars];
+    dfs(tree, pattern, &assign, &domains)
 }
 
 fn dfs(
     tree: &Tree,
     pattern: &Pattern,
-    assign: &mut [Option<WordId>],
+    assign: &[Option<WordId>],
     domains: &[Vec<WordId>]
 ) -> Vec<Match> {
     // No more variables to assign!
     if assign.iter().all(|word_id| word_id.is_some()) {
-        let solution = assign.iter().map(|&opt| opt.unwrap()).collect();
+        let solution = assign.iter().copied().flatten().collect();
         return vec![solution];
     }
 
-    // 1) Pick an unassigned variable with Minimum Remaining Values (MRV)
+    // Select an unassigned variable with Minimum Remaining Values (MRV)
     let next_var = (0..pattern.n_vars)
         .filter(|&var_id| assign[var_id].is_none())
         .min_by_key(|&var_id| domains[var_id].len())
@@ -110,40 +110,18 @@ fn dfs(
 
     let mut solutions: Vec<Match> = Vec::new();
 
-    // 2) Try each candidate word for this variable
+    // Try each candidate word for this variable
     'candidates: for &word_id in &domains[next_var] {
         // AllDifferent: Check if word_id is already assigned to another variable
-        if assign.iter().any(|&assigned_word| assigned_word == Some(word_id)) {
-            continue 'candidates;
-        }
+        if assign.contains(&Some(word_id)) { continue };
 
-        // Check arc consistency with already-assigned neighbors (early prune)
-        for &edge_id in &pattern.out_edges[next_var] {
-            let edge_constraint = &pattern.edge_constraints[edge_id];
-            let target_var_id = pattern.var_names[&edge_constraint.to];
-            if assign[target_var_id].is_some_and(|target_word_id|
-                !satisfies_arc_constraint(tree, word_id, target_word_id, &edge_constraint.relation)
-            ) {
-                continue 'candidates;
-            }
-        }
-        for &edge_id in &pattern.in_edges[next_var] {
-            let edge_constraint = &pattern.edge_constraints[edge_id];
-            let source_var_id = pattern.var_names[&edge_constraint.from];
-            if assign[source_var_id].is_some_and(|source_word_id|
-                !satisfies_arc_constraint(tree, source_word_id, word_id, &edge_constraint.relation)
-            ) {
-                continue 'candidates;
-            }
-        }
+        // Early prune: Check arc consistency with already-assigned neighbors
+        if !check_arc_consistency(tree, pattern, assign, next_var, word_id) { continue; }
 
-        // 3) Create next state: assign var := word_id, mark used, forward-check neighbors
+        // Assign var <- word_id and update domains
         let mut new_assign = assign.to_vec();
+        let mut new_domains = domains.to_vec();
         new_assign[next_var] = Some(word_id);
-
-        // Forward-check: build pruned domains
-        // Propagate along edge constraints touching next_var
-        let mut new_domains: Vec<Vec<WordId>> = domains.to_vec();
 
         // AllDifferent: Remove word_id from all other unassigned variable domains
         for var_id in 0..pattern.n_vars {
@@ -155,6 +133,7 @@ fn dfs(
             }
         }
 
+        // Forward-check: Propagate along edge constraints touching next_var
         for &edge_idx in &pattern.out_edges[next_var] {
             let edge_constraint = &pattern.edge_constraints[edge_idx];
             let target_var_id = pattern.var_names[&edge_constraint.to];
@@ -184,9 +163,32 @@ fn dfs(
         }
 
         // Recurse
-        solutions.extend(dfs(tree, pattern, &mut new_assign, &new_domains));
+        solutions.extend(dfs(tree, pattern, &new_assign, &new_domains));
     }
     solutions
+}
+
+fn check_arc_consistency(tree: &Tree, pattern: &Pattern, assign: &[Option<WordId>], next_var: usize, word_id: WordId) -> bool {
+    // Check arc consistency with already-assigned neighbors (early prune)
+    for &edge_id in &pattern.out_edges[next_var] {
+        let edge_constraint = &pattern.edge_constraints[edge_id];
+        let target_var_id = pattern.var_names[&edge_constraint.to];
+        if assign[target_var_id].is_some_and(|target_word_id|
+            !satisfies_arc_constraint(tree, word_id, target_word_id, &edge_constraint.relation)
+        ) {
+            return false;
+        }
+    }
+    for &edge_id in &pattern.in_edges[next_var] {
+        let edge_constraint = &pattern.edge_constraints[edge_id];
+        let source_var_id = pattern.var_names[&edge_constraint.from];
+        if assign[source_var_id].is_some_and(|source_word_id|
+            !satisfies_arc_constraint(tree, source_word_id, word_id, &edge_constraint.relation)
+        ) {
+            return false;
+        }
+    }
+    true
 }
 
 /// Search a tree with a pre-compiled pattern
@@ -304,7 +306,7 @@ mod tests {
     fn test_search_query_child_relation() {
         let tree = build_test_tree();
         // Find verb with obj child
-        let matches: Vec<_> = search_query(&tree, "V [pos=\"VERB\"]; O [deprel=\"obj\"]; V -> O;")
+        let matches: Vec<_> = search_query(&tree, "V [pos=\"VERB\"]; O []; V -[obj]-> O;")
             .unwrap()
             .collect();
         // Should match "helped -> us" (but also potentially "win -> us" if that edge existed, which it doesn't)
@@ -319,7 +321,7 @@ mod tests {
         // Find word with two conj children
         let matches: Vec<_> = search_query(
             &tree,
-            "C [pos=\"CCONJ\"]; N1 [deprel=\"conj\"]; N2 [deprel=\"conj\"]; C -> N1; C -> N2;",
+            "C [pos=\"CCONJ\"]; N1 []; N2 []; C -[conj]-> N1; C -[conj]-> N2;",
         )
         .unwrap()
         .collect();
@@ -357,7 +359,7 @@ mod tests {
     #[test]
     fn test_search_query_constraint_and() {
         let tree = build_test_tree();
-        // Find word with both lemma and pos constraints (using comma for AND)
+        // Find word with both lemma and pos constraints
         let matches: Vec<_> = search_query(&tree, "V [lemma=\"help\", pos=\"VERB\"];")
             .unwrap()
             .collect();
@@ -404,7 +406,7 @@ mod tests {
         // Complex pattern: verb with nsubj and xcomp children
         let matches: Vec<_> = search_query(
             &tree,
-            "V1 [pos=\"VERB\"]; S [deprel=\"nsubj\"]; V2 [pos=\"VERB\"]; V1 -> S; V1 -> V2;",
+            "V1 [pos=\"VERB\"]; S []; V2 [pos=\"VERB\"]; V1 -[nsubj]-> S; V1 -> V2;",
         )
         .unwrap()
         .collect();
