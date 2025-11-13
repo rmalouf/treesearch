@@ -63,7 +63,6 @@ fn satisfies_arc_constraint(
 ) -> bool {
     match relation {
         RelationType::Child => tree.check_rel(from_word_id, to_word_id),
-        RelationType::Parent => tree.check_rel(to_word_id, from_word_id),
         RelationType::Precedes => from_word_id < to_word_id,
         RelationType::Follows => to_word_id < from_word_id,
         _ => panic!("Unsupported relation"),
