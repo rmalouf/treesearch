@@ -53,6 +53,130 @@ pub struct CoNLLUReader<R: BufRead> {
     buffer: String,
 }
 
+impl<R: BufRead> CoNLLUReader<R> {
+
+    /// Parse accumulated lines into a Tree
+    pub fn parse_tree(&self,
+                      lines: Vec<(usize, String)>,
+                      sentence_text: Option<String>,
+                      metadata: HashMap<String, String>,
+    ) -> Result<Tree, ParseError> {
+        let mut tree = Tree::with_metadata(sentence_text, metadata);
+        let mut words = Vec::new();
+
+        // Parse each line into a Word
+        for (line_num, line) in lines {
+            match parse_line(&line, words.len()) {
+                Ok(word) => words.push(word),
+                Err(mut e) => {
+                    e.line_num = Some(line_num);
+                    e.line_content = Some(line);
+                    return Err(e);
+                }
+            }
+        }
+
+        // Build tree structure from HEAD relationships
+        for word in words {
+            tree.add_word(word);
+        }
+
+        // Set up parent-child relationships
+        let word_count = tree.words.len();
+        for i in 0..word_count {
+            if let Some(parent_id) = tree.words[i].parent {
+                if parent_id < word_count {
+                    tree.set_parent(i, parent_id);
+                }
+            } else {
+                // Word with no parent is root
+                tree.root_id = Some(i);
+            }
+        }
+
+        Ok(tree)
+    }
+
+    /// Parse a single CoNLL-U line into a Word
+    /// Errors on multiword tokens and empty nodes (not yet supported)
+    fn parse_line(line: &str, word_id: WordId) -> Result<Word, ParseError> {
+        let mut fields = line.split('\t');
+        //let mut fields = split_tabs(line);
+
+        // Helper macro to consume the next field with error handling
+        macro_rules! next_field {
+        ($field_num:expr) => {
+            fields.next().ok_or_else(|| ParseError {
+                line_num: None,
+                line_content: None,
+                message: format!("Missing field {}", $field_num),
+            })?
+        };
+    }
+
+        // Field 0: ID (1-based token number)
+        let token_id = parse_id(next_field!(0))?;
+
+        // Field 1: FORM
+        let form = next_field!(1).to_string();
+
+        // Field 2: LEMMA
+        let lemma_str = next_field!(2);
+        let lemma = if lemma_str == "_" {
+            form.clone() // Default to form if lemma not specified
+        } else {
+            lemma_str.to_string()
+        };
+
+        // Field 3: UPOS
+        let pos = next_field!(3).to_string();
+
+        // Field 4: XPOS
+        let xpos_str = next_field!(4);
+        let xpos = if xpos_str == "_" {
+            None
+        } else {
+            Some(xpos_str.to_string())
+        };
+
+        // Field 5: FEATS
+        let feats = parse_features(next_field!(5))?;
+
+        // Field 6: HEAD
+        let head = parse_head(next_field!(6))?;
+
+        // Field 7: DEPREL
+        let deprel = next_field!(7).to_string();
+
+        // Field 8: DEPS
+        let deps = parse_deps(next_field!(8))?;
+
+        // Field 9: MISC
+        let misc = parse_misc(next_field!(9))?;
+
+        // Validate no extra fields
+        if fields.next().is_some() {
+            return Err(ParseError {
+                line_num: None,
+                line_content: None,
+                message: "Expected 10 fields, found more than 10".to_string(),
+            });
+        }
+
+        let mut word = Word::with_full_fields(
+            word_id, token_id, form, lemma, pos, xpos, feats, deprel, deps, misc,
+        );
+
+        word.parent = head;
+
+        Ok(word)
+    }
+
+}
+
+
+
+
 impl CoNLLUReader<BufReader<File>> {
     /// Create a reader from a file path
     pub fn from_file(path: &Path) -> std::io::Result<Self> {
@@ -77,6 +201,7 @@ impl CoNLLUReader<BufReader<std::io::Cursor<String>>> {
             buffer: String::new(),
         }
     }
+
 }
 
 impl<R: BufRead> Iterator for CoNLLUReader<R> {
@@ -131,7 +256,7 @@ impl<R: BufRead> Iterator for CoNLLUReader<R> {
         }
 
         // Parse the accumulated lines into a tree
-        Some(parse_tree(tree_lines, sentence_text, metadata))
+        Some(self.parse_tree(tree_lines, sentence_text, metadata))
     }
 }
 
@@ -156,47 +281,6 @@ fn parse_comment(
     }
 }
 
-/// Parse accumulated lines into a Tree
-fn parse_tree(
-    lines: Vec<(usize, String)>,
-    sentence_text: Option<String>,
-    metadata: HashMap<String, String>,
-) -> Result<Tree, ParseError> {
-    let mut tree = Tree::with_metadata(sentence_text, metadata);
-    let mut words = Vec::new();
-
-    // Parse each line into a Word
-    for (line_num, line) in lines {
-        match parse_line(&line, words.len()) {
-            Ok(word) => words.push(word),
-            Err(mut e) => {
-                e.line_num = Some(line_num);
-                e.line_content = Some(line);
-                return Err(e);
-            }
-        }
-    }
-
-    // Build tree structure from HEAD relationships
-    for word in words {
-        tree.add_word(word);
-    }
-
-    // Set up parent-child relationships
-    let word_count = tree.words.len();
-    for i in 0..word_count {
-        if let Some(parent_id) = tree.words[i].parent {
-            if parent_id < word_count {
-                tree.set_parent(i, parent_id);
-            }
-        } else {
-            // Word with no parent is root
-            tree.root_id = Some(i);
-        }
-    }
-
-    Ok(tree)
-}
 
 /*
 #[inline]
@@ -222,80 +306,6 @@ fn split_tabs<'a>(line: &'a str) -> impl Iterator<Item = &'a str> {
 }
 */
 
-/// Parse a single CoNLL-U line into a Word
-/// Errors on multiword tokens and empty nodes (not yet supported)
-fn parse_line(line: &str, word_id: WordId) -> Result<Word, ParseError> {
-    let mut fields = line.split('\t');
-    // let mut fields = split_tabs(line);
-
-    // Helper macro to consume the next field with error handling
-    macro_rules! next_field {
-        ($field_num:expr) => {
-            fields.next().ok_or_else(|| ParseError {
-                line_num: None,
-                line_content: None,
-                message: format!("Missing field {}", $field_num),
-            })?
-        };
-    }
-
-    // Field 0: ID (1-based token number)
-    let token_id = parse_id(next_field!(0))?;
-
-    // Field 1: FORM
-    let form = next_field!(1).to_string();
-
-    // Field 2: LEMMA
-    let lemma_str = next_field!(2);
-    let lemma = if lemma_str == "_" {
-        form.clone() // Default to form if lemma not specified
-    } else {
-        lemma_str.to_string()
-    };
-
-    // Field 3: UPOS
-    let pos = next_field!(3).to_string();
-
-    // Field 4: XPOS
-    let xpos_str = next_field!(4);
-    let xpos = if xpos_str == "_" {
-        None
-    } else {
-        Some(xpos_str.to_string())
-    };
-
-    // Field 5: FEATS
-    let feats = parse_features(next_field!(5))?;
-
-    // Field 6: HEAD
-    let head = parse_head(next_field!(6))?;
-
-    // Field 7: DEPREL
-    let deprel = next_field!(7).to_string();
-
-    // Field 8: DEPS
-    let deps = parse_deps(next_field!(8))?;
-
-    // Field 9: MISC
-    let misc = parse_misc(next_field!(9))?;
-
-    // Validate no extra fields
-    if fields.next().is_some() {
-        return Err(ParseError {
-            line_num: None,
-            line_content: None,
-            message: "Expected 10 fields, found more than 10".to_string(),
-        });
-    }
-
-    let mut word = Word::with_full_fields(
-        word_id, token_id, form, lemma, pos, xpos, feats, deprel, deps, misc,
-    );
-
-    word.parent = head;
-
-    Ok(word)
-}
 
 /// Parse ID field (single integer only)
 fn parse_id(s: &str) -> Result<TokenId, ParseError> {
@@ -461,10 +471,10 @@ mod tests {
 
         assert_eq!(tree.words.len(), 2);
 
-        // Check features
-        assert_eq!(tree.words[0].feats.get("Number"), Some(&"Plur".to_string()));
-        assert_eq!(tree.words[1].feats.get("Number"), Some(&"Plur".to_string()));
-        assert_eq!(tree.words[1].feats.get("Tense"), Some(&"Pres".to_string()));
+        // Check features - Features is a Vec<(String, String)>, not a HashMap
+        assert!(tree.words[0].feats.iter().any(|(k, v)| k == "Number" && v == "Plur"));
+        assert!(tree.words[1].feats.iter().any(|(k, v)| k == "Number" && v == "Plur"));
+        assert!(tree.words[1].feats.iter().any(|(k, v)| k == "Tense" && v == "Pres"));
     }
 
     #[test]
@@ -490,8 +500,8 @@ mod tests {
     #[test]
     fn test_parse_features() {
         let feats = parse_features("Case=Nom|Number=Sing").unwrap();
-        assert_eq!(feats.get("Case"), Some(&"Nom".to_string()));
-        assert_eq!(feats.get("Number"), Some(&"Sing".to_string()));
+        assert!(feats.iter().any(|(k, v)| k == "Case" && v == "Nom"));
+        assert!(feats.iter().any(|(k, v)| k == "Number" && v == "Sing"));
 
         let empty = parse_features("_").unwrap();
         assert!(empty.is_empty());
