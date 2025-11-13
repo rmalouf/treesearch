@@ -94,7 +94,7 @@ fn dfs(
     tree: &Tree,
     pattern: &Pattern,
     assign: &[Option<WordId>],
-    domains: &[Vec<WordId>]
+    domains: &[Vec<WordId>],
 ) -> Vec<Match> {
     // No more variables to assign!
     if assign.iter().all(|word_id| word_id.is_some()) {
@@ -113,10 +113,14 @@ fn dfs(
     // Try each candidate word for this variable
     'candidates: for &word_id in &domains[next_var] {
         // AllDifferent: Check if word_id is already assigned to another variable
-        if assign.contains(&Some(word_id)) { continue };
+        if assign.contains(&Some(word_id)) {
+            continue;
+        };
 
         // Early prune: Check arc consistency with already-assigned neighbors
-        if !check_arc_consistency(tree, pattern, assign, next_var, word_id) { continue; }
+        if !check_arc_consistency(tree, pattern, assign, next_var, word_id) {
+            continue;
+        }
 
         // Assign var <- word_id and update domains
         let mut new_assign = assign.to_vec();
@@ -140,9 +144,8 @@ fn dfs(
             if new_assign[target_var_id].is_some() {
                 continue;
             }
-            new_domains[target_var_id].retain(|&w| {
-                satisfies_arc_constraint(tree, word_id, w, &edge_constraint.relation)
-            });
+            new_domains[target_var_id]
+                .retain(|&w| satisfies_arc_constraint(tree, word_id, w, &edge_constraint.relation));
             if new_domains[target_var_id].is_empty() {
                 continue 'candidates;
             }
@@ -154,9 +157,8 @@ fn dfs(
             if new_assign[source_var_id].is_some() {
                 continue;
             }
-            new_domains[source_var_id].retain(|&w| {
-                satisfies_arc_constraint(tree, w, word_id, &edge_constraint.relation)
-            });
+            new_domains[source_var_id]
+                .retain(|&w| satisfies_arc_constraint(tree, w, word_id, &edge_constraint.relation));
             if new_domains[source_var_id].is_empty() {
                 continue 'candidates;
             }
@@ -168,23 +170,29 @@ fn dfs(
     solutions
 }
 
-fn check_arc_consistency(tree: &Tree, pattern: &Pattern, assign: &[Option<WordId>], next_var: usize, word_id: WordId) -> bool {
+fn check_arc_consistency(
+    tree: &Tree,
+    pattern: &Pattern,
+    assign: &[Option<WordId>],
+    next_var: usize,
+    word_id: WordId,
+) -> bool {
     // Check arc consistency with already-assigned neighbors (early prune)
     for &edge_id in &pattern.out_edges[next_var] {
         let edge_constraint = &pattern.edge_constraints[edge_id];
         let target_var_id = pattern.var_names[&edge_constraint.to];
-        if assign[target_var_id].is_some_and(|target_word_id|
+        if assign[target_var_id].is_some_and(|target_word_id| {
             !satisfies_arc_constraint(tree, word_id, target_word_id, &edge_constraint.relation)
-        ) {
+        }) {
             return false;
         }
     }
     for &edge_id in &pattern.in_edges[next_var] {
         let edge_constraint = &pattern.edge_constraints[edge_id];
         let source_var_id = pattern.var_names[&edge_constraint.from];
-        if assign[source_var_id].is_some_and(|source_word_id|
+        if assign[source_var_id].is_some_and(|source_word_id| {
             !satisfies_arc_constraint(tree, source_word_id, word_id, &edge_constraint.relation)
-        ) {
+        }) {
             return false;
         }
     }
@@ -273,9 +281,7 @@ mod tests {
     #[test]
     fn test_search_query_single_var_pos() {
         let tree = build_test_tree();
-        let matches: Vec<_> = search_query(&tree, "V [pos=\"VERB\"];")
-            .unwrap()
-            .collect();
+        let matches: Vec<_> = search_query(&tree, "V [pos=\"VERB\"];").unwrap().collect();
         // Should match both verbs: "helped" and "win"
         assert_eq!(matches.len(), 2);
         assert!(matches.contains(&vec![0])); // "helped"
@@ -285,9 +291,7 @@ mod tests {
     #[test]
     fn test_search_query_single_var_form() {
         let tree = build_test_tree();
-        let matches: Vec<_> = search_query(&tree, "W [form=\"to\"];")
-            .unwrap()
-            .collect();
+        let matches: Vec<_> = search_query(&tree, "W [form=\"to\"];").unwrap().collect();
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0], vec![2]); // word 2 = "to"
     }
@@ -327,7 +331,13 @@ mod tests {
         .collect();
         // Should find both permutations: (and, cats, dogs) and (and, dogs, cats)
         // Because CSP solver explores all valid assignments
-        assert_eq!(matches.len(), 2, "Expected 2 matches but got {}: {:?}", matches.len(), matches);
+        assert_eq!(
+            matches.len(),
+            2,
+            "Expected 2 matches but got {}: {:?}",
+            matches.len(),
+            matches
+        );
         assert!(matches.contains(&vec![0, 1, 2]), "Missing match [0, 1, 2]");
         assert!(matches.contains(&vec![0, 2, 1]), "Missing match [0, 2, 1]");
     }
@@ -350,9 +360,7 @@ mod tests {
     fn test_search_query_no_matches() {
         let tree = build_test_tree();
         // Search for something that doesn't exist
-        let matches: Vec<_> = search_query(&tree, "N [pos=\"NOUN\"];")
-            .unwrap()
-            .collect();
+        let matches: Vec<_> = search_query(&tree, "N [pos=\"NOUN\"];").unwrap().collect();
         assert_eq!(matches.len(), 0);
     }
 
@@ -391,9 +399,7 @@ mod tests {
     fn test_search_query_exhaustive_matching() {
         let tree = build_coord_tree();
         // Find all nouns (exhaustive search should find both)
-        let matches: Vec<_> = search_query(&tree, "N [pos=\"NOUN\"];")
-            .unwrap()
-            .collect();
+        let matches: Vec<_> = search_query(&tree, "N [pos=\"NOUN\"];").unwrap().collect();
         // Should find both "cats" and "dogs"
         assert_eq!(matches.len(), 2);
         assert!(matches.contains(&vec![1])); // cats

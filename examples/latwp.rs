@@ -2,7 +2,7 @@
 //!
 //! Run with: cargo run --example latwp
 
-use treesearch::{search_query, CoNLLUReader};
+use treesearch::{CoNLLUReader, search_query};
 
 fn main() {
     let reader =
