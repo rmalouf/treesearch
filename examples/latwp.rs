@@ -5,7 +5,6 @@
 use treesearch::{CoNLLUReader, search_query};
 
 fn main() {
-
     let mut count = 0;
 
     let query = r#"
@@ -34,5 +33,4 @@ fn main() {
         }
     }
     println!("{}", count);
-
 }

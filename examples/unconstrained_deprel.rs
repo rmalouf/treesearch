@@ -2,8 +2,11 @@
 //!
 //! Run with: cargo run --example unconstrained_deprel
 
-use treesearch::{Tree, Word, parse_query, search};
+//use treesearch::{Tree, Word, parse_query, search};
 
+fn main() {}
+
+/*
 fn main() {
     println!("=== Unconstrained Deprel Demo ===\n");
 
@@ -94,3 +97,4 @@ fn main() {
         println!("  No match found");
     }
 }
+*/

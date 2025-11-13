@@ -4,6 +4,8 @@
 //! morphological features, enhanced dependencies, and metadata.
 
 use std::collections::HashMap;
+use lasso::{ThreadedRodeo, Spur};
+use std::sync::Arc;
 
 /// Unique identifier for a word (index in tree's words vector)
 pub type WordId = usize;
@@ -36,7 +38,7 @@ pub struct Word {
     // CoNLL-U fields
     pub form: String,         // FORM
     pub lemma: String,        // LEMMA
-    pub pos: String,          // UPOS (universal POS)
+    pub pos: Spur,            // UPOS (universal POS)
     pub xpos: Option<String>, // XPOS (language-specific POS)
     pub feats: Features,      // FEATS (morphological features)
     pub deprel: String,       // DEPREL (dependency relation)
@@ -59,20 +61,6 @@ impl Word {
     /// * `tree` - Reference to the tree containing this word
     /// * `deprel` - The dependency relation name to search for (e.g., "conj", "obl")
     ///
-    /// # Examples
-    /// ```
-    /// # use treesearch::{Tree, Word};
-    /// let mut tree = Tree::new();
-    /// tree.add_word(Word::new(0, "and", "and", "CCONJ", "root"));
-    /// tree.add_word(Word::new(1, "cats", "cat", "NOUN", "conj"));
-    /// tree.add_word(Word::new(2, "dogs", "dog", "NOUN", "conj"));
-    /// tree.set_parent(1, 0);
-    /// tree.set_parent(2, 0);
-    ///
-    /// let coord = tree.get_word(0).unwrap();
-    /// let conjuncts = coord.children_by_deprel(&tree, "conj");
-    /// assert_eq!(conjuncts.len(), 2);
-    /// ```
     pub fn children_by_deprel<'a>(&self, tree: &'a Tree, deprel: &str) -> Vec<&'a Word> {
         self.children
             .iter()
@@ -103,13 +91,13 @@ impl Word {
     }
 
     /// Create a new word with minimal attributes
-    pub fn new(id: WordId, form: &str, lemma: &str, pos: &str, deprel: &str) -> Self {
+    pub fn new(id: WordId, form: &str, lemma: &str, pos: Spur, deprel: &str) -> Self {
         Self {
             id,
             token_id: id,
             form: form.to_string(),
             lemma: lemma.to_string(),
-            pos: pos.to_string(),
+            pos, //pos.to_string(),
             xpos: None,
             feats: Features::new(),
             deprel: deprel.to_string(),
@@ -127,7 +115,7 @@ impl Word {
         token_id: TokenId,
         form: String,
         lemma: String,
-        pos: String,
+        pos: Spur, //String,
         xpos: Option<String>,
         feats: Features,
         deprel: String,
@@ -160,31 +148,64 @@ pub struct Tree {
     // Sentence metadata (from CoNLL-U comments)
     pub sentence_text: Option<String>,
     pub metadata: HashMap<String, String>,
+    pub string_pool: Arc<ThreadedRodeo>,
 }
 
 impl Tree {
     /// Create a new empty tree
-    pub fn new() -> Self {
+    pub fn new(string_pool: &Arc<ThreadedRodeo>) -> Self {
         Self {
             words: Vec::new(),
             root_id: None,
             sentence_text: None,
             metadata: HashMap::new(),
+            string_pool: Arc::clone(string_pool),
         }
     }
 
     /// Create a new tree with sentence metadata
-    pub fn with_metadata(sentence_text: Option<String>, metadata: HashMap<String, String>) -> Self {
+    pub fn with_metadata(
+        string_pool: &Arc<ThreadedRodeo>,
+        sentence_text: Option<String>,
+        metadata: HashMap<String, String>,
+    ) -> Self {
         Self {
             words: Vec::new(),
             root_id: None,
             sentence_text,
             metadata,
+            string_pool: Arc::clone(string_pool),
         }
     }
 
     /// Add a word to the tree
-    pub fn add_word(&mut self, word: Word) {
+    pub fn add_word(&mut self, id: WordId, form: &str, lemma: &str, pos: &str, deprel: &str) {
+        let pos_spur = self.string_pool.get_or_intern(pos);
+        let word = Word::new(
+            id, form, lemma, pos_spur, //pos.to_string(),
+            deprel,
+        );
+        self.words.push(word);
+    }
+
+    pub fn add_word_full_fields(
+        &mut self,
+        word_id: WordId,
+        token_id: usize,
+        form: String,
+        lemma: String,
+        pos: Spur,
+        xpos: Option<String>,
+        feats: Features,
+        deprel: String,
+        deps: Vec<Dep>,
+        misc: Misc,
+        head: Option<WordId>,
+    ) {
+        let mut word = Word::with_full_fields(
+            word_id, token_id, form, lemma, pos, xpos, feats, deprel, deps, misc,
+        );
+        word.parent = head;
         self.words.push(word);
     }
 
@@ -270,7 +291,8 @@ impl Tree {
 
 impl Default for Tree {
     fn default() -> Self {
-        Self::new()
+        let string_pool = Arc::new(ThreadedRodeo::default());
+        Self::new(&string_pool)
     }
 }
 
@@ -280,12 +302,9 @@ mod tests {
 
     #[test]
     fn test_tree_creation() {
-        let mut tree = Tree::new();
-        let root = Word::new(0, "runs", "run", "VERB", "root");
-        let child = Word::new(1, "dog", "dog", "NOUN", "nsubj");
-
-        tree.add_word(root);
-        tree.add_word(child);
+        let mut tree = Tree::default();
+        tree.add_word(0, "runs", "run", "VERB", "root");
+        tree.add_word(1, "dog", "dog", "NOUN", "nsubj");
         tree.set_parent(1, 0);
 
         assert_eq!(tree.words.len(), 2);
@@ -295,11 +314,11 @@ mod tests {
 
     #[test]
     fn test_children_by_deprel_multiple_matches() {
-        let mut tree = Tree::new();
-        tree.add_word(Word::new(0, "and", "and", "CCONJ", "root"));
-        tree.add_word(Word::new(1, "cats", "cat", "NOUN", "conj"));
-        tree.add_word(Word::new(2, "dogs", "dog", "NOUN", "conj"));
-        tree.add_word(Word::new(3, "birds", "bird", "NOUN", "conj"));
+        let mut tree = Tree::default();
+        tree.add_word(0, "and", "and", "CCONJ", "root");
+        tree.add_word(1, "cats", "cat", "NOUN", "conj");
+        tree.add_word(2, "dogs", "dog", "NOUN", "conj");
+        tree.add_word(3, "birds", "bird", "NOUN", "conj");
         tree.set_parent(1, 0);
         tree.set_parent(2, 0);
         tree.set_parent(3, 0);
@@ -315,10 +334,10 @@ mod tests {
 
     #[test]
     fn test_children_by_deprel_single_match() {
-        let mut tree = Tree::new();
-        tree.add_word(Word::new(0, "runs", "run", "VERB", "root"));
-        tree.add_word(Word::new(1, "dog", "dog", "NOUN", "nsubj"));
-        tree.add_word(Word::new(2, "quickly", "quickly", "ADV", "advmod"));
+        let mut tree = Tree::default();
+        tree.add_word(0, "runs", "run", "VERB", "root");
+        tree.add_word(1, "dog", "dog", "NOUN", "nsubj");
+        tree.add_word(2, "quickly", "quickly", "ADV", "advmod");
         tree.set_parent(1, 0);
         tree.set_parent(2, 0);
 
@@ -331,9 +350,9 @@ mod tests {
 
     #[test]
     fn test_children_by_deprel_no_matches() {
-        let mut tree = Tree::new();
-        tree.add_word(Word::new(0, "runs", "run", "VERB", "root"));
-        tree.add_word(Word::new(1, "dog", "dog", "NOUN", "nsubj"));
+        let mut tree = Tree::default();
+        tree.add_word(0, "runs", "run", "VERB", "root");
+        tree.add_word(1, "dog", "dog", "NOUN", "nsubj");
         tree.set_parent(1, 0);
 
         let verb = tree.get_word(0).unwrap();
@@ -344,12 +363,12 @@ mod tests {
 
     #[test]
     fn test_children_by_deprel_mixed_children() {
-        let mut tree = Tree::new();
-        tree.add_word(Word::new(0, "runs", "run", "VERB", "root"));
-        tree.add_word(Word::new(1, "dog", "dog", "NOUN", "nsubj"));
-        tree.add_word(Word::new(2, "park", "park", "NOUN", "obl"));
-        tree.add_word(Word::new(3, "store", "store", "NOUN", "obl"));
-        tree.add_word(Word::new(4, "quickly", "quickly", "ADV", "advmod"));
+        let mut tree = Tree::default();
+        tree.add_word(0, "runs", "run", "VERB", "root");
+        tree.add_word(1, "dog", "dog", "NOUN", "nsubj");
+        tree.add_word(2, "park", "park", "NOUN", "obl");
+        tree.add_word(3, "store", "store", "NOUN", "obl");
+        tree.add_word(4, "quickly", "quickly", "ADV", "advmod");
         tree.set_parent(1, 0);
         tree.set_parent(2, 0);
         tree.set_parent(3, 0);

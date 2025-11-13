@@ -39,18 +39,18 @@ impl std::error::Error for SearchError {}
 pub type Match = Vec<WordId>;
 
 /// Check if a tree word satisfies a pattern variable's constraint
-fn satisfies_var_constraint(word: &Word, constraint: &Constraint) -> bool {
+fn satisfies_var_constraint(tree: &Tree, word: &Word, constraint: &Constraint) -> bool {
     match constraint {
         Constraint::Lemma(lemma) => word.lemma == *lemma,
-        Constraint::POS(pos) => word.pos == *pos,
+        Constraint::POS(pos) => tree.string_pool.resolve(&word.pos) == *pos,
         Constraint::Form(form) => word.form == *form,
         Constraint::DepRel(deprel) => word.deprel == *deprel,
         Constraint::And(constraints) => constraints
             .iter()
-            .all(|constraint| satisfies_var_constraint(word, constraint)),
+            .all(|constraint| satisfies_var_constraint(tree, word, constraint)),
         Constraint::Or(constraints) => constraints
             .iter()
-            .any(|constraint| satisfies_var_constraint(word, constraint)),
+            .any(|constraint| satisfies_var_constraint(tree, word, constraint)),
         Constraint::Any => true, // No filtering
     }
 }
@@ -75,7 +75,7 @@ pub fn enumerate(tree: &Tree, pattern: &Pattern) -> Vec<Match> {
     let mut domains: Vec<Vec<WordId>> = vec![Vec::new(); pattern.n_vars];
     for (var_id, var) in pattern.vars.iter().enumerate() {
         for (word_id, word) in tree.words.iter().enumerate() {
-            if satisfies_var_constraint(word, &var.constraints) {
+            if satisfies_var_constraint(tree, word, &var.constraints) {
                 domains[var_id].push(word_id);
             }
         }
@@ -248,11 +248,11 @@ mod tests {
     /// Structure: "helped" (root) -> "to" (xcomp) -> "win" (xcomp)
     ///                            -> "us" (obj)
     fn build_test_tree() -> Tree {
-        let mut tree = Tree::new();
-        tree.add_word(Word::new(0, "helped", "help", "VERB", "root"));
-        tree.add_word(Word::new(1, "us", "we", "PRON", "obj"));
-        tree.add_word(Word::new(2, "to", "to", "PART", "mark"));
-        tree.add_word(Word::new(3, "win", "win", "VERB", "xcomp"));
+        let mut tree = Tree::default();
+        tree.add_word(0, "helped", "help", "VERB", "root");
+        tree.add_word(1, "us", "we", "PRON", "obj");
+        tree.add_word(2, "to", "to", "PART", "mark");
+        tree.add_word(3, "win", "win", "VERB", "xcomp");
         tree.set_parent(1, 0); // us -> helped
         tree.set_parent(2, 3); // to -> win
         tree.set_parent(3, 0); // win -> helped
@@ -264,10 +264,10 @@ mod tests {
     /// Structure: "and" (root) -> "cats" (conj)
     ///                         -> "dogs" (conj)
     fn build_coord_tree() -> Tree {
-        let mut tree = Tree::new();
-        tree.add_word(Word::new(0, "and", "and", "CCONJ", "root"));
-        tree.add_word(Word::new(1, "cats", "cat", "NOUN", "conj"));
-        tree.add_word(Word::new(2, "dogs", "dog", "NOUN", "conj"));
+        let mut tree = Tree::default();
+        tree.add_word(0, "and", "and", "CCONJ", "root");
+        tree.add_word(1, "cats", "cat", "NOUN", "conj");
+        tree.add_word(2, "dogs", "dog", "NOUN", "conj");
         tree.set_parent(1, 0); // cats -> and
         tree.set_parent(2, 0); // dogs -> and
         tree.root_id = Some(0);
@@ -278,11 +278,11 @@ mod tests {
     /// "saw" (root) -> "John" (nsubj)
     ///              -> "running" (xcomp) -> "quickly" (advmod)
     fn build_multi_verb_tree() -> Tree {
-        let mut tree = Tree::new();
-        tree.add_word(Word::new(0, "saw", "see", "VERB", "root"));
-        tree.add_word(Word::new(1, "John", "John", "PROPN", "nsubj"));
-        tree.add_word(Word::new(2, "running", "run", "VERB", "xcomp"));
-        tree.add_word(Word::new(3, "quickly", "quickly", "ADV", "advmod"));
+        let mut tree = Tree::default();
+        tree.add_word(0, "saw", "see", "VERB", "root");
+        tree.add_word(1, "John", "John", "PROPN", "nsubj");
+        tree.add_word(2, "running", "run", "VERB", "xcomp");
+        tree.add_word(3, "quickly", "quickly", "ADV", "advmod");
         tree.set_parent(1, 0); // John -> saw
         tree.set_parent(2, 0); // running -> saw
         tree.set_parent(3, 2); // quickly -> running
