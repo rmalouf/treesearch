@@ -195,53 +195,67 @@ fn parse_tree(
 /// Parse a single CoNLL-U line into a Word
 /// Errors on multiword tokens and empty nodes (not yet supported)
 fn parse_line(line: &str, word_id: WordId) -> Result<Word, ParseError> {
-    let fields: Vec<&str> = line.split('\t').collect();
+    let mut fields = line.split('\t');
 
-    if fields.len() != 10 {
-        return Err(ParseError {
-            line_num: None,
-            line_content: None,
-            message: format!("Expected 10 fields, found {}", fields.len()),
-        });
+    // Helper macro to consume the next field with error handling
+    macro_rules! next_field {
+        ($field_num:expr) => {
+            fields.next().ok_or_else(|| ParseError {
+                line_num: None,
+                line_content: None,
+                message: format!("Missing field {}", $field_num),
+            })?
+        };
     }
 
     // Field 0: ID (1-based token number)
-    let token_id = parse_id(fields[0])?;
+    let token_id = parse_id(next_field!(0))?;
 
     // Field 1: FORM
-    let form = fields[1].to_string();
+    let form = next_field!(1).to_string();
 
     // Field 2: LEMMA
-    let lemma = if fields[2] == "_" {
+    let lemma_str = next_field!(2);
+    let lemma = if lemma_str == "_" {
         form.clone() // Default to form if lemma not specified
     } else {
-        fields[2].to_string()
+        lemma_str.to_string()
     };
 
     // Field 3: UPOS
-    let pos = fields[3].to_string();
+    let pos = next_field!(3).to_string();
 
     // Field 4: XPOS
-    let xpos = if fields[4] == "_" {
+    let xpos_str = next_field!(4);
+    let xpos = if xpos_str == "_" {
         None
     } else {
-        Some(fields[4].to_string())
+        Some(xpos_str.to_string())
     };
 
     // Field 5: FEATS
-    let feats = parse_features(fields[5])?;
+    let feats = parse_features(next_field!(5))?;
 
     // Field 6: HEAD
-    let head = parse_head(fields[6])?;
+    let head = parse_head(next_field!(6))?;
 
     // Field 7: DEPREL
-    let deprel = fields[7].to_string();
+    let deprel = next_field!(7).to_string();
 
     // Field 8: DEPS
-    let deps = parse_deps(fields[8])?;
+    let deps = parse_deps(next_field!(8))?;
 
     // Field 9: MISC
-    let misc = parse_misc(fields[9])?;
+    let misc = parse_misc(next_field!(9))?;
+
+    // Validate no extra fields
+    if fields.next().is_some() {
+        return Err(ParseError {
+            line_num: None,
+            line_content: None,
+            message: "Expected 10 fields, found more than 10".to_string(),
+        });
+    }
 
     let mut word = Word::with_full_fields(
         word_id, token_id, form, lemma, pos, xpos, feats, deprel, deps, misc,
