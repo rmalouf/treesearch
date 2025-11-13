@@ -1,25 +1,28 @@
 //! Example demonstrating query parsing and pattern matching on CoNLL-U files
 //!
-//! NOTE: This example is currently DISABLED because it uses the old API.
-//! The CSP solver and Match type need to be completed first.
-//!
-//! This will be rewritten once the CSP solver is complete to demonstrate:
-//! - Reading CoNLL-U files
-//! - Executing queries over treebanks
-//! - Accessing matched words from results
-//!
 //! Run with: cargo run --example latwp
 
+use treesearch::{search_query, CoNLLUReader};
+
 fn main() {
-    println!("=== LATWP Query Demo ===\n");
-    println!(
-        "This example is currently disabled and needs to be rewritten for the new CSP-based API."
-    );
-    println!("\nOnce complete, it will demonstrate:");
-    println!("  1. Reading CoNLL-U treebank files");
-    println!(
-        "  2. Running queries like: Noun [pos=\"NOUN\"]; Adj [pos=\"ADJ\"]; Noun -[amod]-> Adj;"
-    );
-    println!("  3. Accessing matched words from the results");
-    println!("\nPlease check back after the CSP solver is implemented!");
+    let reader =
+        CoNLLUReader::from_file("./examples/lw970831.conll".as_ref()).expect("Can't open file");
+
+    let query = r#"
+        Noun [pos="NOUN"];
+        Adj [pos="ADJ"];
+        Noun -[amod]-> Adj;
+    "#;
+
+    for tree in reader {
+        let tree = tree.expect("Reader error");
+        let matches = search_query(&tree, query).expect("Search error");
+        for result in matches {
+            // result is a Vec<WordId> ordered by variable declaration
+            // Variable 0 = Noun, Variable 1 = Adj
+            let noun = tree.get_word(result[0]).unwrap();
+            let adj = tree.get_word(result[1]).unwrap();
+            println!("{} -> {}", noun.form, adj.form)
+        }
+    }
 }
