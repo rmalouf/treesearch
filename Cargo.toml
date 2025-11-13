@@ -14,6 +14,8 @@ crate-type = ["cdylib", "rlib"]
 # Python bindings
 pyo3 = { version = "0.27", optional = true }
 
+memchr = "2.7"
+
 # Parallelization
 rayon = "1.11"
 
@@ -36,6 +38,7 @@ criterion = "0.7"
 opt-level = 3
 lto = true
 codegen-units = 1
+debug = true
 
 [profile.dev]
 opt-level = 0

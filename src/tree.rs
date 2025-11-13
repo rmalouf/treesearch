@@ -12,7 +12,7 @@ pub type WordId = usize;
 pub type TokenId = usize;
 
 /// Morphological features (key=value pairs)
-pub type Features = HashMap<String, String>;
+pub type Features = Vec<(String, String)>;
 
 /// Enhanced dependency (for DEPS field)
 #[derive(Debug, Clone, PartialEq)]

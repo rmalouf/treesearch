@@ -9,8 +9,9 @@
 use crate::tree::{Dep, Features, Misc, TokenId, Tree, Word, WordId};
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufRead, BufReader, Lines};
+use std::io::{BufRead, BufReader};
 use std::path::Path;
+use memchr::memchr_iter;
 
 /// Error during CoNLL-U parsing
 #[derive(Debug)]
@@ -47,8 +48,9 @@ impl std::error::Error for ParseError {}
 
 /// CoNLL-U reader that iterates over sentences
 pub struct CoNLLUReader<R: BufRead> {
-    lines: Lines<R>,
+    reader: R,
     line_num: usize,
+    buffer: String,
 }
 
 impl CoNLLUReader<BufReader<File>> {
@@ -57,8 +59,9 @@ impl CoNLLUReader<BufReader<File>> {
         let file = File::open(path)?;
         let reader = BufReader::new(file);
         Ok(Self {
-            lines: reader.lines(),
+            reader,
             line_num: 0,
+            buffer: String::with_capacity(1 << 20),
         })
     }
 }
@@ -69,8 +72,9 @@ impl CoNLLUReader<BufReader<std::io::Cursor<String>>> {
         let cursor = std::io::Cursor::new(text.to_string());
         let reader = BufReader::new(cursor);
         Self {
-            lines: reader.lines(),
+            reader,
             line_num: 0,
+            buffer: String::new(),
         }
     }
 }
@@ -85,18 +89,20 @@ impl<R: BufRead> Iterator for CoNLLUReader<R> {
 
         // Read lines until we hit a blank line (sentence boundary) or EOF
         loop {
+            self.buffer.clear();
             self.line_num += 1;
-            match self.lines.next() {
-                None => break, // EOF - always break
-                Some(Err(e)) => {
+
+            match self.reader.read_line(&mut self.buffer) {
+                Err(e) => {
                     return Some(Err(ParseError {
                         line_num: Some(self.line_num),
                         line_content: None,
                         message: format!("IO error: {}", e),
                     }));
                 }
-                Some(Ok(line)) => {
-                    let line = line.trim();
+                Ok(0) => break, // EOF - always break
+                Ok(_) => {
+                    let line = self.buffer.trim();
 
                     if line.is_empty() {
                         // Blank line = sentence boundary if we have content
@@ -192,10 +198,35 @@ fn parse_tree(
     Ok(tree)
 }
 
+/*
+#[inline]
+fn split_tabs<'a>(line: &'a str) -> impl Iterator<Item = &'a str> {
+    let bytes = line.as_bytes();
+    let mut start = 0usize;
+    let mut it = memchr_iter(b'\t', bytes).peekable();
+
+    std::iter::from_fn(move || {
+        if let Some(i) = it.next() {
+            let field = &line[start..i];   // valid char boundary (ASCII tab)
+            start = i + 1;
+            Some(field)
+        } else if start <= bytes.len() {
+            // last field
+            let field = &line[start..];
+            start = bytes.len() + 1;       // mark done
+            Some(field)
+        } else {
+            None
+        }
+    })
+}
+*/
+
 /// Parse a single CoNLL-U line into a Word
 /// Errors on multiword tokens and empty nodes (not yet supported)
 fn parse_line(line: &str, word_id: WordId) -> Result<Word, ParseError> {
     let mut fields = line.split('\t');
+    // let mut fields = split_tabs(line);
 
     // Helper macro to consume the next field with error handling
     macro_rules! next_field {
@@ -325,7 +356,7 @@ fn parse_features(s: &str) -> Result<Features, ParseError> {
                 message: format!("Invalid FEATS pair (missing '='): {}", pair),
             });
         };
-        feats.insert(k.to_string(), v.to_string());
+        feats.push((k.to_string(), v.to_string()));
     }
     Ok(feats)
 }
