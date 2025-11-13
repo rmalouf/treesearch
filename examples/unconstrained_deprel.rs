@@ -2,7 +2,7 @@
 //!
 //! Run with: cargo run --example unconstrained_deprel
 
-use treesearch::{parse_query, search, Tree, Word};
+use treesearch::{Tree, Word, parse_query, search};
 
 fn main() {
     println!("=== Unconstrained Deprel Demo ===\n");
