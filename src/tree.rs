@@ -246,6 +246,12 @@ impl Tree {
         Ok(self.get_word(word_id)?.children.clone())
     }
 
+    pub fn check_rel(&self, from_id: WordId, to_id: WordId) -> bool {
+        // fast but risky
+        let children_ids = &self.words[from_id].children;
+        children_ids.contains(&to_id)
+    }
+
     // /// Get all words in the tree
     // pub fn words(&self) -> &[Word] {
     //     &self.words
