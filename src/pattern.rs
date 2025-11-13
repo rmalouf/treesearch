@@ -58,8 +58,6 @@ impl PatternVar {
 pub enum RelationType {
     /// Direct parent-child relation
     Child,
-    /// Direct child-parent relation
-    Parent,
     /// Ancestor relation (transitive closure of parent)
     Ancestor,
     /// Descendant relation (transitive closure of child)
