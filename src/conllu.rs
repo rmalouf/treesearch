@@ -9,11 +9,12 @@
 use crate::tree::{Dep, Features, Misc, TokenId, Tree, WordId};
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 //use memchr::memchr_iter;
 use lasso::ThreadedRodeo;
 use std::sync::Arc;
+use flate2::read::GzDecoder;
 
 /// Error during CoNLL-U parsing
 #[derive(Debug)]
@@ -167,10 +168,38 @@ impl<R: BufRead> CoNLLUReader<R> {
     }
 }
 
-impl CoNLLUReader<BufReader<File>> {
-    /// Create a reader from a file path
+/// Open a file and detect if it's gzipped based on magic bytes
+fn open_file(path: &Path) -> std::io::Result<Box<dyn Read>> {
+    let mut file = File::open(path)?;
+
+    // Read first 2 bytes to check for gzip magic bytes (0x1f 0x8b)
+    let mut magic = [0u8; 2];
+    use std::io::Read;
+    match file.read_exact(&mut magic) {
+        Ok(_) => {
+            // Check if it's gzip
+            if magic[0] == 0x1f && magic[1] == 0x8b {
+                // It's gzip - reopen the file and wrap in GzDecoder
+                let file = File::open(path)?;
+                Ok(Box::new(GzDecoder::new(file)))
+            } else {
+                // Not gzip - reopen the file
+                let file = File::open(path)?;
+                Ok(Box::new(file))
+            }
+        }
+        Err(_) => {
+            // File is too small or empty - just use it as-is
+            let file = File::open(path)?;
+            Ok(Box::new(file))
+        }
+    }
+}
+
+impl CoNLLUReader<BufReader<Box<dyn Read>>> {
+    /// Create a reader from a file path (transparently handles gzip compression)
     pub fn from_file(path: &Path) -> std::io::Result<Self> {
-        let file = File::open(path)?;
+        let file = open_file(path)?;
         let reader = BufReader::new(file);
         let rodeo = Arc::new(ThreadedRodeo::default());
         Ok(Self {
