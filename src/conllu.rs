@@ -102,6 +102,7 @@ impl<R: BufRead> CoNLLUReader<R> {
                     message: format!("Missing field {}", field_num),
                 })?;
                 field_num += 1;
+                let _ = field_num; // avoid warning about unused value
                 result
             }};
         }
@@ -112,14 +113,14 @@ impl<R: BufRead> CoNLLUReader<R> {
             "_" => form.clone(), // Default to form if lemma not specified
             s => s.to_string()
         };
-        let pos = tree.string_pool.get_or_intern(next_field!());
+        let pos = tree.intern_string(next_field!());
         let xpos = match next_field!() {
             "_" => None,
-            s => Some(tree.string_pool.get_or_intern(s)),
+            s => Some(tree.intern_string(s)),
         };
         let feats = parse_features(next_field!())?;
         let head = parse_head(next_field!())?;
-        let deprel = tree.string_pool.get_or_intern(next_field!());
+        let deprel = tree.intern_string(next_field!());
         let deps = parse_deps(next_field!())?;
         let misc = parse_misc(next_field!())?;
 
@@ -130,9 +131,6 @@ impl<R: BufRead> CoNLLUReader<R> {
                 message: "Expected 10 fields, found more than 10".to_string(),
             });
         }
-
-        // "Use" field_num to avoid compiler warning
-        let _ = field_num;
 
         tree.add_word_full_fields(
             word_id, token_id, form, lemma, pos, xpos, feats, deprel, deps, misc, head,
@@ -433,9 +431,8 @@ mod tests {
         // Check nodes
         assert_eq!(tree.words[0].form, "The");
         assert_eq!(tree.words[0].lemma, "the");
-        // TODO: fix this
-        // assert_eq!(tree.words[0].pos, "DET");
-        // assert_eq!(tree.words[0].deprel, "det");
+        assert_eq!(tree.string_pool.resolve(&tree.words[0].pos), "DET");
+        assert_eq!(tree.string_pool.resolve(&tree.words[0].deprel), "det");
 
         assert_eq!(tree.words[2].form, "runs");
         assert_eq!(tree.words[2].parent, None); // root
