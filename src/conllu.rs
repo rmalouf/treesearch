@@ -54,13 +54,14 @@ pub struct CoNLLUReader<R: BufRead> {
     line_num: usize,
     buffer: String,
     string_pool: Arc<ThreadedRodeo>,
+    tree_lines: Vec<(usize, String)>,
 }
 
 impl<R: BufRead> CoNLLUReader<R> {
     /// Parse accumulated lines into a Tree
     pub fn parse_tree(
         &self,
-        lines: Vec<(usize, String)>,
+        lines: &Vec<(usize, String)>,
         sentence_text: Option<String>,
         metadata: HashMap<String, String>,
     ) -> Result<Tree, ParseError> {
@@ -70,8 +71,8 @@ impl<R: BufRead> CoNLLUReader<R> {
         // Parse each line into a Word
         for (line_num, line) in lines {
             if let Err(mut e) = self.parse_line(&mut tree, &line, word_id) {
-                e.line_num = Some(line_num);
-                e.line_content = Some(line);
+                e.line_num = Some(*line_num);
+                e.line_content = Some(line.clone());
                 return Err(e);
             }
             word_id += 1;
@@ -177,6 +178,7 @@ impl CoNLLUReader<BufReader<File>> {
             line_num: 0,
             buffer: String::with_capacity(1 << 20),
             string_pool: rodeo,
+            tree_lines: Vec::with_capacity(50),
         })
     }
 }
@@ -192,6 +194,7 @@ impl CoNLLUReader<BufReader<std::io::Cursor<String>>> {
             line_num: 0,
             buffer: String::new(),
             string_pool: rodeo,
+            tree_lines: Vec::with_capacity(50),
         }
     }
 }
@@ -200,9 +203,10 @@ impl<R: BufRead> Iterator for CoNLLUReader<R> {
     type Item = Result<Tree, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut tree_lines = Vec::new();
+        //let mut tree_lines = Vec::with_capacity(50);
         let mut metadata = HashMap::new();
         let mut sentence_text = None;
+        self.tree_lines.clear();
 
         // Read lines until we hit a blank line (sentence boundary) or EOF
         loop {
@@ -223,7 +227,7 @@ impl<R: BufRead> Iterator for CoNLLUReader<R> {
 
                     if line.is_empty() {
                         // Blank line = sentence boundary if we have content
-                        if !tree_lines.is_empty() {
+                        if !self.tree_lines.is_empty() {
                             break;
                         }
                         // Skip leading/multiple blank lines
@@ -237,18 +241,18 @@ impl<R: BufRead> Iterator for CoNLLUReader<R> {
                     }
 
                     // Regular token line
-                    tree_lines.push((self.line_num, line.to_string()));
+                    self.tree_lines.push((self.line_num, line.to_string()));
                 }
             }
         }
 
         // Return None if we broke on EOF with no content
-        if tree_lines.is_empty() {
+        if self.tree_lines.is_empty() {
             return None;
         }
 
         // Parse the accumulated lines into a tree
-        Some(self.parse_tree(tree_lines, sentence_text, metadata))
+        Some(self.parse_tree(&self.tree_lines, sentence_text, metadata))
     }
 }
 
