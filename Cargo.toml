@@ -17,6 +17,7 @@ memchr = "2.7"
 pest = "2.8"
 pest_derive = "2.8"
 lasso = { version = "0.7", features = ["multi-threaded", "inline-more"]}
+rustc-hash = "2.1"
 flate2 = "1.0"
 
 [features]

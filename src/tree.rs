@@ -3,9 +3,14 @@
 //! This module provides complete CoNLL-U support including all fields,
 //! morphological features, enhanced dependencies, and metadata.
 
-use lasso::{Spur, ThreadedRodeo};
+use lasso::{Capacity, Spur, ThreadedRodeo};
+use rustc_hash::FxBuildHasher;
 use std::collections::HashMap;
 use std::sync::Arc;
+
+/// Initial capacity for the string pool (ThreadedRodeo)
+/// This is used for interning POS tags, XPOS tags, and dependency relations
+pub const STRING_POOL_CAPACITY: usize = 5000;
 
 /// Unique identifier for a word (index in tree's words vector)
 pub type WordId = usize;
@@ -148,12 +153,12 @@ pub struct Tree {
     // Sentence metadata (from CoNLL-U comments)
     pub sentence_text: Option<String>,
     pub metadata: HashMap<String, String>,
-    pub string_pool: Arc<ThreadedRodeo>,
+    pub string_pool: Arc<ThreadedRodeo<Spur, FxBuildHasher>>,
 }
 
 impl Tree {
     /// Create a new empty tree
-    pub fn new(string_pool: &Arc<ThreadedRodeo>) -> Self {
+    pub fn new(string_pool: &Arc<ThreadedRodeo<Spur, FxBuildHasher>>) -> Self {
         Self {
             words: Vec::new(),
             root_id: None,
@@ -165,7 +170,7 @@ impl Tree {
 
     /// Create a new tree with sentence metadata
     pub fn with_metadata(
-        string_pool: &Arc<ThreadedRodeo>,
+        string_pool: &Arc<ThreadedRodeo<Spur, FxBuildHasher>>,
         sentence_text: Option<String>,
         metadata: HashMap<String, String>,
     ) -> Self {
@@ -292,7 +297,10 @@ impl Tree {
 
 impl Default for Tree {
     fn default() -> Self {
-        let string_pool = Arc::new(ThreadedRodeo::default());
+        let string_pool = Arc::new(ThreadedRodeo::with_capacity_and_hasher(
+            Capacity::for_strings(STRING_POOL_CAPACITY),
+            FxBuildHasher,
+        ));
         Self::new(&string_pool)
     }
 }
