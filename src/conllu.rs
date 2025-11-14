@@ -6,13 +6,14 @@
 //!
 //! CoNLL-U format: https://universaldependencies.org/format.html
 
-use crate::tree::{Dep, Features, Misc, TokenId, Tree, WordId};
+use crate::tree::{Dep, Features, Misc, TokenId, Tree, WordId, STRING_POOL_CAPACITY};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 //use memchr::memchr_iter;
-use lasso::ThreadedRodeo;
+use lasso::{Capacity, Spur, ThreadedRodeo};
+use rustc_hash::FxBuildHasher;
 use std::sync::Arc;
 use flate2::read::GzDecoder;
 
@@ -54,7 +55,7 @@ pub struct CoNLLUReader<R: BufRead> {
     reader: R,
     line_num: usize,
     buffer: String,
-    string_pool: Arc<ThreadedRodeo>,
+    string_pool: Arc<ThreadedRodeo<Spur, FxBuildHasher>>,
     tree_lines: Vec<(usize, String)>,
 }
 
@@ -201,7 +202,10 @@ impl CoNLLUReader<BufReader<Box<dyn Read>>> {
     pub fn from_file(path: &Path) -> std::io::Result<Self> {
         let file = open_file(path)?;
         let reader = BufReader::new(file);
-        let rodeo = Arc::new(ThreadedRodeo::default());
+        let rodeo = Arc::new(ThreadedRodeo::with_capacity_and_hasher(
+            Capacity::for_strings(STRING_POOL_CAPACITY),
+            FxBuildHasher,
+        ));
         Ok(Self {
             reader,
             line_num: 0,
@@ -217,7 +221,10 @@ impl CoNLLUReader<BufReader<std::io::Cursor<String>>> {
     pub fn from_string(text: &str) -> Self {
         let cursor = std::io::Cursor::new(text.to_string());
         let reader = BufReader::new(cursor);
-        let rodeo = Arc::new(ThreadedRodeo::default());
+        let rodeo = Arc::new(ThreadedRodeo::with_capacity_and_hasher(
+            Capacity::for_strings(STRING_POOL_CAPACITY),
+            FxBuildHasher,
+        ));
         Self {
             reader,
             line_num: 0,
