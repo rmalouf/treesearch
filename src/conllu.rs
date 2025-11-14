@@ -91,60 +91,38 @@ impl<R: BufRead> CoNLLUReader<R> {
     /// Errors on multiword tokens and empty nodes (not yet supported)
     fn parse_line(&self, tree: &mut Tree, line: &str, word_id: WordId) -> Result<(), ParseError> {
         let mut fields = line.split('\t');
-        //let mut fields = split_tabs(line);
+        let mut field_num = 0;
 
         // Helper macro to consume the next field with error handling
         macro_rules! next_field {
-            ($field_num:expr) => {
-                fields.next().ok_or_else(|| ParseError {
+            () => {{
+                let result = fields.next().ok_or_else(|| ParseError {
                     line_num: None,
                     line_content: None,
-                    message: format!("Missing field {}", $field_num),
-                })?
-            };
+                    message: format!("Missing field {}", field_num),
+                })?;
+                field_num += 1;
+                result
+            }};
         }
 
-        // Field 0: ID (1-based token number)
-        let token_id = parse_id(next_field!(0))?;
-
-        // Field 1: FORM
-        let form = next_field!(1).to_string();
-
-        // Field 2: LEMMA
-        let lemma_str = next_field!(2);
-        let lemma = if lemma_str == "_" {
-            form.clone() // Default to form if lemma not specified
-        } else {
-            lemma_str.to_string()
+        let token_id = parse_id(next_field!())?;
+        let form = next_field!().to_string();
+        let lemma = match next_field!() {
+            "_" => form.clone(), // Default to form if lemma not specified
+            s => s.to_string()
         };
-
-        // Field 3: UPOS
-        let pos = tree.string_pool.get_or_intern(next_field!(3));
-
-        // Field 4: XPOS
-        let xpos_str = next_field!(4);
-        let xpos = if xpos_str == "_" {
-            None
-        } else {
-            Some(tree.string_pool.get_or_intern(xpos_str))
+        let pos = tree.string_pool.get_or_intern(next_field!());
+        let xpos = match next_field!() {
+            "_" => None,
+            s => Some(tree.string_pool.get_or_intern(s)),
         };
+        let feats = parse_features(next_field!())?;
+        let head = parse_head(next_field!())?;
+        let deprel = tree.string_pool.get_or_intern(next_field!());
+        let deps = parse_deps(next_field!())?;
+        let misc = parse_misc(next_field!())?;
 
-        // Field 5: FEATS
-        let feats = parse_features(next_field!(5))?;
-
-        // Field 6: HEAD
-        let head = parse_head(next_field!(6))?;
-
-        // Field 7: DEPREL
-        let deprel = tree.string_pool.get_or_intern(next_field!(7));
-
-        // Field 8: DEPS
-        let deps = parse_deps(next_field!(8))?;
-
-        // Field 9: MISC
-        let misc = parse_misc(next_field!(9))?;
-
-        // Validate no extra fields
         if fields.next().is_some() {
             return Err(ParseError {
                 line_num: None,
@@ -152,6 +130,9 @@ impl<R: BufRead> CoNLLUReader<R> {
                 message: "Expected 10 fields, found more than 10".to_string(),
             });
         }
+
+        // "Use" field_num to avoid compiler warning
+        let _ = field_num;
 
         tree.add_word_full_fields(
             word_id, token_id, form, lemma, pos, xpos, feats, deprel, deps, misc, head,
