@@ -66,7 +66,7 @@ impl<R: BufRead> CoNLLUReader<R> {
         let mut tree = Tree::with_metadata(&self.string_pool, sentence_text, metadata);
 
         // Parse each line into a Word
-        for (word_id, (line_num, line))in lines.iter().enumerate() {
+        for (word_id, (line_num, line)) in lines.iter().enumerate() {
             if let Err(mut e) = self.parse_line(&mut tree, line, word_id) {
                 e.line_num = Some(*line_num);
                 e.line_content = Some(line.clone());
@@ -75,12 +75,9 @@ impl<R: BufRead> CoNLLUReader<R> {
         }
 
         // Set up parent-child relationships
-        let word_count = tree.words.len();
-        for i in 0..word_count {
+        for i in 0..tree.words.len() {
             if let Some(parent_id) = tree.words[i].parent {
-                if parent_id < word_count {
-                    tree.set_parent(i, parent_id);
-                }
+                tree.set_parent(i, parent_id);
             } else {
                 // Word with no parent is root
                 tree.root_id = Some(i);
