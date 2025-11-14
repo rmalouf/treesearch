@@ -158,9 +158,13 @@ impl Tree {
         }
     }
 
+    pub fn intern_string(&self, string: &str) -> Spur {
+        self.string_pool.get_or_intern(string)
+    }
+
     pub fn add_word(&mut self, id: WordId, form: &str, lemma: &str, pos: &str, deprel: &str) {
-        let pos_spur = self.string_pool.get_or_intern(pos);
-        let deprel_spur = self.string_pool.get_or_intern(deprel);
+        let pos_spur = self.intern_string(pos);
+        let deprel_spur = self.intern_string(deprel);
         let word = Word::new(id, form, lemma, pos_spur, deprel_spur);
         self.words.push(word);
     }
