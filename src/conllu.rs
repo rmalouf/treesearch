@@ -6,7 +6,7 @@
 //!
 //! CoNLL-U format: https://universaldependencies.org/format.html
 
-use crate::tree::{create_string_pool, Dep, Features, Misc, StringPool, TokenId, Tree, WordId};
+use crate::tree::{Dep, Features, Misc, StringPool, TokenId, Tree, WordId, create_string_pool};
 use flate2::read::GzDecoder;
 use std::collections::HashMap;
 use std::fs::File;
@@ -59,21 +59,19 @@ impl<R: BufRead> CoNLLUReader<R> {
     /// Parse accumulated lines into a Tree
     pub fn parse_tree(
         &self,
-        lines: &Vec<(usize, String)>,
+        lines: &[(usize, String)],
         sentence_text: Option<String>,
         metadata: HashMap<String, String>,
     ) -> Result<Tree, ParseError> {
         let mut tree = Tree::with_metadata(&self.string_pool, sentence_text, metadata);
-        let mut word_id: WordId = 0;
 
         // Parse each line into a Word
-        for (line_num, line) in lines {
-            if let Err(mut e) = self.parse_line(&mut tree, &line, word_id) {
+        for (word_id, (line_num, line))in lines.iter().enumerate() {
+            if let Err(mut e) = self.parse_line(&mut tree, line, word_id) {
                 e.line_num = Some(*line_num);
                 e.line_content = Some(line.clone());
                 return Err(e);
             }
-            word_id += 1;
         }
 
         // Set up parent-child relationships
@@ -167,29 +165,15 @@ impl<R: BufRead> CoNLLUReader<R> {
 
 /// Open a file and detect if it's gzipped based on magic bytes
 fn open_file(path: &Path) -> std::io::Result<Box<dyn Read>> {
-    let mut file = File::open(path)?;
+    let file = File::open(path)?;
+    let mut buffered = BufReader::new(file);
+    let buf = buffered.fill_buf()?;
 
-    // Read first 2 bytes to check for gzip magic bytes (0x1f 0x8b)
-    let mut magic = [0u8; 2];
-    use std::io::Read;
-    match file.read_exact(&mut magic) {
-        Ok(_) => {
-            // Check if it's gzip
-            if magic[0] == 0x1f && magic[1] == 0x8b {
-                // It's gzip - reopen the file and wrap in GzDecoder
-                let file = File::open(path)?;
-                Ok(Box::new(GzDecoder::new(file)))
-            } else {
-                // Not gzip - reopen the file
-                let file = File::open(path)?;
-                Ok(Box::new(file))
-            }
-        }
-        Err(_) => {
-            // File is too small or empty - just use it as-is
-            let file = File::open(path)?;
-            Ok(Box::new(file))
-        }
+    // Peek at first 2 bytes to check for gzip magic bytes (0x1f 0x8b)
+    if buf.len() >= 2 && buf[0] == 0x1f && buf[1] == 0x8b {
+        Ok(Box::new(GzDecoder::new(buffered)))
+    } else {
+        Ok(Box::new(buffered))
     }
 }
 
