@@ -12,6 +12,24 @@ use std::sync::Arc;
 /// This is used for interning POS tags, XPOS tags, and dependency relations
 pub const STRING_POOL_CAPACITY: usize = 5000;
 
+/// Type alias for the string pool used throughout the codebase
+/// Uses FxBuildHasher for faster hashing of small keys (POS tags, XPOS, DEPREL)
+pub type StringPool = Arc<ThreadedRodeo<Spur, FxBuildHasher>>;
+
+/// Create a new string pool with optimized settings
+///
+/// Returns a thread-safe string interner configured with:
+/// - FxHash for faster hashing of small keys (POS tags, XPOS, DEPREL)
+/// - Pre-allocated capacity of 5000 strings to avoid early reallocations
+///
+/// This is the centralized factory for creating string pools throughout the codebase.
+pub fn create_string_pool() -> StringPool {
+    Arc::new(ThreadedRodeo::with_capacity_and_hasher(
+        Capacity::for_strings(STRING_POOL_CAPACITY),
+        FxBuildHasher,
+    ))
+}
+
 /// Unique identifier for a word (index in tree's words vector)
 pub type WordId = usize;
 
@@ -153,12 +171,12 @@ pub struct Tree {
     // Sentence metadata (from CoNLL-U comments)
     pub sentence_text: Option<String>,
     pub metadata: HashMap<String, String>,
-    pub string_pool: Arc<ThreadedRodeo<Spur, FxBuildHasher>>,
+    pub string_pool: StringPool,
 }
 
 impl Tree {
     /// Create a new empty tree
-    pub fn new(string_pool: &Arc<ThreadedRodeo<Spur, FxBuildHasher>>) -> Self {
+    pub fn new(string_pool: &StringPool) -> Self {
         Self {
             words: Vec::new(),
             root_id: None,
@@ -170,7 +188,7 @@ impl Tree {
 
     /// Create a new tree with sentence metadata
     pub fn with_metadata(
-        string_pool: &Arc<ThreadedRodeo<Spur, FxBuildHasher>>,
+        string_pool: &StringPool,
         sentence_text: Option<String>,
         metadata: HashMap<String, String>,
     ) -> Self {
@@ -297,10 +315,7 @@ impl Tree {
 
 impl Default for Tree {
     fn default() -> Self {
-        let string_pool = Arc::new(ThreadedRodeo::with_capacity_and_hasher(
-            Capacity::for_strings(STRING_POOL_CAPACITY),
-            FxBuildHasher,
-        ));
+        let string_pool = create_string_pool();
         Self::new(&string_pool)
     }
 }
