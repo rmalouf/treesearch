@@ -9,8 +9,8 @@ High-performance toolkit for querying linguistic dependency parses at scale. Rus
 ## Core Architecture
 
 **1. CoNLL-U Parsing** - Read and parse Universal Dependencies files
-**2. Pattern Matching VM** - Execute structural queries with backtracking
-**3. Index + Compile + Execute** - Two-phase strategy for efficiency
+**2. Pattern Matching CSP** - Execute structural queries with constraint satisfaction
+**3. Exhaustive Search** - Find ALL valid matches, no pruning
 **4. Python Bindings** (PyO3) - Pythonic API for research workflows
 
 ### Query Language
@@ -19,68 +19,73 @@ High-performance toolkit for querying linguistic dependency parses at scale. Rus
 # Node declarations with constraints
 Help [lemma="help"];
 To [lemma="to"];
-Verb [];
+Verb [pos="VERB"];
 
 # Edge declarations (structural relations)
-Help -[xcomp]-> To;
-To -[mark]-> Verb;
+Help -> To;           # Help has child To
+To -[mark]-> Verb;    # To has child Verb with deprel=mark
 ```
 
 ### Matching Algorithm
 
-1. **Index lookup**: Find candidate anchor nodes using inverted indices
-2. **VM verification**: Execute compiled bytecode to verify structural constraints
-3. **Match semantics**: Leftmost, shortest-path (deterministic results)
-4. **Bounded search**: BFS with depth limits prevents exponential blowup
+**Constraint Satisfaction Problem (CSP)**:
+- Variables: Pattern nodes to be matched
+- Domains: Tree words satisfying node constraints
+- Constraints: Edge relationships (child, precedes, follows)
+- Solver: DFS with forward checking and MRV heuristic
+- Global constraint: AllDifferent (no two variables bind to same word)
+- Result: ALL valid solutions (exhaustive)
 
 ## Current Status (Nov 2025)
 
 ### Completed ✅
 
-**Phase 0: Core Matching** (95% complete)
-- ✅ VM with all instructions (vm.rs: 1,436 lines, 39 tests)
-- ✅ BFS wildcard search with shortest-path guarantees
-- ✅ Full backtracking support
-- ✅ Pattern compiler with anchor selection (523 lines, 11 tests)
-- ✅ Query language parser using Pest (264 lines, 6 tests)
-- ✅ Inverted indices for fast lookup (116 lines)
-- ✅ 71 tests passing
+**Core Implementation** (100% complete)
+- ✅ CSP solver with DFS + forward checking (searcher.rs: 472 lines, 18 tests)
+- ✅ Query language parser using Pest (parser.rs: 264 lines, 6 tests)
+- ✅ Pattern AST with constraints (pattern.rs: 200+ lines)
+- ✅ CoNLL-U parser with gzip support (conllu.rs: 446 lines, 14 tests)
+- ✅ Tree data structures with string interning (tree.rs: 400+ lines)
+- ✅ 38 tests passing (2372 lines of code)
 
-**Phase 1: Integration** (~90% complete)
-- ✅ Full CoNLL-U parser with error handling (conllu.rs: 444 lines)
-- ✅ Complete tree representation (all UD fields)
-- ✅ TreeSearcher end-to-end pipeline (searcher.rs: 169 lines)
-- ✅ Leftmost semantics using token positions
-- ✅ End-to-end examples
+### In Progress 🔄
+
+**Python Bindings**:
+- 🔄 PyO3 bindings partially implemented (python.rs exists)
+- ⏳ Not yet functional or tested
 
 ### Remaining Work ⏳
 
-**Phase 1 Polish**:
-- Python bindings (PyO3)
-- Performance benchmarks
-- Comprehensive rustdoc
+**Polish & Performance**:
+- ⏳ Complete Python bindings (PyO3)
+- ⏳ Performance benchmarks (Criterion)
+- ⏳ Multi-file processing with rayon
+- ⏳ Comprehensive rustdoc
 
-**Phase 2 (Future)**:
-- Multi-file processing with rayon
-- Extended query features (regex, negation)
-- Performance optimization
+**Future Enhancements**:
+- ⏳ Extended query features (negation, regex)
+- ⏳ More relation types (ancestor, sibling, etc.)
+- ⏳ Performance optimization based on benchmarks
 
 ## Technology Stack
 
 - **Language**: Rust 2021 edition
 - **Python**: PyO3 + maturin
 - **Parser**: Pest 2.7
-- **Parallelization**: Rayon 1.11
+- **String interning**: lasso with FxHash
+- **Compression**: flate2 (gzip)
+- **Parallelization**: Rayon 1.11 (planned)
+- **Benchmarking**: Criterion 0.7
 
 ## Key Design Principles
 
 1. **Performance**: Rust core for 500M+ token corpora
-2. **Deterministic**: Leftmost, shortest-path semantics
+2. **Exhaustive**: Find ALL matches, no pruning (leftmost/shortest)
 3. **Error handling**: User errors → Result::Err, bugs → panic with context
-4. **No pathological cases**: Bounded search prevents exponential blowup
+4. **Efficient search**: CSP with forward checking prevents exponential blowup
 5. **Python-friendly**: Ergonomic bindings for research workflows
 
-## Example Workflow
+## Example Workflow (Planned)
 
 ```python
 from treesearch import TreeSearcher, CoNLLUReader
@@ -107,6 +112,6 @@ for tree in trees:
 
 ## References
 
-- Design details: `plans/pattern_matching_vm_design.md`
 - CoNLL-U format: https://universaldependencies.org/format.html
 - Development guide: `CLAUDE.md`
+- Repository: https://github.com/rmalouf/treesearch
