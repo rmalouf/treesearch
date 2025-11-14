@@ -16,7 +16,7 @@ pyo3 = { version = "0.27", optional = true }
 #rayon = "1.11"
 pest = "2.8"
 pest_derive = "2.8"
-lasso = { version = "0.7", features = ["multi-threaded"]}
+lasso = { version = "0.7", features = ["multi-threaded", "inline-more"]}
 
 [features]
 # Default features for Rust-only builds

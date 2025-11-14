@@ -44,7 +44,7 @@ fn satisfies_var_constraint(tree: &Tree, word: &Word, constraint: &Constraint) -
         Constraint::Lemma(lemma) => word.lemma == *lemma,
         Constraint::POS(pos) => tree.string_pool.resolve(&word.pos) == *pos,
         Constraint::Form(form) => word.form == *form,
-        Constraint::DepRel(deprel) => word.deprel == *deprel,
+        Constraint::DepRel(deprel) => tree.string_pool.resolve(&word.deprel) == *deprel,
         Constraint::And(constraints) => constraints
             .iter()
             .all(|constraint| satisfies_var_constraint(tree, word, constraint)),
