@@ -59,14 +59,14 @@ pub struct Word {
     pub token_id: TokenId,
 
     // CoNLL-U fields
-    pub form: String,         // FORM
-    pub lemma: String,        // LEMMA
-    pub pos: Spur,            // UPOS (universal POS)
-    pub xpos: Option<Spur>,   // XPOS (language-specific POS)
-    pub feats: Features,      // FEATS (morphological features)
-    pub deprel: Spur,         // DEPREL (dependency relation)
-    pub deps: Vec<Dep>,       // DEPS (enhanced dependencies)
-    pub misc: Misc,           // MISC (miscellaneous)
+    pub form: String,       // FORM
+    pub lemma: String,      // LEMMA
+    pub pos: Spur,          // UPOS (universal POS)
+    pub xpos: Option<Spur>, // XPOS (language-specific POS)
+    pub feats: Features,    // FEATS (morphological features)
+    pub deprel: Spur,       // DEPREL (dependency relation)
+    pub deps: Vec<Dep>,     // DEPS (enhanced dependencies)
+    pub misc: Misc,         // MISC (miscellaneous)
 
     // Tree structure (computed from HEAD field)
     pub(crate) parent: Option<WordId>,
@@ -206,12 +206,16 @@ impl Tree {
         let pos_spur = self.string_pool.get_or_intern(pos);
         let deprel_spur = self.string_pool.get_or_intern(deprel);
         let word = Word::new(
-            id, form, lemma, pos_spur, //pos.to_string(),
+            id,
+            form,
+            lemma,
+            pos_spur, //pos.to_string(),
             deprel_spur,
         );
         self.words.push(word);
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn add_word_full_fields(
         &mut self,
         word_id: WordId,
