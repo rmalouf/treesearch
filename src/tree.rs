@@ -3,8 +3,8 @@
 //! This module provides complete CoNLL-U support including all fields,
 //! morphological features, enhanced dependencies, and metadata.
 
+use lasso::{Spur, ThreadedRodeo};
 use std::collections::HashMap;
-use lasso::{ThreadedRodeo, Spur};
 use std::sync::Arc;
 
 /// Unique identifier for a word (index in tree's words vector)
@@ -39,9 +39,9 @@ pub struct Word {
     pub form: String,         // FORM
     pub lemma: String,        // LEMMA
     pub pos: Spur,            // UPOS (universal POS)
-    pub xpos: Option<String>, // XPOS (language-specific POS)
+    pub xpos: Option<Spur>,   // XPOS (language-specific POS)
     pub feats: Features,      // FEATS (morphological features)
-    pub deprel: String,       // DEPREL (dependency relation)
+    pub deprel: Spur,         // DEPREL (dependency relation)
     pub deps: Vec<Dep>,       // DEPS (enhanced dependencies)
     pub misc: Misc,           // MISC (miscellaneous)
 
@@ -65,7 +65,7 @@ impl Word {
         self.children
             .iter()
             .map(|&id| &tree.words[id])
-            .filter(|child| child.deprel == deprel)
+            .filter(|child| tree.string_pool.resolve(&child.deprel) == deprel)
             .collect()
     }
 
@@ -91,7 +91,7 @@ impl Word {
     }
 
     /// Create a new word with minimal attributes
-    pub fn new(id: WordId, form: &str, lemma: &str, pos: Spur, deprel: &str) -> Self {
+    pub fn new(id: WordId, form: &str, lemma: &str, pos: Spur, deprel: Spur) -> Self {
         Self {
             id,
             token_id: id,
@@ -100,7 +100,7 @@ impl Word {
             pos, //pos.to_string(),
             xpos: None,
             feats: Features::new(),
-            deprel: deprel.to_string(),
+            deprel,
             deps: Vec::new(),
             misc: Misc::new(),
             parent: None,
@@ -115,10 +115,10 @@ impl Word {
         token_id: TokenId,
         form: String,
         lemma: String,
-        pos: Spur, //String,
-        xpos: Option<String>,
+        pos: Spur,
+        xpos: Option<Spur>,
         feats: Features,
-        deprel: String,
+        deprel: Spur,
         deps: Vec<Dep>,
         misc: Misc,
     ) -> Self {
@@ -181,9 +181,10 @@ impl Tree {
     /// Add a word to the tree
     pub fn add_word(&mut self, id: WordId, form: &str, lemma: &str, pos: &str, deprel: &str) {
         let pos_spur = self.string_pool.get_or_intern(pos);
+        let deprel_spur = self.string_pool.get_or_intern(deprel);
         let word = Word::new(
             id, form, lemma, pos_spur, //pos.to_string(),
-            deprel,
+            deprel_spur,
         );
         self.words.push(word);
     }
@@ -195,9 +196,9 @@ impl Tree {
         form: String,
         lemma: String,
         pos: Spur,
-        xpos: Option<String>,
+        xpos: Option<Spur>,
         feats: Features,
-        deprel: String,
+        deprel: Spur,
         deps: Vec<Dep>,
         misc: Misc,
         head: Option<WordId>,
