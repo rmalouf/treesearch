@@ -4,9 +4,9 @@ A high-performance toolkit for querying linguistic dependency parses at scale.
 
 ## Project Status
 
-**Current Phase**: Algorithm-First Implementation (Phase 0)
+**Current Phase**: Core Implementation Complete
 
-We're implementing the pattern matching virtual machine first, before building out the full CoNLL-U parser and query language. This approach ensures that all other components are optimized for the matching workflow.
+The core pattern matching engine is implemented using constraint satisfaction (CSP) with exhaustive search. Python bindings and benchmarking remain to be completed.
 
 ## Overview
 
@@ -14,29 +14,45 @@ Treesearch is designed for corpus linguistics research on large treebanks (500M+
 
 - Fast structural pattern matching over dependency trees
 - Rust core for performance with Python bindings for ease of use
-- Deterministic match semantics (leftmost, shortest-path)
-- Efficient handling of wildcard patterns without exponential blowup
+- Exhaustive match semantics (finds ALL valid matches)
+- CSP-based solver with forward checking for efficiency
 
 ## Architecture
 
 - **Core implementation**: Rust
-- **Python bindings**: PyO3 + maturin
-- **Pattern matching**: Two-phase strategy (index lookup → VM verification)
-- **Parallelization**: rayon for file-level parallelism
+- **Python bindings**: PyO3 + maturin (in progress)
+- **Pattern matching**: Constraint satisfaction with DFS + forward checking
+- **Parallelization**: rayon for file-level parallelism (planned)
+
+## Current Status
+
+✅ **Implemented:**
+- Query language parser (Pest-based)
+- Pattern AST representation
+- CoNLL-U file parsing with transparent gzip support
+- Tree data structures with string interning
+- CSP solver with exhaustive search
+- 38 tests passing
+
+⏳ **In Progress:**
+- Python bindings (PyO3)
+- Performance benchmarks
+- Documentation
 
 ## Project Structure
 
 ```
 treesearch/
 ├── src/
-│   ├── tree.rs      # Minimal tree data structures
+│   ├── tree.rs      # Tree data structures
 │   ├── pattern.rs   # Pattern AST representation
-│   ├── vm.rs        # Virtual machine executor
-│   └── index.rs     # Inverted indices
+│   ├── parser.rs    # Query language parser (Pest)
+│   ├── searcher.rs  # CSP solver
+│   ├── conllu.rs    # CoNLL-U file parsing
+│   └── python.rs    # Python bindings (WIP)
 ├── tests/           # Integration tests
 ├── benches/         # Performance benchmarks
 ├── examples/        # Usage examples
-├── python/          # Python package (Phase 1)
 └── plans/           # Design documents
 ```
 
@@ -45,8 +61,8 @@ treesearch/
 ### Requirements
 
 - Rust (latest stable)
-- Python 3.12+
-- maturin
+- Python 3.12+ (for bindings)
+- maturin (for building Python package)
 
 ### Building
 
@@ -57,20 +73,34 @@ cargo check
 # Run tests
 cargo test
 
+# Run benchmarks
+cargo bench
+
 # Build Python package (when ready)
 maturin develop
 ```
 
-## Next Steps (Phase 0)
+## Query Language Example
 
-1. ✅ Set up project structure
-2. Implement VM instruction execution
-3. Add wildcard search with BFS
-4. Implement backtracking
-5. Create test fixtures
-6. Optimize and benchmark
+```
+# Declare pattern variables with constraints
+Help [lemma="help"];
+To [lemma="to"];
+Verb [pos="VERB"];
 
-See `plans/PROJECT_SUMMARY.md` for detailed roadmap.
+# Specify structural relationships
+Help -> To;           # Help has child To
+To -[mark]-> Verb;    # To has child Verb with deprel=mark
+```
+
+## Next Steps
+
+1. Complete Python bindings
+2. Add comprehensive benchmarks
+3. Optimize for large corpora (rayon parallelization)
+4. Extend query features (negation, regex, precedence operators)
+
+See `CLAUDE.md` and `plans/` for detailed design documentation.
 
 ## License
 
