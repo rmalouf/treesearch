@@ -6,9 +6,8 @@
 //!
 //! CoNLL-U format: https://universaldependencies.org/format.html
 
-use crate::bytes::{BytestringPool, bs_split_once, bs_trim};
+use crate::bytes::{BytestringPool, bs_split_once, bs_trim, bs_atoi};
 use crate::tree::{Dep, Features, Misc, TokenId, Tree, WordId};
-use atoi::atoi;
 use flate2::read::GzDecoder;
 use std::collections::HashMap;
 use std::fs::File;
@@ -198,7 +197,7 @@ impl<R: BufRead> CoNLLUReader<R> {
                 });
             };
 
-            let Some(head) = atoi::<usize>(head_str) else {
+            let Some(head) = bs_atoi(head_str) else {
                 return Err(ParseError {
                     line_num: None,
                     line_content: None,
@@ -360,7 +359,7 @@ fn parse_id(s: &[u8]) -> Result<TokenId, ParseError> {
         });
     }
 
-    let Some(id) = atoi::<TokenId>(s) else {
+    let Some(id) = bs_atoi(s) else {
         return Err(ParseError {
             line_num: None,
             line_content: None,
@@ -375,7 +374,7 @@ fn parse_head(s: &[u8]) -> Result<Option<WordId>, ParseError> {
     if s == b"0" || s == b"_" {
         Ok(None) // Root word
     } else {
-        let Some(head) = atoi::<WordId>(s) else {
+        let Some(head) = bs_atoi(s) else {
             return Err(ParseError {
                 line_num: None,
                 line_content: None,

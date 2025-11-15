@@ -90,17 +90,44 @@ impl ByteInterner {
 
 // Divide a bytestring into two at delim
 #[inline]
-pub fn bs_split_once(byte_string: &[u8], delim: u8) -> Option<(&[u8], &[u8])> {
-    let mut pair = byte_string.splitn(2, |b| *b == delim);
+pub fn bs_split_once(bytes: &[u8], delim: u8) -> Option<(&[u8], &[u8])> {
+    let mut pair = bytes.splitn(2, |b| *b == delim);
     Some((pair.next()?, pair.next()?))
 }
 
 // Remove line-feed from end of a bytestring
 #[inline]
-pub fn bs_trim(byte_string: &[u8]) -> &[u8] {
-    if let Some(idx) = byte_string.iter().position(|b| *b == b'\n') {
-        &byte_string[..idx]
+pub fn bs_trim(bytes: &[u8]) -> &[u8] {
+    if let Some(idx) = bytes.iter().position(|b| *b == b'\n') {
+        &bytes[..idx]
     } else {
-        byte_string
+        bytes
     }
+}
+
+#[inline]
+pub fn bs_atoi(bytes: &[u8]) -> Option<usize> {
+    let mut n: usize = 0;
+
+    // Fast path: empty slice -> Some(0)? (You can change this if you prefer None.)
+    if bytes.is_empty() {
+        return Some(0);
+    }
+
+    for &b in bytes {
+        // Convert ASCII digit to value 0..9; reject non-digits.
+        let d = (b.wrapping_sub(b'0')) as usize;
+        if d > 9 {
+            return None;
+        }
+
+        // n = n*10 + d, but detect overflow on both steps.
+        let (n10, of_mul) = n.overflowing_mul(10);
+        let (sum, of_add) = n10.overflowing_add(d);
+        if of_mul || of_add {
+            return None;
+        }
+        n = sum;
+    }
+    Some(n)
 }
