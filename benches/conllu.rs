@@ -4,8 +4,8 @@ use std::path::Path;
 use treesearch::conllu::CoNLLUReader;
 
 #[global_allocator]
-//static ALLOC: AllocProfiler = AllocProfiler::system();
-static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+static ALLOC: AllocProfiler = AllocProfiler::system();
+//static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 //static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 fn main() {
