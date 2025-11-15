@@ -48,6 +48,26 @@ impl std::fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
+impl From<bstr::Utf8Error> for ParseError {
+    fn from(e: bstr::Utf8Error) -> Self {
+        ParseError {
+            line_num: None,
+            line_content: None,
+            message: format!("Invalid UTF-8 sequence: {}", e),
+        }
+    }
+}
+
+impl From<std::str::Utf8Error> for ParseError {
+    fn from(e: std::str::Utf8Error) -> Self {
+        ParseError {
+            line_num: None,
+            line_content: None,
+            message: format!("Invalid UTF-8 sequence: {}", e),
+        }
+    }
+}
+
 /// CoNLL-U reader that iterates over sentences
 pub struct CoNLLUReader<R: BufRead> {
     reader: R,
@@ -115,32 +135,26 @@ impl<R: BufRead> CoNLLUReader<R> {
         }
 
         let token_id = parse_id(next_field!())?;
-        let form = next_field!().to_str().unwrap().to_string();
-
-        let _ = self.string_pool.get_or_intern(&form);
-
-        let lemma = match next_field!().to_str().unwrap() {
+        let form = str::from_utf8(next_field!())?.to_string();
+        let lemma = match str::from_utf8(next_field!())? {
             "_" => form.clone(), // Default to form if lemma not specified
             s => s.to_string(),
         };
-
-        let _ = self.string_pool.get_or_intern(&lemma);
-
-        // let form = self.string_pool.get_or_intern(next_field!().to_str().unwrap());
-        // let lemma = match next_field!().to_str().unwrap() {
+        // let form = self.string_pool.get_or_intern(next_field!().to_str()?);
+        // let lemma = match next_field!().to_str()? {
         //     "_" => form.clone(), // Default to form if lemma not specified
         //     s => self.string_pool.get_or_intern(s)
         // };
-        let pos = tree.intern_string(next_field!().to_str().unwrap());
-        let xpos = match next_field!().to_str().unwrap() {
+        let pos = tree.intern_string(str::from_utf8(next_field!())?);
+        let xpos = match str::from_utf8(next_field!())? {
             "_" => None,
             s => Some(tree.intern_string(s)),
         };
         let feats = self.parse_features(next_field!())?;
         let head = parse_head(next_field!())?;
-        let deprel = tree.intern_string(next_field!().to_str().unwrap());
+        let deprel = tree.intern_string(str::from_utf8(next_field!())?);
         let deps = self.parse_deps(next_field!())?;
-        let misc = parse_misc(next_field!().to_str().unwrap())?;
+        let misc = parse_misc(str::from_utf8(next_field!())?)?;
 
         if fields.next().is_some() {
             return Err(ParseError {
@@ -172,13 +186,13 @@ impl<R: BufRead> CoNLLUReader<R> {
                     line_content: None,
                     message: format!(
                         "Invalid FEATS pair (missing '='): {}",
-                        pair.to_str().unwrap()
+                        str::from_utf8(pair)?
                     ),
                 });
             };
             feats.push((
-                self.string_pool.get_or_intern(k.to_str().unwrap()),
-                self.string_pool.get_or_intern(v.to_str().unwrap()),
+                self.string_pool.get_or_intern(str::from_utf8(k)?),
+                self.string_pool.get_or_intern(str::from_utf8(v)?),
             ));
         }
         Ok(feats)
@@ -197,10 +211,7 @@ impl<R: BufRead> CoNLLUReader<R> {
                 return Err(ParseError {
                     line_num: None,
                     line_content: None,
-                    message: format!(
-                        "Invalid DEPS pair: {}",
-                        pair.as_bstr().to_str().unwrap()
-                    ),
+                    message: format!("Invalid DEPS pair: {}", str::from_utf8(pair)?),
                 });
             };
 
@@ -208,10 +219,7 @@ impl<R: BufRead> CoNLLUReader<R> {
                 return Err(ParseError {
                     line_num: None,
                     line_content: None,
-                    message: format!(
-                        "Invalid DEPS pair: {}",
-                        pair.as_bstr().to_str().unwrap()
-                    ),
+                    message: format!("Invalid DEPS pair: {}", str::from_utf8(pair)?),
                 });
             };
 
@@ -219,9 +227,7 @@ impl<R: BufRead> CoNLLUReader<R> {
             let head_id = if head == 0 { None } else { Some(head - 1) };
             deps.push(Dep {
                 head: head_id,
-                deprel: self
-                    .string_pool
-                    .get_or_intern(deprel.as_bstr().to_str().unwrap()),
+                deprel: self.string_pool.get_or_intern(str::from_utf8(deprel)?),
             });
         }
 
