@@ -131,3 +131,177 @@ pub fn bs_atoi(bytes: &[u8]) -> Option<usize> {
     }
     Some(n)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ===== BytestringPool / ByteInterner Tests =====
+
+    #[test]
+    fn test_interner_basic() {
+        let mut pool = BytestringPool::new();
+        let sym1 = pool.get_or_intern(b"hello");
+        let sym2 = pool.get_or_intern(b"world");
+        let sym3 = pool.get_or_intern(b"hello"); // Same as sym1
+
+        assert_eq!(sym1, sym3); // Same string gets same Sym
+        assert_ne!(sym1, sym2); // Different strings get different Syms
+    }
+
+    #[test]
+    fn test_interner_resolve() {
+        let mut pool = BytestringPool::new();
+        let sym = pool.get_or_intern(b"test");
+        let resolved = pool.resolve(sym);
+
+        assert_eq!(*resolved, *b"test");
+    }
+
+    #[test]
+    fn test_interner_empty_string() {
+        let mut pool = BytestringPool::new();
+        let sym1 = pool.get_or_intern(b"");
+        let sym2 = pool.get_or_intern(b"");
+
+        assert_eq!(sym1, sym2);
+        assert_eq!(*pool.resolve(sym1), *b"");
+    }
+
+    #[test]
+    fn test_interner_unicode() {
+        let mut pool = BytestringPool::new();
+        let sym1 = pool.get_or_intern("hello".as_bytes());
+        let sym2 = pool.get_or_intern("café".as_bytes());
+        let sym3 = pool.get_or_intern("你好".as_bytes());
+
+        assert_ne!(sym1, sym2);
+        assert_ne!(sym2, sym3);
+        assert_eq!(*pool.resolve(sym2), *"café".as_bytes());
+        assert_eq!(*pool.resolve(sym3), *"你好".as_bytes());
+    }
+
+    #[test]
+    fn test_interner_multiple_strings() {
+        let mut pool = BytestringPool::new();
+        let strings: Vec<&[u8]> = vec![b"one", b"two", b"three", b"four", b"five"];
+        let mut syms = Vec::new();
+
+        // Intern all strings
+        for s in &strings {
+            syms.push(pool.get_or_intern(*s));
+        }
+
+        // Verify all are different
+        for i in 0..syms.len() {
+            for j in (i + 1)..syms.len() {
+                assert_ne!(syms[i], syms[j]);
+            }
+        }
+
+        // Verify resolution works
+        for (sym, orig) in syms.iter().zip(strings.iter()) {
+            assert_eq!(*pool.resolve(*sym), **orig);
+        }
+    }
+
+    #[test]
+    fn test_interner_clone() {
+        let mut pool1 = BytestringPool::new();
+        let sym1 = pool1.get_or_intern(b"test");
+
+        let mut pool2 = pool1.clone();
+        let sym2 = pool2.get_or_intern(b"test");
+
+        // Cloned pool shares the same interner (Rc)
+        assert_eq!(sym1, sym2);
+    }
+
+    // ===== bs_split_once Tests =====
+
+    #[test]
+    fn test_split_once() {
+        // Basic split
+        assert_eq!(bs_split_once(b"key=value", b'='), Some((b"key" as &[u8], b"value" as &[u8])));
+
+        // No delimiter found
+        assert_eq!(bs_split_once(b"nodelimiter", b'='), None);
+        assert_eq!(bs_split_once(b"", b'='), None);
+
+        // Delimiter at boundaries
+        assert_eq!(bs_split_once(b"=value", b'='), Some((b"" as &[u8], b"value" as &[u8])));
+        assert_eq!(bs_split_once(b"key=", b'='), Some((b"key" as &[u8], b"" as &[u8])));
+
+        // Multiple delimiters (splits at first)
+        assert_eq!(bs_split_once(b"a:b:c", b':'), Some((b"a" as &[u8], b"b:c" as &[u8])));
+
+        // Tab delimiter (CoNLL-U use case)
+        assert_eq!(bs_split_once(b"field1\tfield2", b'\t'), Some((b"field1" as &[u8], b"field2" as &[u8])));
+    }
+
+    // ===== bs_trim Tests =====
+
+    #[test]
+    fn test_trim() {
+        // With newline at end
+        assert_eq!(bs_trim(b"hello\n"), b"hello");
+        assert_eq!(bs_trim(b"\n"), b"");
+
+        // Without newline
+        assert_eq!(bs_trim(b"hello"), b"hello");
+        assert_eq!(bs_trim(b""), b"");
+
+        // Newline in middle (truncates at first \n)
+        assert_eq!(bs_trim(b"hello\nworld"), b"hello");
+        assert_eq!(bs_trim(b"hello\n\n"), b"hello");
+
+        // Carriage return (only removes \n, not \r)
+        assert_eq!(bs_trim(b"hello\r\n"), b"hello\r");
+    }
+
+    // ===== bs_atoi Tests =====
+
+    #[test]
+    fn test_atoi_valid() {
+        // Valid numbers
+        assert_eq!(bs_atoi(b"0"), Some(0));
+        assert_eq!(bs_atoi(b"1"), Some(1));
+        assert_eq!(bs_atoi(b"42"), Some(42));
+        assert_eq!(bs_atoi(b"123456"), Some(123456));
+
+        // Empty string returns Some(0)
+        assert_eq!(bs_atoi(b""), Some(0));
+
+        // Leading zeros
+        assert_eq!(bs_atoi(b"007"), Some(7));
+        assert_eq!(bs_atoi(b"00000"), Some(0));
+
+        // Large numbers
+        assert_eq!(bs_atoi(b"18446744073709551615"), Some(usize::MAX));
+    }
+
+    #[test]
+    fn test_atoi_invalid() {
+        // Letters and mixed
+        assert_eq!(bs_atoi(b"abc"), None);
+        assert_eq!(bs_atoi(b"12a"), None);
+        assert_eq!(bs_atoi(b"a12"), None);
+
+        // Punctuation and signs
+        assert_eq!(bs_atoi(b"1.23"), None);
+        assert_eq!(bs_atoi(b"-42"), None);
+        assert_eq!(bs_atoi(b"+42"), None);
+        assert_eq!(bs_atoi(b"12,345"), None);
+        assert_eq!(bs_atoi(b"0x42"), None);
+        assert_eq!(bs_atoi(b"!@#$"), None);
+
+        // Whitespace
+        assert_eq!(bs_atoi(b" 42"), None);
+        assert_eq!(bs_atoi(b"42 "), None);
+        assert_eq!(bs_atoi(b" "), None);
+
+        // Overflow
+        assert_eq!(bs_atoi(b"18446744073709551616"), None); // usize::MAX + 1
+        assert_eq!(bs_atoi(b"99999999999999999999"), None);
+    }
+}
