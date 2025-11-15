@@ -12,17 +12,15 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 pyo3 = { version = "0.27", optional = true }
-memchr = "2.7"
+#memchr = "2.7"
 #rayon = "1.11"
 pest = "2.8"
 pest_derive = "2.8"
-lasso = { version = "0.7", features = ["multi-threaded", "inline-more"] }
 rustc-hash = "2.1"
 flate2 = { version = "1.1", features = ["zlib-rs"] }
 mimalloc = { version = "0.1", features = ["v3"] }
-#tikv-jemallocator = "0.6"
-bstr = { version = "1.12" }
 atoi = "2.0"
+hashbrown = "0.16"
 
 [features]
 # Default features for Rust-only builds

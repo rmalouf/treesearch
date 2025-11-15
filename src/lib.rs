@@ -11,6 +11,7 @@ pub mod searcher;
 pub mod tree; // Tree data structures with full CoNLL-U support
 
 // Python bindings
+mod bytes;
 #[cfg(feature = "pyo3")]
 pub mod python;
 
