@@ -41,9 +41,9 @@ pub type Match = Vec<WordId>;
 /// Check if a tree word satisfies a pattern variable's constraint
 fn satisfies_var_constraint(tree: &Tree, word: &Word, constraint: &Constraint) -> bool {
     match constraint {
-        Constraint::Lemma(lemma) => word.lemma == *lemma,
+        Constraint::Lemma(lemma) => *tree.string_pool.resolve(word.lemma) == *lemma.as_bytes(),
         Constraint::POS(pos) => *tree.string_pool.resolve(word.upos) == *pos.as_bytes(),
-        Constraint::Form(form) => word.form == *form,
+        Constraint::Form(form) => *tree.string_pool.resolve(word.form) == *form.as_bytes(),
         Constraint::DepRel(deprel) => *tree.string_pool.resolve(word.deprel) == *deprel.as_bytes(),
         Constraint::And(constraints) => constraints
             .iter()
