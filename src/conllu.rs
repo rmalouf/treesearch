@@ -415,7 +415,6 @@ mod tests {
     // TODO: add tests for
     //   deprels and misc
 
-
     #[test]
     fn test_parse_simple_sentence() {
         let conllu = r#"# text = The dog runs.
@@ -444,7 +443,6 @@ mod tests {
         assert_eq!(tree.words[2].head, None); // root
         assert_eq!(tree.words[2].children.len(), 2); // dog, . (The is child of dog, not runs)
     }
-
 
     /*
         #[test]

@@ -44,9 +44,7 @@ fn satisfies_var_constraint(tree: &Tree, word: &Word, constraint: &Constraint) -
         Constraint::Lemma(lemma) => word.lemma == *lemma,
         Constraint::POS(pos) => *tree.string_pool.resolve(word.upos) == *pos.as_bytes(),
         Constraint::Form(form) => word.form == *form,
-        Constraint::DepRel(deprel) => {
-            *tree.string_pool.resolve(word.deprel) == *deprel.as_bytes()
-        }
+        Constraint::DepRel(deprel) => *tree.string_pool.resolve(word.deprel) == *deprel.as_bytes(),
         Constraint::And(constraints) => constraints
             .iter()
             .all(|constraint| satisfies_var_constraint(tree, word, constraint)),
@@ -242,54 +240,42 @@ pub fn search_query<'a>(
     Ok(search(tree, pattern))
 }
 
-/*
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Helper to build a simple test tree
-    /// Structure: "helped" (root) -> "to" (xcomp) -> "win" (xcomp)
-    ///                            -> "us" (obj)
     fn build_test_tree() -> Tree {
         let mut tree = Tree::default();
-        tree.add_minimal_word(0, "helped", "help", "VERB", "root");
-        tree.add_minimal_word(1, "us", "we", "PRON", "obj");
-        tree.add_minimal_word(2, "to", "to", "PART", "mark");
-        tree.add_minimal_word(3, "win", "win", "VERB", "xcomp");
-        tree.set_parent(1, 0); // us -> helped
-        tree.set_parent(2, 3); // to -> win
-        tree.set_parent(3, 0); // win -> helped
-        tree.root_id = Some(0);
+        tree.add_minimal_word(0, b"helped", b"help", b"VERB", None, b"root");
+        tree.add_minimal_word(1, b"us", b"we", b"PRON", Some(0), b"obj");
+        tree.add_minimal_word(2, b"to", b"to", b"PART", Some(3), b"mark");
+        tree.add_minimal_word(3, b"win", b"win", b"VERB", Some(0), b"xcomp");
+        tree.compile_tree();
         tree
     }
 
     /// Helper to build a coordination tree
-    /// Structure: "and" (root) -> "cats" (conj)
-    ///                         -> "dogs" (conj)
+    /// Structure: b"and" (root) -> b"cats" (conj)
+    ///                         -> b"dogs" (conj)
     fn build_coord_tree() -> Tree {
         let mut tree = Tree::default();
-        tree.add_minimal_word(0, "and", "and", "CCONJ", "root");
-        tree.add_minimal_word(1, "cats", "cat", "NOUN", "conj");
-        tree.add_minimal_word(2, "dogs", "dog", "NOUN", "conj");
-        tree.set_parent(1, 0); // cats -> and
-        tree.set_parent(2, 0); // dogs -> and
-        tree.root_id = Some(0);
+        tree.add_minimal_word(0, b"and", b"and", b"CCONJ", None, b"root");
+        tree.add_minimal_word(1, b"cats", b"cat", b"NOUN", Some(0), b"conj");
+        tree.add_minimal_word(2, b"dogs", b"dog", b"NOUN", Some(0), b"conj");
+        tree.compile_tree();
         tree
     }
 
     /// Helper to build a tree with multiple verbs
-    /// "saw" (root) -> "John" (nsubj)
-    ///              -> "running" (xcomp) -> "quickly" (advmod)
+    /// b"saw" (root) -> b"John" (nsubj)
+    ///              -> b"running" (xcomp) -> b"quickly" (advmod)
     fn build_multi_verb_tree() -> Tree {
         let mut tree = Tree::default();
-        tree.add_minimal_word(0, "saw", "see", "VERB", "root");
-        tree.add_minimal_word(1, "John", "John", "PROPN", "nsubj");
-        tree.add_minimal_word(2, "running", "run", "VERB", "xcomp");
-        tree.add_minimal_word(3, "quickly", "quickly", "ADV", "advmod");
-        tree.set_parent(1, 0); // John -> saw
-        tree.set_parent(2, 0); // running -> saw
-        tree.set_parent(3, 2); // quickly -> running
-        tree.root_id = Some(0);
+        tree.add_minimal_word(0, b"saw", b"see", b"VERB", None, b"root");
+        tree.add_minimal_word(1, b"John", b"John", b"PROPN", Some(0), b"nsubj");
+        tree.add_minimal_word(2, b"running", b"run", b"VERB", Some(0), b"xcomp");
+        tree.add_minimal_word(3, b"quickly", b"quickly", b"ADV", Some(2), b"advmod");
+        tree.compile_tree();
         tree
     }
 
@@ -472,4 +458,3 @@ mod tests {
         assert_eq!(matches[0], vec![]); // Empty assignment
     }
 }
-*/
