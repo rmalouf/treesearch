@@ -25,13 +25,13 @@ pub type WordId = usize;
 pub type TokenId = usize;
 
 /// Morphological features (key=value pairs)
-pub type Features = Vec<(String, String)>;
+pub type Features = Vec<(Spur, Spur)>;
 
 /// Enhanced dependency (DEPS field)
 #[derive(Debug, Clone, PartialEq)]
 pub struct Dep {
     pub head: Option<WordId>,
-    pub deprel: String,
+    pub deprel: Spur,
 }
 
 /// Miscellaneous annotations (MISC field)
@@ -136,7 +136,7 @@ pub struct Tree {
 impl Tree {
     pub fn new(string_pool: &StringPool) -> Self {
         Self {
-            words: Vec::new(),
+            words: Vec::with_capacity(25),
             root_id: None,
             sentence_text: None,
             metadata: HashMap::new(),
@@ -150,7 +150,7 @@ impl Tree {
         metadata: HashMap<String, String>,
     ) -> Self {
         Self {
-            words: Vec::new(),
+            words: Vec::with_capacity(50),
             root_id: None,
             sentence_text,
             metadata,
