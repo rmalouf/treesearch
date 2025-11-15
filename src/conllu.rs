@@ -6,7 +6,7 @@
 //!
 //! CoNLL-U format: https://universaldependencies.org/format.html
 
-use crate::bytes::{BytestringPool, bs_split_once, bs_trim, bs_atoi};
+use crate::bytes::{BytestringPool, bs_atoi, bs_split_once, bs_trim};
 use crate::tree::{Dep, Features, Misc, TokenId, Tree, WordId};
 use flate2::read::GzDecoder;
 use std::collections::HashMap;
@@ -181,7 +181,7 @@ impl<R: BufRead> CoNLLUReader<R> {
     }
 
     /// Parse DEPS field (head:deprel|head:deprel)
-    fn parse_deps(&mut self, s: &[u8]) -> Result<Vec<Dep>, ParseError> {
+    fn _parse_deps(&mut self, s: &[u8]) -> Result<Vec<Dep>, ParseError> {
         let mut deps = Vec::new();
 
         if s == b"_" {
@@ -387,7 +387,7 @@ fn parse_head(s: &[u8]) -> Result<Option<WordId>, ParseError> {
 }
 
 /// Parse MISC field (key=value|key=value)
-fn parse_misc(s: &str) -> Result<Misc, ParseError> {
+fn _parse_misc(s: &str) -> Result<Misc, ParseError> {
     if s == "_" {
         return Ok(Misc::new());
     }

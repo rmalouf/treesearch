@@ -12,6 +12,12 @@ pub const STRING_POOL_CAPACITY: usize = 5000;
 #[derive(Clone, Debug)]
 pub struct BytestringPool(Rc<RefCell<ByteInterner>>);
 
+impl Default for BytestringPool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BytestringPool {
     pub fn new() -> Self {
         Self(Rc::new(RefCell::new(ByteInterner::with_capacity(
@@ -34,28 +40,28 @@ impl BytestringPool {
 pub struct Sym(NonZeroU32); // 0 reserved as "invalid"
 
 #[derive(Debug)]
-pub struct ByteInterner {
+struct ByteInterner {
     map: HashMap<Arc<[u8]>, Sym, FxBuildHasher>,
     slab: Vec<Arc<[u8]>>, // index = Sym-1
 }
 
 impl ByteInterner {
-    pub fn new() -> Self {
+    pub fn _new() -> Self {
         Self {
-            map: HashMap::with_hasher(FxBuildHasher::default()),
+            map: HashMap::with_hasher(FxBuildHasher),
             slab: Vec::new(),
         }
     }
 
     pub fn with_capacity(cap: usize) -> Self {
         Self {
-            map: HashMap::with_capacity_and_hasher(cap, FxBuildHasher::default()),
+            map: HashMap::with_capacity_and_hasher(cap, FxBuildHasher),
             slab: Vec::with_capacity(cap),
         }
     }
 
     #[inline]
-    pub fn len(&self) -> usize {
+    pub fn _len(&self) -> usize {
         self.slab.len()
     }
 
@@ -222,21 +228,36 @@ mod tests {
     #[test]
     fn test_split_once() {
         // Basic split
-        assert_eq!(bs_split_once(b"key=value", b'='), Some((b"key" as &[u8], b"value" as &[u8])));
+        assert_eq!(
+            bs_split_once(b"key=value", b'='),
+            Some((b"key" as &[u8], b"value" as &[u8]))
+        );
 
         // No delimiter found
         assert_eq!(bs_split_once(b"nodelimiter", b'='), None);
         assert_eq!(bs_split_once(b"", b'='), None);
 
         // Delimiter at boundaries
-        assert_eq!(bs_split_once(b"=value", b'='), Some((b"" as &[u8], b"value" as &[u8])));
-        assert_eq!(bs_split_once(b"key=", b'='), Some((b"key" as &[u8], b"" as &[u8])));
+        assert_eq!(
+            bs_split_once(b"=value", b'='),
+            Some((b"" as &[u8], b"value" as &[u8]))
+        );
+        assert_eq!(
+            bs_split_once(b"key=", b'='),
+            Some((b"key" as &[u8], b"" as &[u8]))
+        );
 
         // Multiple delimiters (splits at first)
-        assert_eq!(bs_split_once(b"a:b:c", b':'), Some((b"a" as &[u8], b"b:c" as &[u8])));
+        assert_eq!(
+            bs_split_once(b"a:b:c", b':'),
+            Some((b"a" as &[u8], b"b:c" as &[u8]))
+        );
 
         // Tab delimiter (CoNLL-U use case)
-        assert_eq!(bs_split_once(b"field1\tfield2", b'\t'), Some((b"field1" as &[u8], b"field2" as &[u8])));
+        assert_eq!(
+            bs_split_once(b"field1\tfield2", b'\t'),
+            Some((b"field1" as &[u8], b"field2" as &[u8]))
+        );
     }
 
     // ===== bs_trim Tests =====
