@@ -5,6 +5,7 @@
 
 // Core modules
 pub mod conllu; // CoNLL-U file parsing
+pub mod iterators; // Iterator interfaces for trees and matches
 pub mod parser; // Query language parser
 pub mod pattern; // Pattern AST
 pub mod searcher;
@@ -17,6 +18,7 @@ pub mod python;
 
 // Re-exports for convenience
 pub use conllu::CoNLLUReader;
+pub use iterators::{MatchIterator, TreeIterator};
 pub use parser::parse_query;
 pub use pattern::{Constraint, EdgeConstraint, Pattern, PatternVar, RelationType, VarId};
 pub use searcher::{Match, SearchError, search, search_query};
