@@ -65,28 +65,6 @@ pub struct TreeIterator<R: BufRead> {
 }
 
 impl<R: BufRead> TreeIterator<R> {
-    /// Parse accumulated lines into a Tree
-    pub fn parse_tree(
-        &mut self,
-        lines: &[(usize, Vec<u8>)],
-        sentence_text: Option<String>,
-        metadata: HashMap<String, String>,
-    ) -> Result<Tree, ParseError> {
-        let mut tree = Tree::with_metadata(&self.string_pool, sentence_text, metadata);
-
-        // Parse each line into a Word
-        for (word_id, (line_num, line)) in lines.iter().enumerate() {
-            if let Err(mut e) = self.parse_line(&mut tree, line, word_id) {
-                e.line_num = Some(*line_num);
-                e.line_content = Some(str::from_utf8(line)?.to_string());
-                return Err(e);
-            }
-        }
-
-        tree.compile_tree();
-        Ok(tree)
-    }
-
     /// Parse a single CoNLL-U line into a Word
     /// Errors on multiword tokens and empty nodes (not yet supported)
     fn parse_line(
@@ -261,17 +239,18 @@ impl<R: BufRead> Iterator for TreeIterator<R> {
     type Item = Result<Tree, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        //let mut tree_lines = Vec::with_capacity(50);
         let mut metadata = HashMap::new();
         let mut sentence_text = None;
-        let mut tree_lines = Vec::with_capacity(50);
+        let mut tree = Tree::with_metadata(&self.string_pool, None, HashMap::new());
+        let mut word_id: WordId = 0;
+        let mut buffer: Vec<u8> = Vec::with_capacity(100);
+        let mut has_content = false;
 
         // Read lines until we hit a blank line (sentence boundary) or EOF
         loop {
             self.line_num += 1;
+            buffer.clear(); // Reuse buffer allocation
 
-            //match self.reader.read_line(&mut self.buffer) {
-            let mut buffer: Vec<u8> = Vec::with_capacity(100);
             match self.reader.read_until(b'\n', &mut buffer) {
                 Err(e) => {
                     return Some(Err(ParseError {
@@ -288,7 +267,7 @@ impl<R: BufRead> Iterator for TreeIterator<R> {
 
                     if line.is_empty() {
                         // Blank line = sentence boundary if we have content
-                        if !tree_lines.is_empty() {
+                        if has_content {
                             break;
                         }
                         // Skip leading/multiple blank lines
@@ -299,20 +278,29 @@ impl<R: BufRead> Iterator for TreeIterator<R> {
                         // Comment/metadata line
                         parse_comment(line, &mut metadata, &mut sentence_text);
                     } else {
-                        // Regular token line
-                        tree_lines.push((self.line_num, line.to_owned()));
+                        // Regular token line - parse immediately
+                        has_content = true;
+                        if let Err(mut e) = self.parse_line(&mut tree, line, word_id) {
+                            e.line_num = Some(self.line_num);
+                            e.line_content = Some(String::from_utf8_lossy(line).to_string());
+                            return Some(Err(e));
+                        }
+                        word_id += 1;
                     }
                 }
             }
         }
 
         // Return None if we broke on EOF with no content
-        if tree_lines.is_empty() {
+        if !has_content {
             return None;
         }
 
-        // Parse the accumulated lines into a tree
-        Some(self.parse_tree(&tree_lines, sentence_text, metadata))
+        // Update metadata and compile tree
+        tree.sentence_text = sentence_text;
+        tree.metadata = metadata;
+        tree.compile_tree();
+        Some(Ok(tree))
     }
 }
 
