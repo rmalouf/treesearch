@@ -18,7 +18,7 @@ pub mod python;
 
 // Re-exports for convenience
 pub use conllu::CoNLLUReader;
-pub use iterators::{MatchIterator, TreeIterator};
+pub use iterators::{MatchIterator, MultiFileMatchIterator, MultiFileTreeIterator, TreeIterator};
 pub use parser::parse_query;
 pub use pattern::{Constraint, EdgeConstraint, Pattern, PatternVar, RelationType, VarId};
 pub use searcher::{Match, SearchError, search, search_query};
