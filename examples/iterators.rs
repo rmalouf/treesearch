@@ -40,7 +40,7 @@ fn main() {
     let pattern = parse_query("V [pos=\"VERB\"];").expect("Failed to parse query");
     println!("Searching for pattern: V [pos=\"VERB\"];");
 
-    for (tree_idx, tree, match_) in MatchIterator::from_string(conllu, pattern.clone()) {
+    for (tree, match_) in MatchIterator::from_string(conllu, pattern.clone()) {
         let word_id = match_[0];
         let word = &tree.words[word_id];
         let form_bytes = tree.string_pool.resolve(word.form);
@@ -49,8 +49,8 @@ fn main() {
         let lemma = std::str::from_utf8(&lemma_bytes).expect("Invalid UTF-8");
 
         println!(
-            "  Tree {}: Found verb '{}' (lemma: {})",
-            tree_idx, form, lemma
+            "  Found verb '{}' (lemma: {})",
+            form, lemma
         );
     }
 
@@ -59,7 +59,7 @@ fn main() {
     let pattern = parse_query("V [pos=\"VERB\"]; A [deprel=\"advmod\"]; V -> A;")
         .expect("Failed to parse query");
 
-    for (tree_idx, tree, match_) in MatchIterator::from_string(conllu, pattern) {
+    for (tree, match_) in MatchIterator::from_string(conllu, pattern) {
         let verb_id = match_[0];
         let adv_id = match_[1];
 
@@ -72,8 +72,8 @@ fn main() {
         let adv_form = std::str::from_utf8(&adv_form_bytes).expect("Invalid UTF-8");
 
         println!(
-            "  Tree {}: Found '{}' -> '{}'",
-            tree_idx, verb_form, adv_form
+            "  Found '{}' -> '{}'",
+            verb_form, adv_form
         );
     }
 
@@ -103,17 +103,8 @@ fn main() {
         println!("Searching for files matching: {}", glob_pattern);
         match MultiFileTreeIterator::from_glob(&glob_pattern) {
             Ok(trees) => {
-                let mut file_counts = std::collections::HashMap::new();
-                for (path, tree_result) in trees {
-                    if tree_result.is_ok() {
-                        *file_counts.entry(path).or_insert(0) += 1;
-                    }
-                }
-
-                println!("Found {} files:", file_counts.len());
-                for (path, count) in file_counts {
-                    println!("  {:?}: {} trees", path.file_name().unwrap(), count);
-                }
+                let tree_count = trees.filter_map(Result::ok).count();
+                println!("Loaded {} trees from matching files", tree_count);
             }
             Err(e) => {
                 eprintln!("Error with glob pattern: {}", e);
@@ -133,21 +124,11 @@ fn main() {
 
         match MultiFileMatchIterator::from_glob(&glob_pattern, pattern) {
             Ok(matches) => {
-                let mut match_counts = std::collections::HashMap::new();
-                for (path, _tree, _match) in matches {
-                    *match_counts.entry(path).or_insert(0) += 1;
-                }
-
-                if match_counts.is_empty() {
+                let match_count = matches.count();
+                if match_count == 0 {
                     println!("No matches found across files");
                 } else {
-                    println!("Found matches in {} files:", match_counts.len());
-                    for (path, count) in match_counts.iter().take(5) {
-                        println!("  {:?}: {} matches", path.file_name().unwrap(), count);
-                    }
-                    if match_counts.len() > 5 {
-                        println!("  ... and {} more files", match_counts.len() - 5);
-                    }
+                    println!("Found {} verb matches across all files", match_count);
                 }
             }
             Err(e) => {

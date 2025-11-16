@@ -51,12 +51,10 @@ impl<R: BufRead> Iterator for TreeIterator<R> {
 /// Iterator over matches across multiple trees
 ///
 /// Applies a pattern to each tree and yields all matches found.
-/// Each match includes both the tree index and the word bindings.
 pub struct MatchIterator<R: BufRead> {
     trees: TreeIterator<R>,
     pattern: Pattern,
     current_tree: Option<Tree>,
-    current_tree_idx: usize,
     current_matches: std::vec::IntoIter<Match>,
 }
 
@@ -68,7 +66,6 @@ impl MatchIterator<std::io::BufReader<Box<dyn std::io::Read>>> {
             trees,
             pattern,
             current_tree: None,
-            current_tree_idx: 0,
             current_matches: Vec::new().into_iter(),
         })
     }
@@ -82,15 +79,14 @@ impl MatchIterator<std::io::BufReader<std::io::Cursor<String>>> {
             trees,
             pattern,
             current_tree: None,
-            current_tree_idx: 0,
             current_matches: Vec::new().into_iter(),
         }
     }
 }
 
 impl<R: BufRead> Iterator for MatchIterator<R> {
-    /// Returns (tree_index, tree, match)
-    type Item = (usize, Tree, Match);
+    /// Returns (tree, match)
+    type Item = (Tree, Match);
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -98,13 +94,12 @@ impl<R: BufRead> Iterator for MatchIterator<R> {
             if let Some(match_) = self.current_matches.next() {
                 // Clone the tree for return (caller may need it)
                 let tree = self.current_tree.as_ref().unwrap().clone();
-                return Some((self.current_tree_idx, tree, match_));
+                return Some((tree, match_));
             }
 
             // No more matches in current tree, get next tree
             match self.trees.next() {
                 Some(Ok(tree)) => {
-                    self.current_tree_idx += 1;
                     let matches: Vec<Match> = search(&tree, self.pattern.clone()).collect();
                     self.current_matches = matches.into_iter();
                     self.current_tree = Some(tree);
@@ -112,7 +107,6 @@ impl<R: BufRead> Iterator for MatchIterator<R> {
                 }
                 Some(Err(_)) => {
                     // Parse error - skip this tree and continue
-                    // TODO: Consider whether to expose parse errors
                     continue;
                 }
                 None => {
@@ -172,16 +166,15 @@ impl MultiFileTreeIterator {
 }
 
 impl Iterator for MultiFileTreeIterator {
-    /// Returns (file_path, parse_result)
-    type Item = (PathBuf, Result<Tree, ParseError>);
+    /// Returns parse_result
+    type Item = Result<Tree, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             // Try to get next tree from current file
             if let Some(ref mut iter) = self.current_iterator {
                 if let Some(tree_result) = iter.next() {
-                    let current_path = self.file_paths[self.current_file_idx - 1].clone();
-                    return Some((current_path, tree_result));
+                    return Some(tree_result);
                 }
             }
 
@@ -252,16 +245,15 @@ impl MultiFileMatchIterator {
 }
 
 impl Iterator for MultiFileMatchIterator {
-    /// Returns (file_path, tree, match)
-    type Item = (PathBuf, Tree, Match);
+    /// Returns (tree, match)
+    type Item = (Tree, Match);
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             // Try to get next match from current file
             if let Some(ref mut iter) = self.current_iterator {
-                if let Some((_tree_idx, tree, match_)) = iter.next() {
-                    let current_path = self.file_paths[self.current_file_idx - 1].clone();
-                    return Some((current_path, tree, match_));
+                if let Some((tree, match_)) = iter.next() {
+                    return Some((tree, match_));
                 }
             }
 
@@ -335,15 +327,10 @@ mod tests {
         // Should find 3 verbs total (one in each tree)
         assert_eq!(matches.len(), 3);
 
-        // Check tree indices
-        assert_eq!(matches[0].0, 1); // First tree (tree_idx starts at 1)
-        assert_eq!(matches[1].0, 2); // Second tree
-        assert_eq!(matches[2].0, 3); // Third tree
-
         // Check that each match found the verb (word 0 in each tree)
-        assert_eq!(matches[0].2, vec![0]);
-        assert_eq!(matches[1].2, vec![0]);
-        assert_eq!(matches[2].2, vec![0]);
+        assert_eq!(matches[0].1, vec![0]);
+        assert_eq!(matches[1].1, vec![0]);
+        assert_eq!(matches[2].1, vec![0]);
     }
 
     #[test]
@@ -359,8 +346,6 @@ mod tests {
 
         // Should find 2 verbs in the single tree
         assert_eq!(matches.len(), 2);
-        assert_eq!(matches[0].0, 1); // Both from tree 1
-        assert_eq!(matches[1].0, 1);
     }
 
     #[test]
@@ -391,7 +376,7 @@ mod tests {
 
         // Should find the help->win relationship
         assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].2, vec![0, 3]); // helped (word 0) -> win (word 3)
+        assert_eq!(matches[0].1, vec![0, 3]); // helped (word 0) -> win (word 3)
     }
 
     #[test]
@@ -422,19 +407,14 @@ mod tests {
         // Test with explicit paths
         let paths = vec![file1_path.clone(), file2_path.clone()];
         let results: Vec<_> = MultiFileTreeIterator::from_paths(paths)
-            .collect();
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
 
         assert_eq!(results.len(), 2);
 
-        // Check first tree
-        assert_eq!(results[0].0, file1_path);
-        assert!(results[0].1.is_ok());
-        assert_eq!(results[0].1.as_ref().unwrap().words.len(), 2);
-
-        // Check second tree
-        assert_eq!(results[1].0, file2_path);
-        assert!(results[1].1.is_ok());
-        assert_eq!(results[1].1.as_ref().unwrap().words.len(), 2);
+        // Check trees
+        assert_eq!(results[0].words.len(), 2);
+        assert_eq!(results[1].words.len(), 2);
     }
 
     #[test]
@@ -470,17 +450,14 @@ mod tests {
         let pattern = format!("{}/*.conllu", dir.path().display());
         let results: Vec<_> = MultiFileTreeIterator::from_glob(&pattern)
             .unwrap()
-            .collect();
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
 
         assert_eq!(results.len(), 2);
 
-        // Results should be sorted by filename
-        assert!(results[0].0.to_str().unwrap().contains("test1.conllu"));
-        assert!(results[1].0.to_str().unwrap().contains("test2.conllu"));
-
-        // Both should parse successfully
-        assert!(results[0].1.is_ok());
-        assert!(results[1].1.is_ok());
+        // Both should parse successfully with 2 words each
+        assert_eq!(results[0].words.len(), 2);
+        assert_eq!(results[1].words.len(), 2);
     }
 
     #[test]
@@ -515,13 +492,9 @@ mod tests {
 
         assert_eq!(results.len(), 2);
 
-        // Check first match
-        assert_eq!(results[0].0, file1_path);
-        assert_eq!(results[0].2, vec![0]); // Word 0 = "runs"
-
-        // Check second match
-        assert_eq!(results[1].0, file2_path);
-        assert_eq!(results[1].2, vec![0]); // Word 0 = "sleeps"
+        // Check matches found the verbs (word 0 in each tree)
+        assert_eq!(results[0].1, vec![0]); // Word 0 = "runs"
+        assert_eq!(results[1].1, vec![0]); // Word 0 = "sleeps"
     }
 
     #[test]
@@ -557,11 +530,8 @@ mod tests {
                 .unwrap()
                 .collect();
 
+        // Should find 2 verbs (files processed in sorted order: a.conllu, b.conllu)
         assert_eq!(results.len(), 2);
-
-        // Results should be sorted (a.conllu before b.conllu)
-        assert!(results[0].0.to_str().unwrap().contains("a.conllu"));
-        assert!(results[1].0.to_str().unwrap().contains("b.conllu"));
     }
 
     #[test]
@@ -586,7 +556,7 @@ mod tests {
 
         let paths = vec![good_file.clone(), bad_file, good_file.clone()];
         let results: Vec<_> = MultiFileTreeIterator::from_paths(paths)
-            .filter_map(|(_path, result)| result.ok())
+            .filter_map(Result::ok)
             .collect();
 
         // Should get 2 trees (good file appears twice, bad file skipped)
