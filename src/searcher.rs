@@ -224,9 +224,9 @@ fn check_arc_consistency(
 /// Search a tree with a pre-compiled pattern
 ///
 /// Returns an iterator over all matches in the tree.
-pub fn search(tree: &Tree, pattern: Pattern) -> impl Iterator<Item = Match> {
+pub fn search(tree: &Tree, pattern: &Pattern) -> impl Iterator<Item = Match> {
     // Placeholder - will be reimplemented as CSP solver
-    enumerate(tree, &pattern).into_iter()
+    enumerate(tree, pattern).into_iter()
 }
 
 /// Search a tree with a query string
@@ -237,7 +237,8 @@ pub fn search_query<'a>(
     query: &str,
 ) -> Result<impl Iterator<Item = Match> + 'a, SearchError> {
     let pattern = parse_query(query)?;
-    Ok(search(tree, pattern))
+    //Ok(search(tree, pattern))
+    Ok(enumerate(tree, &pattern).into_iter())
 }
 
 #[cfg(test)]

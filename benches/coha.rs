@@ -1,0 +1,36 @@
+use divan::AllocProfiler;
+use divan::{Bencher, black_box};
+use std::path::Path;
+use treesearch::conllu::CoNLLUReader;
+
+#[global_allocator]
+static ALLOC: AllocProfiler = AllocProfiler::system();
+//static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+//static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
+fn main() {
+    divan::main();
+}
+
+/// Benchmark parsing the lw970831.conll file
+#[divan::bench(sample_count = 5)]
+fn parse_plain(bencher: Bencher) {
+    let path = Path::new("examples/text_fic_2010.conll");
+    bencher.bench_local(|| {
+        let reader = CoNLLUReader::from_file(black_box(path)).unwrap();
+        for result in reader {
+            black_box(result.unwrap());
+        }
+    });
+}
+
+#[divan::bench(sample_count = 5)]
+fn parse_gz(bencher: Bencher) {
+    let path = Path::new("examples/text_fic_2010.conll.gz");
+    bencher.bench_local(|| {
+        let reader = CoNLLUReader::from_file(black_box(path)).unwrap();
+        for result in reader {
+            black_box(result.unwrap());
+        }
+    });
+}

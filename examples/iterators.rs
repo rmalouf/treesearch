@@ -1,7 +1,9 @@
 //! Example demonstrating the iterator interfaces
 
 use std::path::Path;
-use treesearch::{MatchIterator, MultiFileMatchIterator, MultiFileTreeIterator, TreeIterator, parse_query};
+use treesearch::{
+    MatchIterator, MultiFileMatchIterator, MultiFileTreeIterator, TreeIterator, parse_query,
+};
 
 fn main() {
     println!("=== TreeIterator Example ===\n");
@@ -48,10 +50,7 @@ fn main() {
         let form = std::str::from_utf8(&form_bytes).expect("Invalid UTF-8");
         let lemma = std::str::from_utf8(&lemma_bytes).expect("Invalid UTF-8");
 
-        println!(
-            "  Found verb '{}' (lemma: {})",
-            form, lemma
-        );
+        println!("  Found verb '{}' (lemma: {})", form, lemma);
     }
 
     // Example 3: More complex pattern - verbs with adverbial modifiers
@@ -71,10 +70,7 @@ fn main() {
         let verb_form = std::str::from_utf8(&verb_form_bytes).expect("Invalid UTF-8");
         let adv_form = std::str::from_utf8(&adv_form_bytes).expect("Invalid UTF-8");
 
-        println!(
-            "  Found '{}' -> '{}'",
-            verb_form, adv_form
-        );
+        println!("  Found '{}' -> '{}'", verb_form, adv_form);
     }
 
     // Example 4: Iterate from a file (if it exists)
