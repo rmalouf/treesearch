@@ -2,11 +2,11 @@
 
 use std::path::Path;
 use treesearch::{
-    MatchIterator, MultiFileMatchIterator, MultiFileTreeIterator, TreeIterator, parse_query,
+    CoNLLUReader, MatchIterator, MultiFileMatchIterator, MultiFileTreeIterator, parse_query,
 };
 
 fn main() {
-    println!("=== TreeIterator Example ===\n");
+    println!("=== CoNLLUReader Example ===\n");
 
     // Example 1: Iterate over trees from a string
     let conllu = r#"# text = The dog runs.
@@ -26,7 +26,7 @@ fn main() {
 "#;
 
     println!("Iterating over trees:");
-    for (idx, tree_result) in TreeIterator::from_string(conllu).enumerate() {
+    for (idx, tree_result) in CoNLLUReader::from_string(conllu).enumerate() {
         let tree = tree_result.expect("Failed to parse tree");
         println!(
             "  Tree {}: {} words, text = {:?}",
@@ -78,7 +78,7 @@ fn main() {
 
     if let Some(path_str) = std::env::args().nth(1) {
         let path = Path::new(&path_str);
-        match TreeIterator::from_file(path) {
+        match CoNLLUReader::from_file(path) {
             Ok(trees) => {
                 let count = trees.filter_map(Result::ok).count();
                 println!("Successfully read {} trees from {}", count, path_str);

@@ -13,108 +13,46 @@ use crate::tree::Tree;
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
 
-/// Iterator over trees from a CoNLL-U file
-///
-/// This is a wrapper around CoNLLUReader that provides a cleaner API
-/// for iterating over trees. The underlying CoNLLUReader already
-/// implements Iterator<Item = Result<Tree, ParseError>>.
-pub struct TreeIterator<R: BufRead> {
-    reader: CoNLLUReader<R>,
-}
-
-impl TreeIterator<std::io::BufReader<Box<dyn std::io::Read>>> {
-    /// Create a tree iterator from a file path
-    ///
-    /// Automatically detects and handles gzip-compressed files.
-    pub fn from_file(path: &Path) -> std::io::Result<Self> {
-        let reader = CoNLLUReader::from_file(path)?;
-        Ok(Self { reader })
-    }
-}
-
-impl TreeIterator<std::io::BufReader<std::io::Cursor<String>>> {
-    /// Create a tree iterator from a string
-    pub fn from_string(text: &str) -> Self {
-        let reader = CoNLLUReader::from_string(text);
-        Self { reader }
-    }
-}
-
-impl<R: BufRead> Iterator for TreeIterator<R> {
-    type Item = Result<Tree, ParseError>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.reader.next()
-    }
-}
-
 /// Iterator over matches across multiple trees
 ///
 /// Applies a pattern to each tree and yields all matches found.
-pub struct MatchIterator<R: BufRead> {
-    trees: TreeIterator<R>,
-    pattern: Pattern,
-    current_tree: Option<Tree>,
-    current_matches: std::vec::IntoIter<Match>,
+pub struct MatchIterator {
+    inner: Box<dyn Iterator<Item = (Tree, Match)>>,
 }
 
-impl MatchIterator<std::io::BufReader<Box<dyn std::io::Read>>> {
+impl MatchIterator {
     /// Create a match iterator from a file and pattern
     pub fn from_file(path: &Path, pattern: Pattern) -> std::io::Result<Self> {
-        let trees = TreeIterator::from_file(path)?;
-        Ok(Self {
-            trees,
-            pattern,
-            current_tree: None,
-            current_matches: Vec::new().into_iter(),
-        })
+        let trees = CoNLLUReader::from_file(path)?;
+        Ok(Self::new(trees, pattern))
     }
-}
 
-impl MatchIterator<std::io::BufReader<std::io::Cursor<String>>> {
     /// Create a match iterator from a string and pattern
     pub fn from_string(text: &str, pattern: Pattern) -> Self {
-        let trees = TreeIterator::from_string(text);
+        let trees = CoNLLUReader::from_string(text);
+        Self::new(trees, pattern)
+    }
+
+    fn new<R: BufRead + 'static>(trees: CoNLLUReader<R>, pattern: Pattern) -> Self {
+        let inner = trees
+            .filter_map(Result::ok)
+            .flat_map(move |tree| {
+                let matches: Vec<Match> = search(&tree, &pattern).collect();
+                matches.into_iter().map(move |m| (tree.clone(), m))
+            });
+
         Self {
-            trees,
-            pattern,
-            current_tree: None,
-            current_matches: Vec::new().into_iter(),
+            inner: Box::new(inner),
         }
     }
 }
 
-impl<R: BufRead> Iterator for MatchIterator<R> {
+impl Iterator for MatchIterator {
     /// Returns (tree, match)
     type Item = (Tree, Match);
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            // Try to get next match from current tree
-            if let Some(match_) = self.current_matches.next() {
-                // Clone the tree for return (caller may need it)
-                let tree = self.current_tree.as_ref().unwrap().clone();
-                return Some((tree, match_));
-            }
-
-            // No more matches in current tree, get next tree
-            match self.trees.next() {
-                Some(Ok(tree)) => {
-                    let matches: Vec<Match> = search(&tree, &self.pattern).collect();
-                    self.current_matches = matches.into_iter();
-                    self.current_tree = Some(tree);
-                    // Continue loop to try getting first match from this tree
-                }
-                Some(Err(_)) => {
-                    // Parse error - skip this tree and continue
-                    continue;
-                }
-                None => {
-                    // No more trees
-                    return None;
-                }
-            }
-        }
+        self.inner.next()
     }
 }
 
@@ -124,80 +62,40 @@ impl<R: BufRead> Iterator for MatchIterator<R> {
 /// across all files. Files are processed in sorted order for deterministic results.
 /// Files that fail to open are skipped with a warning to stderr.
 pub struct MultiFileTreeIterator {
-    file_paths: Vec<PathBuf>,
-    current_file_idx: usize,
-    current_iterator: Option<TreeIterator<std::io::BufReader<Box<dyn std::io::Read>>>>,
+    inner: Box<dyn Iterator<Item = Result<Tree, ParseError>>>,
 }
 
 impl MultiFileTreeIterator {
     /// Create a multi-file tree iterator from a glob pattern
     pub fn from_glob(pattern: &str) -> Result<Self, glob::PatternError> {
         let mut file_paths: Vec<PathBuf> = glob::glob(pattern)?.filter_map(Result::ok).collect();
-
-        // Sort for deterministic ordering
         file_paths.sort();
-
-        Ok(Self {
-            file_paths,
-            current_file_idx: 0,
-            current_iterator: None,
-        })
+        Ok(Self::from_paths(file_paths))
     }
 
     /// Create a multi-file tree iterator from explicit file paths
     pub fn from_paths(file_paths: Vec<PathBuf>) -> Self {
-        Self {
-            file_paths,
-            current_file_idx: 0,
-            current_iterator: None,
-        }
-    }
+        let inner = file_paths.into_iter().flat_map(|path| {
+            match CoNLLUReader::from_file(&path) {
+                Ok(reader) => Box::new(reader) as Box<dyn Iterator<Item = Result<Tree, ParseError>>>,
+                Err(e) => {
+                    eprintln!("Warning: Failed to open {:?}: {}", path, e);
+                    Box::new(std::iter::empty())
+                }
+            }
+        });
 
-    /// Get the current file path being processed
-    pub fn current_file(&self) -> Option<&Path> {
-        if self.current_file_idx > 0 && self.current_file_idx <= self.file_paths.len() {
-            Some(&self.file_paths[self.current_file_idx - 1])
-        } else {
-            None
+        Self {
+            inner: Box::new(inner),
         }
     }
 }
 
 impl Iterator for MultiFileTreeIterator {
-    /// Returns parse_result
     type Item = Result<Tree, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            // Try to get next tree from current file
-            if let Some(ref mut iter) = self.current_iterator {
-                if let Some(tree_result) = iter.next() {
-                    return Some(tree_result);
-                }
-            }
-
-            // Current file exhausted or no file open, try next file
-            if self.current_file_idx >= self.file_paths.len() {
-                // No more files
-                return None;
-            }
-
-            let file_path = &self.file_paths[self.current_file_idx];
-            self.current_file_idx += 1;
-
-            match TreeIterator::from_file(file_path) {
-                Ok(iter) => {
-                    self.current_iterator = Some(iter);
-                    // Continue loop to get first tree from this file
-                }
-                Err(e) => {
-                    // Skip file with warning
-                    eprintln!("Warning: Failed to open {:?}: {}", file_path, e);
-                    // Continue to next file
-                    continue;
-                }
-            }
-        }
+        self.inner.next()
     }
 }
 
@@ -207,10 +105,7 @@ impl Iterator for MultiFileTreeIterator {
 /// Files are processed in sorted order. Files that fail to open or trees that fail
 /// to parse are skipped with warnings to stderr.
 pub struct MultiFileMatchIterator {
-    file_paths: Vec<PathBuf>,
-    pattern: Pattern,
-    current_file_idx: usize,
-    current_iterator: Option<MatchIterator<std::io::BufReader<Box<dyn std::io::Read>>>>,
+    inner: Box<dyn Iterator<Item = (Tree, Match)>>,
 }
 
 impl MultiFileMatchIterator {
@@ -218,64 +113,33 @@ impl MultiFileMatchIterator {
     pub fn from_glob(glob_pattern: &str, pattern: Pattern) -> Result<Self, glob::PatternError> {
         let mut file_paths: Vec<PathBuf> =
             glob::glob(glob_pattern)?.filter_map(Result::ok).collect();
-
-        // Sort for deterministic ordering
         file_paths.sort();
-
-        Ok(Self {
-            file_paths,
-            pattern,
-            current_file_idx: 0,
-            current_iterator: None,
-        })
+        Ok(Self::from_paths(file_paths, pattern))
     }
 
     /// Create a multi-file match iterator from explicit file paths
     pub fn from_paths(file_paths: Vec<PathBuf>, pattern: Pattern) -> Self {
+        let inner = file_paths.into_iter().flat_map(move |path| {
+            match MatchIterator::from_file(&path, pattern.clone()) {
+                Ok(iter) => Box::new(iter) as Box<dyn Iterator<Item = (Tree, Match)>>,
+                Err(e) => {
+                    eprintln!("Warning: Failed to open {:?}: {}", path, e);
+                    Box::new(std::iter::empty())
+                }
+            }
+        });
+
         Self {
-            file_paths,
-            pattern,
-            current_file_idx: 0,
-            current_iterator: None,
+            inner: Box::new(inner),
         }
     }
 }
 
 impl Iterator for MultiFileMatchIterator {
-    /// Returns (tree, match)
     type Item = (Tree, Match);
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            // Try to get next match from current file
-            if let Some(ref mut iter) = self.current_iterator {
-                if let Some((tree, match_)) = iter.next() {
-                    return Some((tree, match_));
-                }
-            }
-
-            // Current file exhausted or no file open, try next file
-            if self.current_file_idx >= self.file_paths.len() {
-                // No more files
-                return None;
-            }
-
-            let file_path = &self.file_paths[self.current_file_idx];
-            self.current_file_idx += 1;
-
-            match MatchIterator::from_file(file_path, self.pattern.clone()) {
-                Ok(iter) => {
-                    self.current_iterator = Some(iter);
-                    // Continue loop to get first match from this file
-                }
-                Err(e) => {
-                    // Skip file with warning
-                    eprintln!("Warning: Failed to open {:?}: {}", file_path, e);
-                    // Continue to next file
-                    continue;
-                }
-            }
-        }
+        self.inner.next()
     }
 }
 
@@ -306,8 +170,8 @@ mod tests {
 "#;
 
     #[test]
-    fn test_tree_iterator_from_string() {
-        let trees: Vec<_> = TreeIterator::from_string(TWO_TREE_CONLLU)
+    fn test_conllu_reader_from_string() {
+        let trees: Vec<_> = CoNLLUReader::from_string(TWO_TREE_CONLLU)
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
 
