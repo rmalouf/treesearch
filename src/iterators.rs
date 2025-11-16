@@ -100,7 +100,7 @@ impl<R: BufRead> Iterator for MatchIterator<R> {
             // No more matches in current tree, get next tree
             match self.trees.next() {
                 Some(Ok(tree)) => {
-                    let matches: Vec<Match> = search(&tree, self.pattern.clone()).collect();
+                    let matches: Vec<Match> = search(&tree, &self.pattern).collect();
                     self.current_matches = matches.into_iter();
                     self.current_tree = Some(tree);
                     // Continue loop to try getting first match from this tree
@@ -132,9 +132,7 @@ pub struct MultiFileTreeIterator {
 impl MultiFileTreeIterator {
     /// Create a multi-file tree iterator from a glob pattern
     pub fn from_glob(pattern: &str) -> Result<Self, glob::PatternError> {
-        let mut file_paths: Vec<PathBuf> = glob::glob(pattern)?
-            .filter_map(Result::ok)
-            .collect();
+        let mut file_paths: Vec<PathBuf> = glob::glob(pattern)?.filter_map(Result::ok).collect();
 
         // Sort for deterministic ordering
         file_paths.sort();
@@ -218,9 +216,8 @@ pub struct MultiFileMatchIterator {
 impl MultiFileMatchIterator {
     /// Create a multi-file match iterator from a glob pattern
     pub fn from_glob(glob_pattern: &str, pattern: Pattern) -> Result<Self, glob::PatternError> {
-        let mut file_paths: Vec<PathBuf> = glob::glob(glob_pattern)?
-            .filter_map(Result::ok)
-            .collect();
+        let mut file_paths: Vec<PathBuf> =
+            glob::glob(glob_pattern)?.filter_map(Result::ok).collect();
 
         // Sort for deterministic ordering
         file_paths.sort();
@@ -287,9 +284,7 @@ mod tests {
     use super::*;
     use crate::parse_query;
 
-    #[test]
-    fn test_tree_iterator_from_string() {
-        let conllu = r#"# text = The dog runs.
+    const TWO_TREE_CONLLU: &str = r#"# text = The dog runs.
 1	The	the	DET	DT	_	2	det	_	_
 2	dog	dog	NOUN	NN	_	3	nsubj	_	_
 3	runs	run	VERB	VBZ	_	0	root	_	_
@@ -300,7 +295,19 @@ mod tests {
 
 "#;
 
-        let trees: Vec<_> = TreeIterator::from_string(conllu)
+    const THREE_VERB_CONLLU: &str = r#"1	helped	help	VERB	VBD	_	0	root	_	_
+2	us	we	PRON	PRP	_	1	obj	_	_
+
+1	ran	run	VERB	VBD	_	0	root	_	_
+2	quickly	quickly	ADV	RB	_	1	advmod	_	_
+
+1	sleeps	sleep	VERB	VBZ	_	0	root	_	_
+
+"#;
+
+    #[test]
+    fn test_tree_iterator_from_string() {
+        let trees: Vec<_> = TreeIterator::from_string(TWO_TREE_CONLLU)
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
 
@@ -311,23 +318,10 @@ mod tests {
 
     #[test]
     fn test_match_iterator_from_string() {
-        let conllu = r#"1	helped	help	VERB	VBD	_	0	root	_	_
-2	us	we	PRON	PRP	_	1	obj	_	_
-
-1	ran	run	VERB	VBD	_	0	root	_	_
-2	quickly	quickly	ADV	RB	_	1	advmod	_	_
-
-1	sleeps	sleep	VERB	VBZ	_	0	root	_	_
-
-"#;
-
         let pattern = parse_query("V [pos=\"VERB\"];").unwrap();
-        let matches: Vec<_> = MatchIterator::from_string(conllu, pattern).collect();
+        let matches: Vec<_> = MatchIterator::from_string(THREE_VERB_CONLLU, pattern).collect();
 
-        // Should find 3 verbs total (one in each tree)
         assert_eq!(matches.len(), 3);
-
-        // Check that each match found the verb (word 0 in each tree)
         assert_eq!(matches[0].1, vec![0]);
         assert_eq!(matches[1].1, vec![0]);
         assert_eq!(matches[2].1, vec![0]);
@@ -335,231 +329,167 @@ mod tests {
 
     #[test]
     fn test_match_iterator_multiple_matches_per_tree() {
-        let conllu = r#"1	saw	see	VERB	VBD	_	0	root	_	_
-2	John	John	PROPN	NNP	_	1	obj	_	_
-3	running	run	VERB	VBG	_	1	xcomp	_	_
-
-"#;
+        let conllu = "1\tsaw\tsee\tVERB\tVBD\t_\t0\troot\t_\t_\n\
+                      2\tJohn\tJohn\tPROPN\tNNP\t_\t1\tobj\t_\t_\n\
+                      3\trunning\trun\tVERB\tVBG\t_\t1\txcomp\t_\t_\n";
 
         let pattern = parse_query("V [pos=\"VERB\"];").unwrap();
         let matches: Vec<_> = MatchIterator::from_string(conllu, pattern).collect();
 
-        // Should find 2 verbs in the single tree
         assert_eq!(matches.len(), 2);
     }
 
     #[test]
     fn test_match_iterator_no_matches() {
-        let conllu = r#"1	The	the	DET	DT	_	2	det	_	_
-2	dog	dog	NOUN	NN	_	0	root	_	_
-
-"#;
+        let conllu = "1\tThe\tthe\tDET\tDT\t_\t2\tdet\t_\t_\n\
+                      2\tdog\tdog\tNOUN\tNN\t_\t0\troot\t_\t_\n";
 
         let pattern = parse_query("V [pos=\"VERB\"];").unwrap();
         let matches: Vec<_> = MatchIterator::from_string(conllu, pattern).collect();
 
-        // Should find no verbs
         assert_eq!(matches.len(), 0);
     }
 
     #[test]
     fn test_match_iterator_with_constraints() {
-        let conllu = r#"1	helped	help	VERB	VBD	_	0	root	_	_
-2	us	we	PRON	PRP	_	1	obj	_	_
-3	to	to	PART	TO	_	4	mark	_	_
-4	win	win	VERB	VB	_	1	xcomp	_	_
-
-"#;
+        let conllu = "1\thelped\thelp\tVERB\tVBD\t_\t0\troot\t_\t_\n\
+                      2\tus\twe\tPRON\tPRP\t_\t1\tobj\t_\t_\n\
+                      3\tto\tto\tPART\tTO\t_\t4\tmark\t_\t_\n\
+                      4\twin\twin\tVERB\tVB\t_\t1\txcomp\t_\t_\n";
 
         let pattern = parse_query("V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 -> V2;").unwrap();
         let matches: Vec<_> = MatchIterator::from_string(conllu, pattern).collect();
 
-        // Should find the help->win relationship
         assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].1, vec![0, 3]); // helped (word 0) -> win (word 3)
+        assert_eq!(matches[0].1, vec![0, 3]);
     }
 
-    #[test]
-    fn test_multi_file_tree_iterator_from_paths() {
+    #[cfg(test)]
+    mod multi_file {
+        use super::*;
         use std::fs;
         use std::io::Write;
-        use tempfile::tempdir;
+        use std::path::PathBuf;
+        use tempfile::{TempDir, tempdir};
 
-        // Create temporary directory and files
-        let dir = tempdir().unwrap();
+        /// Helper to create test files with given content
+        fn create_test_files(contents: &[(&str, &str)]) -> (TempDir, Vec<PathBuf>) {
+            let dir = tempdir().unwrap();
+            let mut paths = Vec::new();
 
-        let file1_path = dir.path().join("file1.conllu");
-        let mut file1 = fs::File::create(&file1_path).unwrap();
-        writeln!(
-            file1,
-            "1\tThe\tthe\tDET\tDT\t_\t2\tdet\t_\t_\n2\tdog\tdog\tNOUN\tNN\t_\t0\troot\t_\t_\n"
-        )
-        .unwrap();
+            for (filename, content) in contents {
+                let path = dir.path().join(filename);
+                let mut file = fs::File::create(&path).unwrap();
+                write!(file, "{}", content).unwrap();
+                paths.push(path);
+            }
 
-        let file2_path = dir.path().join("file2.conllu");
-        let mut file2 = fs::File::create(&file2_path).unwrap();
-        writeln!(
-            file2,
-            "1\tCats\tcat\tNOUN\tNNS\t_\t2\tnsubj\t_\t_\n2\tsleep\tsleep\tVERB\tVBP\t_\t0\troot\t_\t_\n"
-        )
-        .unwrap();
+            (dir, paths)
+        }
 
-        // Test with explicit paths
-        let paths = vec![file1_path.clone(), file2_path.clone()];
-        let results: Vec<_> = MultiFileTreeIterator::from_paths(paths)
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
+        #[test]
+        fn test_tree_iterator_from_paths() {
+            let (_dir, paths) = create_test_files(&[
+                (
+                    "file1.conllu",
+                    "1\tThe\tthe\tDET\tDT\t_\t2\tdet\t_\t_\n2\tdog\tdog\tNOUN\tNN\t_\t0\troot\t_\t_\n",
+                ),
+                (
+                    "file2.conllu",
+                    "1\tCats\tcat\tNOUN\tNNS\t_\t2\tnsubj\t_\t_\n2\tsleep\tsleep\tVERB\tVBP\t_\t0\troot\t_\t_\n",
+                ),
+            ]);
 
-        assert_eq!(results.len(), 2);
+            let results: Vec<_> = MultiFileTreeIterator::from_paths(paths)
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap();
 
-        // Check trees
-        assert_eq!(results[0].words.len(), 2);
-        assert_eq!(results[1].words.len(), 2);
-    }
+            assert_eq!(results.len(), 2);
+            assert_eq!(results[0].words.len(), 2);
+            assert_eq!(results[1].words.len(), 2);
+        }
 
-    #[test]
-    fn test_multi_file_tree_iterator_from_glob() {
-        use std::fs;
-        use std::io::Write;
-        use tempfile::tempdir;
+        #[test]
+        fn test_tree_iterator_from_glob() {
+            let (dir, _paths) = create_test_files(&[
+                (
+                    "test1.conllu",
+                    "1\tThe\tthe\tDET\tDT\t_\t2\tdet\t_\t_\n2\tdog\tdog\tNOUN\tNN\t_\t0\troot\t_\t_\n",
+                ),
+                (
+                    "test2.conllu",
+                    "1\tCats\tcat\tNOUN\tNNS\t_\t2\tnsubj\t_\t_\n2\tsleep\tsleep\tVERB\tVBP\t_\t0\troot\t_\t_\n",
+                ),
+                ("other.txt", "ignored"),
+            ]);
 
-        // Create temporary directory and files
-        let dir = tempdir().unwrap();
+            let pattern = format!("{}/*.conllu", dir.path().display());
+            let results: Vec<_> = MultiFileTreeIterator::from_glob(&pattern)
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap();
 
-        let file1_path = dir.path().join("test1.conllu");
-        let mut file1 = fs::File::create(&file1_path).unwrap();
-        writeln!(
-            file1,
-            "1\tThe\tthe\tDET\tDT\t_\t2\tdet\t_\t_\n2\tdog\tdog\tNOUN\tNN\t_\t0\troot\t_\t_\n"
-        )
-        .unwrap();
+            assert_eq!(results.len(), 2);
+            assert_eq!(results[0].words.len(), 2);
+            assert_eq!(results[1].words.len(), 2);
+        }
 
-        let file2_path = dir.path().join("test2.conllu");
-        let mut file2 = fs::File::create(&file2_path).unwrap();
-        writeln!(
-            file2,
-            "1\tCats\tcat\tNOUN\tNNS\t_\t2\tnsubj\t_\t_\n2\tsleep\tsleep\tVERB\tVBP\t_\t0\troot\t_\t_\n"
-        )
-        .unwrap();
+        #[test]
+        fn test_match_iterator_from_paths() {
+            let (_dir, paths) = create_test_files(&[
+                (
+                    "file1.conllu",
+                    "1\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n",
+                ),
+                (
+                    "file2.conllu",
+                    "1\tsleeps\tsleep\tVERB\tVBZ\t_\t0\troot\t_\t_\n",
+                ),
+            ]);
 
-        // Create a non-matching file
-        let _other_file = dir.path().join("other.txt");
-        fs::File::create(&_other_file).unwrap();
+            let pattern = parse_query("V [pos=\"VERB\"];").unwrap();
+            let results: Vec<_> = MultiFileMatchIterator::from_paths(paths, pattern).collect();
 
-        // Test with glob pattern
-        let pattern = format!("{}/*.conllu", dir.path().display());
-        let results: Vec<_> = MultiFileTreeIterator::from_glob(&pattern)
-            .unwrap()
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
+            assert_eq!(results.len(), 2);
+            assert_eq!(results[0].1, vec![0]);
+            assert_eq!(results[1].1, vec![0]);
+        }
 
-        assert_eq!(results.len(), 2);
+        #[test]
+        fn test_match_iterator_from_glob() {
+            let (dir, _paths) = create_test_files(&[
+                ("a.conllu", "1\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
+                (
+                    "b.conllu",
+                    "1\tsleeps\tsleep\tVERB\tVBZ\t_\t0\troot\t_\t_\n",
+                ),
+            ]);
 
-        // Both should parse successfully with 2 words each
-        assert_eq!(results[0].words.len(), 2);
-        assert_eq!(results[1].words.len(), 2);
-    }
-
-    #[test]
-    fn test_multi_file_match_iterator_from_paths() {
-        use std::fs;
-        use std::io::Write;
-        use tempfile::tempdir;
-
-        // Create temporary directory and files with verbs
-        let dir = tempdir().unwrap();
-
-        let file1_path = dir.path().join("file1.conllu");
-        let mut file1 = fs::File::create(&file1_path).unwrap();
-        writeln!(
-            file1,
-            "1\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n"
-        )
-        .unwrap();
-
-        let file2_path = dir.path().join("file2.conllu");
-        let mut file2 = fs::File::create(&file2_path).unwrap();
-        writeln!(
-            file2,
-            "1\tsleeps\tsleep\tVERB\tVBZ\t_\t0\troot\t_\t_\n"
-        )
-        .unwrap();
-
-        // Search for verbs across files
-        let pattern = parse_query("V [pos=\"VERB\"];").unwrap();
-        let paths = vec![file1_path.clone(), file2_path.clone()];
-        let results: Vec<_> = MultiFileMatchIterator::from_paths(paths, pattern).collect();
-
-        assert_eq!(results.len(), 2);
-
-        // Check matches found the verbs (word 0 in each tree)
-        assert_eq!(results[0].1, vec![0]); // Word 0 = "runs"
-        assert_eq!(results[1].1, vec![0]); // Word 0 = "sleeps"
-    }
-
-    #[test]
-    fn test_multi_file_match_iterator_from_glob() {
-        use std::fs;
-        use std::io::Write;
-        use tempfile::tempdir;
-
-        // Create temporary directory and files
-        let dir = tempdir().unwrap();
-
-        let file1_path = dir.path().join("a.conllu");
-        let mut file1 = fs::File::create(&file1_path).unwrap();
-        writeln!(
-            file1,
-            "1\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n"
-        )
-        .unwrap();
-
-        let file2_path = dir.path().join("b.conllu");
-        let mut file2 = fs::File::create(&file2_path).unwrap();
-        writeln!(
-            file2,
-            "1\tsleeps\tsleep\tVERB\tVBZ\t_\t0\troot\t_\t_\n"
-        )
-        .unwrap();
-
-        // Search for verbs across files
-        let pattern = parse_query("V [pos=\"VERB\"];").unwrap();
-        let glob_pattern = format!("{}/*.conllu", dir.path().display());
-        let results: Vec<_> =
-            MultiFileMatchIterator::from_glob(&glob_pattern, pattern)
+            let pattern = parse_query("V [pos=\"VERB\"];").unwrap();
+            let glob_pattern = format!("{}/*.conllu", dir.path().display());
+            let results: Vec<_> = MultiFileMatchIterator::from_glob(&glob_pattern, pattern)
                 .unwrap()
                 .collect();
 
-        // Should find 2 verbs (files processed in sorted order: a.conllu, b.conllu)
-        assert_eq!(results.len(), 2);
-    }
+            assert_eq!(results.len(), 2);
+        }
 
-    #[test]
-    fn test_multi_file_iterator_skips_bad_files() {
-        use std::fs;
-        use std::io::Write;
-        use tempfile::tempdir;
+        #[test]
+        fn test_skips_bad_files() {
+            let (dir, mut paths) = create_test_files(&[(
+                "good.conllu",
+                "1\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n",
+            )]);
 
-        let dir = tempdir().unwrap();
+            let good_file = paths[0].clone();
+            let bad_file = dir.path().join("nonexistent.conllu");
+            paths = vec![good_file.clone(), bad_file, good_file];
 
-        // Create one good file
-        let good_file = dir.path().join("good.conllu");
-        let mut file = fs::File::create(&good_file).unwrap();
-        writeln!(
-            file,
-            "1\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n"
-        )
-        .unwrap();
+            let results: Vec<_> = MultiFileTreeIterator::from_paths(paths)
+                .filter_map(Result::ok)
+                .collect();
 
-        // Reference a non-existent file
-        let bad_file = dir.path().join("nonexistent.conllu");
-
-        let paths = vec![good_file.clone(), bad_file, good_file.clone()];
-        let results: Vec<_> = MultiFileTreeIterator::from_paths(paths)
-            .filter_map(Result::ok)
-            .collect();
-
-        // Should get 2 trees (good file appears twice, bad file skipped)
-        assert_eq!(results.len(), 2);
+            assert_eq!(results.len(), 2);
+        }
     }
 }
