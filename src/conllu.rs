@@ -6,7 +6,7 @@
 //!
 //! CoNLL-U format: https://universaldependencies.org/format.html
 
-use crate::bytes::{BytestringPool, bs_atoi, bs_split_once, bs_trim};
+use crate::bytes::{BytestringPool, bs_atoi, bs_split_once};
 use crate::tree::{Dep, Features, Misc, TokenId, Tree, WordId};
 use flate2::read::GzDecoder;
 use std::collections::HashMap;
@@ -282,7 +282,9 @@ impl<R: BufRead> Iterator for TreeIterator<R> {
                 }
                 Ok(0) => break, // EOF - always break
                 Ok(_) => {
-                    let line = bs_trim(&buffer);
+                    // Optimization: read_until includes '\n' at end, use O(1) suffix check
+                    // instead of O(n) scan through entire buffer
+                    let line = buffer.strip_suffix(&[b'\n']).unwrap_or(&buffer);
 
                     if line.is_empty() {
                         // Blank line = sentence boundary if we have content
