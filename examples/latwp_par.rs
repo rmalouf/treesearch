@@ -3,6 +3,7 @@
 //! Run with: cargo run --example latwp
 
 use treesearch::{parse_query, MultiFileMatchIterator};
+use rayon::prelude::*;
 
 fn main() {
 
@@ -18,6 +19,7 @@ fn main() {
     let pattern = parse_query(query).unwrap();
     let count = MultiFileMatchIterator::from_glob(path, pattern)
         .unwrap()
+        .par_iter()
         .count();
 
     println!("{}", count);

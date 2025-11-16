@@ -17,7 +17,7 @@ mod bytes;
 pub mod python;
 
 // Re-exports for convenience
-pub use conllu::CoNLLUReader;
+pub use conllu::TreeIterator;
 pub use iterators::{MatchIterator, MultiFileMatchIterator, MultiFileTreeIterator};
 pub use parser::parse_query;
 pub use pattern::{Constraint, EdgeConstraint, Pattern, PatternVar, RelationType, VarId};

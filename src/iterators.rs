@@ -6,7 +6,7 @@
 //! - Iterating over trees from multiple files (glob patterns)
 //! - Searching patterns across multiple files
 
-use crate::conllu::{CoNLLUReader, ParseError};
+use crate::conllu::{TreeIterator, ParseError};
 use crate::pattern::Pattern;
 use crate::searcher::{Match, search};
 use crate::tree::Tree;
@@ -23,17 +23,17 @@ pub struct MatchIterator {
 impl MatchIterator {
     /// Create a match iterator from a file and pattern
     pub fn from_file(path: &Path, pattern: Pattern) -> std::io::Result<Self> {
-        let trees = CoNLLUReader::from_file(path)?;
+        let trees = TreeIterator::from_file(path)?;
         Ok(Self::new(trees, pattern))
     }
 
     /// Create a match iterator from a string and pattern
     pub fn from_string(text: &str, pattern: Pattern) -> Self {
-        let trees = CoNLLUReader::from_string(text);
+        let trees = TreeIterator::from_string(text);
         Self::new(trees, pattern)
     }
 
-    fn new<R: BufRead + 'static>(trees: CoNLLUReader<R>, pattern: Pattern) -> Self {
+    fn new<R: BufRead + 'static>(trees: TreeIterator<R>, pattern: Pattern) -> Self {
         let inner = trees
             .filter_map(Result::ok)
             .flat_map(move |tree| {
@@ -62,7 +62,9 @@ impl Iterator for MatchIterator {
 /// across all files. Files are processed in sorted order for deterministic results.
 /// Files that fail to open are skipped with a warning to stderr.
 pub struct MultiFileTreeIterator {
-    inner: Box<dyn Iterator<Item = Result<Tree, ParseError>>>,
+    file_paths: Vec<PathBuf>,
+    current_iter: Option<Box<dyn Iterator<Item = Result<Tree, ParseError>>>>,
+    file_index: usize,
 }
 
 impl MultiFileTreeIterator {
@@ -75,19 +77,30 @@ impl MultiFileTreeIterator {
 
     /// Create a multi-file tree iterator from explicit file paths
     pub fn from_paths(file_paths: Vec<PathBuf>) -> Self {
-        let inner = file_paths.into_iter().flat_map(|path| {
-            match CoNLLUReader::from_file(&path) {
-                Ok(reader) => Box::new(reader) as Box<dyn Iterator<Item = Result<Tree, ParseError>>>,
-                Err(e) => {
-                    eprintln!("Warning: Failed to open {:?}: {}", path, e);
-                    Box::new(std::iter::empty())
-                }
-            }
-        });
-
         Self {
-            inner: Box::new(inner),
+            file_paths,
+            current_iter: None,
+            file_index: 0,
         }
+    }
+
+    /// Convert to a parallel iterator over trees (file-level parallelism)
+    ///
+    /// Processes multiple files in parallel using rayon. Trees within each file
+    /// are still processed sequentially.
+    pub fn par_iter(self) -> impl rayon::iter::ParallelIterator<Item = Result<Tree, ParseError>> {
+        use rayon::prelude::*;
+        self.file_paths
+            .into_par_iter()
+            .flat_map_iter(|path| {
+                match TreeIterator::from_file(&path) {
+                    Ok(reader) => Box::new(reader) as Box<dyn Iterator<Item = Result<Tree, ParseError>>>,
+                    Err(e) => {
+                        eprintln!("Warning: Failed to open {:?}: {}", path, e);
+                        Box::new(std::iter::empty())
+                    }
+                }
+            })
     }
 }
 
@@ -95,7 +108,30 @@ impl Iterator for MultiFileTreeIterator {
     type Item = Result<Tree, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next()
+        loop {
+            // Try current iterator
+            if let Some(iter) = &mut self.current_iter
+                && let Some(item) = iter.next()
+            {
+                return Some(item);
+            }
+
+            // Move to next file
+            if self.file_index >= self.file_paths.len() {
+                return None;
+            }
+
+            let path = &self.file_paths[self.file_index];
+            self.file_index += 1;
+
+            self.current_iter = match TreeIterator::from_file(path) {
+                Ok(reader) => Some(Box::new(reader)),
+                Err(e) => {
+                    eprintln!("Warning: Failed to open {:?}: {}", path, e);
+                    None
+                }
+            };
+        }
     }
 }
 
@@ -105,7 +141,10 @@ impl Iterator for MultiFileTreeIterator {
 /// Files are processed in sorted order. Files that fail to open or trees that fail
 /// to parse are skipped with warnings to stderr.
 pub struct MultiFileMatchIterator {
-    inner: Box<dyn Iterator<Item = (Tree, Match)>>,
+    file_paths: Vec<PathBuf>,
+    pattern: Pattern,
+    current_iter: Option<MatchIterator>,
+    file_index: usize,
 }
 
 impl MultiFileMatchIterator {
@@ -119,19 +158,32 @@ impl MultiFileMatchIterator {
 
     /// Create a multi-file match iterator from explicit file paths
     pub fn from_paths(file_paths: Vec<PathBuf>, pattern: Pattern) -> Self {
-        let inner = file_paths.into_iter().flat_map(move |path| {
-            match MatchIterator::from_file(&path, pattern.clone()) {
-                Ok(iter) => Box::new(iter) as Box<dyn Iterator<Item = (Tree, Match)>>,
-                Err(e) => {
-                    eprintln!("Warning: Failed to open {:?}: {}", path, e);
-                    Box::new(std::iter::empty())
-                }
-            }
-        });
-
         Self {
-            inner: Box::new(inner),
+            file_paths,
+            pattern,
+            current_iter: None,
+            file_index: 0,
         }
+    }
+
+    /// Convert to a parallel iterator over matches (file-level parallelism)
+    ///
+    /// Processes multiple files in parallel using rayon. Trees within each file
+    /// are still processed sequentially.
+    pub fn par_iter(self) -> impl rayon::iter::ParallelIterator<Item = (Tree, Match)> {
+        use rayon::prelude::*;
+        let pattern = self.pattern;
+        self.file_paths
+            .into_par_iter()
+            .flat_map_iter(move |path| {
+                match MatchIterator::from_file(&path, pattern.clone()) {
+                    Ok(iter) => Box::new(iter) as Box<dyn Iterator<Item = (Tree, Match)>>,
+                    Err(e) => {
+                        eprintln!("Warning: Failed to open {:?}: {}", path, e);
+                        Box::new(std::iter::empty())
+                    }
+                }
+            })
     }
 }
 
@@ -139,7 +191,30 @@ impl Iterator for MultiFileMatchIterator {
     type Item = (Tree, Match);
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next()
+        loop {
+            // Try current iterator
+            if let Some(iter) = &mut self.current_iter
+                && let Some(item) = iter.next()
+            {
+                return Some(item);
+            }
+
+            // Move to next file
+            if self.file_index >= self.file_paths.len() {
+                return None;
+            }
+
+            let path = &self.file_paths[self.file_index];
+            self.file_index += 1;
+
+            self.current_iter = match MatchIterator::from_file(path, self.pattern.clone()) {
+                Ok(iter) => Some(iter),
+                Err(e) => {
+                    eprintln!("Warning: Failed to open {:?}: {}", path, e);
+                    None
+                }
+            };
+        }
     }
 }
 
@@ -171,7 +246,7 @@ mod tests {
 
     #[test]
     fn test_conllu_reader_from_string() {
-        let trees: Vec<_> = CoNLLUReader::from_string(TWO_TREE_CONLLU)
+        let trees: Vec<_> = TreeIterator::from_string(TWO_TREE_CONLLU)
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
 
@@ -354,6 +429,60 @@ mod tests {
                 .collect();
 
             assert_eq!(results.len(), 2);
+        }
+
+        #[test]
+        fn test_tree_iterator_par_iter() {
+            use rayon::prelude::*;
+
+            let (_dir, paths) = create_test_files(&[
+                (
+                    "file1.conllu",
+                    "1\tThe\tthe\tDET\tDT\t_\t2\tdet\t_\t_\n2\tdog\tdog\tNOUN\tNN\t_\t0\troot\t_\t_\n",
+                ),
+                (
+                    "file2.conllu",
+                    "1\tCats\tcat\tNOUN\tNNS\t_\t2\tnsubj\t_\t_\n2\tsleep\tsleep\tVERB\tVBP\t_\t0\troot\t_\t_\n",
+                ),
+                (
+                    "file3.conllu",
+                    "1\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n",
+                ),
+            ]);
+
+            let results: Vec<_> = MultiFileTreeIterator::from_paths(paths)
+                .par_iter()
+                .filter_map(Result::ok)
+                .collect();
+
+            assert_eq!(results.len(), 3);
+            assert_eq!(results[0].words.len(), 2);
+            assert_eq!(results[1].words.len(), 2);
+            assert_eq!(results[2].words.len(), 1);
+        }
+
+        #[test]
+        fn test_match_iterator_par_iter() {
+            use rayon::prelude::*;
+
+            let (_dir, paths) = create_test_files(&[
+                ("a.conllu", "1\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
+                (
+                    "b.conllu",
+                    "1\tsleeps\tsleep\tVERB\tVBZ\t_\t0\troot\t_\t_\n",
+                ),
+                ("c.conllu", "1\twalks\twalk\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
+            ]);
+
+            let pattern = parse_query("V [pos=\"VERB\"];").unwrap();
+            let results: Vec<_> = MultiFileMatchIterator::from_paths(paths, pattern)
+                .par_iter()
+                .collect();
+
+            assert_eq!(results.len(), 3);
+            assert_eq!(results[0].1, vec![0]);
+            assert_eq!(results[1].1, vec![0]);
+            assert_eq!(results[2].1, vec![0]);
         }
     }
 }

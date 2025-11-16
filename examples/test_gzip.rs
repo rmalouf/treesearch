@@ -1,18 +1,18 @@
 use std::path::Path;
-use treesearch::CoNLLUReader;
+use treesearch::TreeIterator;
 
 fn main() {
     // Test reading plain file
     println!("Testing plain CoNLL-U file...");
     let plain_path = Path::new("examples/lw970831.conll");
-    let plain_reader = CoNLLUReader::from_file(plain_path).expect("Failed to open plain file");
+    let plain_reader = TreeIterator::from_file(plain_path).expect("Failed to open plain file");
     let plain_count = plain_reader.count();
     println!("Plain file: {} sentences", plain_count);
 
     // Test reading gzipped file
     println!("\nTesting gzipped CoNLL-U file...");
     let gz_path = Path::new("examples/lw970831.conll.gz");
-    let gz_reader = CoNLLUReader::from_file(gz_path).expect("Failed to open gzipped file");
+    let gz_reader = TreeIterator::from_file(gz_path).expect("Failed to open gzipped file");
     let gz_count = gz_reader.count();
     println!("Gzipped file: {} sentences", gz_count);
 

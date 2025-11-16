@@ -1,16 +1,14 @@
 use hashbrown::HashMap;
 use hashbrown::hash_map::RawEntryMut;
 use rustc_hash::{FxBuildHasher, FxHasher};
-use std::cell::RefCell;
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroU32;
-use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 pub const STRING_POOL_CAPACITY: usize = 5000;
 
 #[derive(Clone, Debug)]
-pub struct BytestringPool(Rc<RefCell<ByteInterner>>);
+pub struct BytestringPool(Arc<Mutex<ByteInterner>>);
 
 impl Default for BytestringPool {
     fn default() -> Self {
@@ -20,19 +18,19 @@ impl Default for BytestringPool {
 
 impl BytestringPool {
     pub fn new() -> Self {
-        Self(Rc::new(RefCell::new(ByteInterner::with_capacity(
+        Self(Arc::new(Mutex::new(ByteInterner::with_capacity(
             STRING_POOL_CAPACITY,
         ))))
     }
 
     #[inline]
     pub fn get_or_intern(&mut self, bytes: &[u8]) -> Sym {
-        self.0.borrow_mut().get_or_intern(bytes)
+        self.0.lock().unwrap().get_or_intern(bytes)
     }
 
     #[inline]
     pub fn resolve(&self, s: Sym) -> Arc<[u8]> {
-        self.0.borrow().resolve(s)
+        self.0.lock().unwrap().resolve(s)
     }
 }
 
@@ -219,7 +217,7 @@ mod tests {
         let mut pool2 = pool1.clone();
         let sym2 = pool2.get_or_intern(b"test");
 
-        // Cloned pool shares the same interner (Rc)
+        // Cloned pool shares the same interner (Arc)
         assert_eq!(sym1, sym2);
     }
 
