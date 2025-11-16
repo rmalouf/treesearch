@@ -58,13 +58,13 @@ impl From<std::str::Utf8Error> for ParseError {
 }
 
 /// CoNLL-U reader that iterates over sentences
-pub struct CoNLLUReader<R: BufRead> {
+pub struct TreeIterator<R: BufRead> {
     reader: R,
     line_num: usize,
     string_pool: BytestringPool,
 }
 
-impl<R: BufRead> CoNLLUReader<R> {
+impl<R: BufRead> TreeIterator<R> {
     /// Parse accumulated lines into a Tree
     pub fn parse_tree(
         &mut self,
@@ -231,7 +231,7 @@ fn open_file(path: &Path) -> std::io::Result<Box<dyn Read>> {
     }
 }
 
-impl CoNLLUReader<BufReader<Box<dyn Read>>> {
+impl TreeIterator<BufReader<Box<dyn Read>>> {
     /// Create a reader from a file path (transparently handles gzip compression)
     pub fn from_file(path: &Path) -> std::io::Result<Self> {
         let file = open_file(path)?;
@@ -244,7 +244,7 @@ impl CoNLLUReader<BufReader<Box<dyn Read>>> {
     }
 }
 
-impl CoNLLUReader<BufReader<std::io::Cursor<String>>> {
+impl TreeIterator<BufReader<std::io::Cursor<String>>> {
     /// Create a reader from a string
     pub fn from_string(text: &str) -> Self {
         let cursor = std::io::Cursor::new(text.to_string());
@@ -257,7 +257,7 @@ impl CoNLLUReader<BufReader<std::io::Cursor<String>>> {
     }
 }
 
-impl<R: BufRead> Iterator for CoNLLUReader<R> {
+impl<R: BufRead> Iterator for TreeIterator<R> {
     type Item = Result<Tree, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -423,7 +423,7 @@ mod tests {
 
 "#;
 
-        let mut reader = CoNLLUReader::from_string(conllu);
+        let mut reader = TreeIterator::from_string(conllu);
         let tree = reader.next().unwrap().unwrap();
 
         assert_eq!(tree.words.len(), 4);
