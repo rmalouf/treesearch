@@ -21,6 +21,7 @@ flate2 = { version = "1.1", features = ["zlib-rs"] }
 mimalloc = { version = "0.1", features = ["v3"] }
 atoi = "2.0"
 hashbrown = "0.16"
+glob = "0.3"
 
 [features]
 # Default features for Rust-only builds
@@ -33,6 +34,7 @@ extension-module = ["pyo3/extension-module"]
 # Testing utilities
 #criterion = "0.7"
 divan = "0.1"
+tempfile = "3"
 
 [profile.release]
 opt-level = 3

@@ -1,7 +1,7 @@
 //! Example demonstrating the iterator interfaces
 
 use std::path::Path;
-use treesearch::{MatchIterator, TreeIterator, parse_query};
+use treesearch::{MatchIterator, MultiFileMatchIterator, MultiFileTreeIterator, TreeIterator, parse_query};
 
 fn main() {
     println!("=== TreeIterator Example ===\n");
@@ -93,5 +93,68 @@ fn main() {
         }
     } else {
         println!("To test file reading, run: cargo run --example iterators <file.conllu>");
+    }
+
+    // Example 5: Multi-file tree iterator with glob patterns
+    println!("\n=== Multi-File Tree Iterator Example ===\n");
+
+    // Check if a glob pattern is provided as second argument
+    if let Some(glob_pattern) = std::env::args().nth(2) {
+        println!("Searching for files matching: {}", glob_pattern);
+        match MultiFileTreeIterator::from_glob(&glob_pattern) {
+            Ok(trees) => {
+                let mut file_counts = std::collections::HashMap::new();
+                for (path, tree_result) in trees {
+                    if tree_result.is_ok() {
+                        *file_counts.entry(path).or_insert(0) += 1;
+                    }
+                }
+
+                println!("Found {} files:", file_counts.len());
+                for (path, count) in file_counts {
+                    println!("  {:?}: {} trees", path.file_name().unwrap(), count);
+                }
+            }
+            Err(e) => {
+                eprintln!("Error with glob pattern: {}", e);
+            }
+        }
+    } else {
+        println!("To test multi-file iteration, run:");
+        println!("  cargo run --example iterators <file> <glob-pattern>");
+        println!("  Example: cargo run --example iterators '' 'examples/*.conll*'");
+    }
+
+    // Example 6: Multi-file match iterator
+    println!("\n=== Multi-File Match Iterator Example ===\n");
+
+    if let Some(glob_pattern) = std::env::args().nth(2) {
+        let pattern = parse_query("V [pos=\"VERB\"];").expect("Failed to parse query");
+
+        match MultiFileMatchIterator::from_glob(&glob_pattern, pattern) {
+            Ok(matches) => {
+                let mut match_counts = std::collections::HashMap::new();
+                for (path, _tree, _match) in matches {
+                    *match_counts.entry(path).or_insert(0) += 1;
+                }
+
+                if match_counts.is_empty() {
+                    println!("No matches found across files");
+                } else {
+                    println!("Found matches in {} files:", match_counts.len());
+                    for (path, count) in match_counts.iter().take(5) {
+                        println!("  {:?}: {} matches", path.file_name().unwrap(), count);
+                    }
+                    if match_counts.len() > 5 {
+                        println!("  ... and {} more files", match_counts.len() - 5);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Error with glob pattern: {}", e);
+            }
+        }
+    } else {
+        println!("Provide a glob pattern to search for verbs across multiple files");
     }
 }
