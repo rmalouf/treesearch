@@ -309,28 +309,34 @@ pub struct ByteInterner {
 
 ---
 
-## Implementation Strategy
+## Implementation Results
 
-### Phase 1: Critical Path (Expected 2-3× speedup)
-1. ✅ Reuse line buffer (#1)
-2. ✅ Fix bs_trim redundancy (#2)
-3. ✅ Parse immediately instead of store-then-parse (#3)
-4. ✅ Add inline hints (#6)
+### ✅ Completed Optimizations
 
-**Goal**: Reduce parsing overhead by 50-66%.
+**Phase 1: Critical Path - IMPLEMENTED**
+1. ✅ Reuse line buffer (#1) - Combined with #3
+2. ✅ Fix bs_trim redundancy (#2) - **8.5% speedup**
+3. ✅ Parse immediately instead of store-then-parse (#3) - **30.6% total speedup from baseline**
 
-### Phase 2: Parallelism Preparation (Expected 1.5-2× additional speedup)
-5. ✅ Thread-local string pools (#4 Option A)
-6. ✅ Efficient field splitting with memchr (#5)
-7. ✅ Pre-allocate Features vec (#7)
+**Combined Result (commits 40360c9, 4b92535):**
+- **23.5% faster** (4.024s → 3.08s on COHA benchmark)
+- **60% fewer allocations** (62.5M → 24.7M)
+- **38% less memory** (12.47 GB → 7.63 GB)
 
-**Goal**: Enable efficient parallel processing without contention.
+### ❌ Rejected Optimizations
 
-### Phase 3: Fine-tuning (Expected 10-20% additional speedup)
-8. ⏳ Hash optimization for small strings (#8)
-9. ⏳ Inline compile_tree into parsing (#10)
+4. ✅ Thread-local string pools (#4) - **Already implemented** (each TreeIterator has own pool)
+5. ❌ Efficient field splitting with memchr (#5) - **38% SLOWER** due to Vec allocation overhead
+6. ❌ Add inline hints (#6) - **No measurable impact** - compiler already optimizing well
+7. ⏳ Pre-allocate Features vec (#7) - Not attempted (diminishing returns)
+8. ❌ Hash optimization for small strings (#8) - **78% SLOWER** due to poor hash distribution
 
-**Goal**: Squeeze out remaining performance.
+### Key Lessons Learned
+
+1. **Allocation elimination dominates**: Buffer reuse and single-pass parsing provided biggest wins
+2. **Trust FxHasher**: Extremely fast, direct u64 interpretation causes hash collisions
+3. **SIMD isn't free**: memchr gains overwhelmed by Vec allocation costs
+4. **Compiler is smart**: Manual inlining didn't help
 
 ---
 
