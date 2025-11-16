@@ -26,19 +26,6 @@ impl TreeIterator<std::io::BufReader<Box<dyn std::io::Read>>> {
     /// Create a tree iterator from a file path
     ///
     /// Automatically detects and handles gzip-compressed files.
-    ///
-    /// # Example
-    /// ```no_run
-    /// use treesearch::TreeIterator;
-    /// use std::path::Path;
-    ///
-    /// let path = Path::new("corpus.conllu");
-    /// let trees = TreeIterator::from_file(path).unwrap();
-    /// for tree_result in trees {
-    ///     let tree = tree_result.unwrap();
-    ///     // Process tree...
-    /// }
-    /// ```
     pub fn from_file(path: &Path) -> std::io::Result<Self> {
         let reader = CoNLLUReader::from_file(path)?;
         Ok(Self { reader })
@@ -47,14 +34,6 @@ impl TreeIterator<std::io::BufReader<Box<dyn std::io::Read>>> {
 
 impl TreeIterator<std::io::BufReader<std::io::Cursor<String>>> {
     /// Create a tree iterator from a string
-    ///
-    /// # Example
-    /// ```
-    /// use treesearch::TreeIterator;
-    ///
-    /// let conllu = "1\tThe\tthe\tDET\tDT\t_\t2\tdet\t_\t_\n\n";
-    /// let trees = TreeIterator::from_string(conllu);
-    /// ```
     pub fn from_string(text: &str) -> Self {
         let reader = CoNLLUReader::from_string(text);
         Self { reader }
@@ -83,20 +62,6 @@ pub struct MatchIterator<R: BufRead> {
 
 impl MatchIterator<std::io::BufReader<Box<dyn std::io::Read>>> {
     /// Create a match iterator from a file and pattern
-    ///
-    /// # Example
-    /// ```no_run
-    /// use treesearch::{MatchIterator, parse_query};
-    /// use std::path::Path;
-    ///
-    /// let path = Path::new("corpus.conllu");
-    /// let pattern = parse_query("V [pos=\"VERB\"];").unwrap();
-    /// let matches = MatchIterator::from_file(path, pattern).unwrap();
-    ///
-    /// for (tree_idx, tree, match_) in matches {
-    ///     println!("Found match in tree {}: {:?}", tree_idx, match_);
-    /// }
-    /// ```
     pub fn from_file(path: &Path, pattern: Pattern) -> std::io::Result<Self> {
         let trees = TreeIterator::from_file(path)?;
         Ok(Self {
@@ -111,19 +76,6 @@ impl MatchIterator<std::io::BufReader<Box<dyn std::io::Read>>> {
 
 impl MatchIterator<std::io::BufReader<std::io::Cursor<String>>> {
     /// Create a match iterator from a string and pattern
-    ///
-    /// # Example
-    /// ```
-    /// use treesearch::{MatchIterator, parse_query};
-    ///
-    /// let conllu = "1\thelped\thelp\tVERB\tVBD\t_\t0\troot\t_\t_\n\n";
-    /// let pattern = parse_query("V [lemma=\"help\"];").unwrap();
-    /// let matches = MatchIterator::from_string(conllu, pattern);
-    ///
-    /// for (tree_idx, tree, match_) in matches {
-    ///     println!("Found match in tree {}: {:?}", tree_idx, match_);
-    /// }
-    /// ```
     pub fn from_string(text: &str, pattern: Pattern) -> Self {
         let trees = TreeIterator::from_string(text);
         Self {
@@ -185,19 +137,6 @@ pub struct MultiFileTreeIterator {
 
 impl MultiFileTreeIterator {
     /// Create a multi-file tree iterator from a glob pattern
-    ///
-    /// # Example
-    /// ```no_run
-    /// use treesearch::MultiFileTreeIterator;
-    ///
-    /// let trees = MultiFileTreeIterator::from_glob("data/*.conllu").unwrap();
-    /// for (path, tree_result) in trees {
-    ///     match tree_result {
-    ///         Ok(tree) => println!("Tree from {:?}: {} words", path, tree.words.len()),
-    ///         Err(e) => eprintln!("Parse error in {:?}: {}", path, e),
-    ///     }
-    /// }
-    /// ```
     pub fn from_glob(pattern: &str) -> Result<Self, glob::PatternError> {
         let mut file_paths: Vec<PathBuf> = glob::glob(pattern)?
             .filter_map(Result::ok)
@@ -214,18 +153,6 @@ impl MultiFileTreeIterator {
     }
 
     /// Create a multi-file tree iterator from explicit file paths
-    ///
-    /// # Example
-    /// ```no_run
-    /// use treesearch::MultiFileTreeIterator;
-    /// use std::path::PathBuf;
-    ///
-    /// let paths = vec![
-    ///     PathBuf::from("file1.conllu"),
-    ///     PathBuf::from("file2.conllu"),
-    /// ];
-    /// let trees = MultiFileTreeIterator::from_paths(paths);
-    /// ```
     pub fn from_paths(file_paths: Vec<PathBuf>) -> Self {
         Self {
             file_paths,
@@ -297,18 +224,6 @@ pub struct MultiFileMatchIterator {
 
 impl MultiFileMatchIterator {
     /// Create a multi-file match iterator from a glob pattern
-    ///
-    /// # Example
-    /// ```no_run
-    /// use treesearch::{MultiFileMatchIterator, parse_query};
-    ///
-    /// let pattern = parse_query("V [pos=\"VERB\"];").unwrap();
-    /// let matches = MultiFileMatchIterator::from_glob("data/*.conllu", pattern).unwrap();
-    ///
-    /// for (path, tree, match_) in matches {
-    ///     println!("Match in {:?}: {:?}", path, match_);
-    /// }
-    /// ```
     pub fn from_glob(glob_pattern: &str, pattern: Pattern) -> Result<Self, glob::PatternError> {
         let mut file_paths: Vec<PathBuf> = glob::glob(glob_pattern)?
             .filter_map(Result::ok)
@@ -326,19 +241,6 @@ impl MultiFileMatchIterator {
     }
 
     /// Create a multi-file match iterator from explicit file paths
-    ///
-    /// # Example
-    /// ```no_run
-    /// use treesearch::{MultiFileMatchIterator, parse_query};
-    /// use std::path::PathBuf;
-    ///
-    /// let pattern = parse_query("V [pos=\"VERB\"];").unwrap();
-    /// let paths = vec![
-    ///     PathBuf::from("file1.conllu"),
-    ///     PathBuf::from("file2.conllu"),
-    /// ];
-    /// let matches = MultiFileMatchIterator::from_paths(paths, pattern);
-    /// ```
     pub fn from_paths(file_paths: Vec<PathBuf>, pattern: Pattern) -> Self {
         Self {
             file_paths,
