@@ -223,3 +223,5 @@ This is for corpus linguistics research, where researchers need to find specific
 - **Repository**: https://github.com/rmalouf/treesearch
 - **CoNLL-U format**: https://universaldependencies.org/format.html
 - **Related work**: This project builds on lessons from existing treebank query tools but prioritizes performance for very large corpora.
+- to run in profiler: cargo instruments -t time --example latwp_par --release
+- to list profiler templates: cargo instruments -l

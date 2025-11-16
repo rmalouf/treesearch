@@ -99,16 +99,6 @@ pub fn bs_split_once(bytes: &[u8], delim: u8) -> Option<(&[u8], &[u8])> {
     Some((pair.next()?, pair.next()?))
 }
 
-// Remove line-feed from end of a bytestring
-#[inline]
-pub fn bs_trim(bytes: &[u8]) -> &[u8] {
-    if let Some(idx) = bytes.iter().position(|b| *b == b'\n') {
-        &bytes[..idx]
-    } else {
-        bytes
-    }
-}
-
 #[inline]
 pub fn bs_atoi(bytes: &[u8]) -> Option<usize> {
     let mut n: usize = 0;
@@ -256,26 +246,6 @@ mod tests {
             bs_split_once(b"field1\tfield2", b'\t'),
             Some((b"field1" as &[u8], b"field2" as &[u8]))
         );
-    }
-
-    // ===== bs_trim Tests =====
-
-    #[test]
-    fn test_trim() {
-        // With newline at end
-        assert_eq!(bs_trim(b"hello\n"), b"hello");
-        assert_eq!(bs_trim(b"\n"), b"");
-
-        // Without newline
-        assert_eq!(bs_trim(b"hello"), b"hello");
-        assert_eq!(bs_trim(b""), b"");
-
-        // Newline in middle (truncates at first \n)
-        assert_eq!(bs_trim(b"hello\nworld"), b"hello");
-        assert_eq!(bs_trim(b"hello\n\n"), b"hello");
-
-        // Carriage return (only removes \n, not \r)
-        assert_eq!(bs_trim(b"hello\r\n"), b"hello\r");
     }
 
     // ===== bs_atoi Tests =====
