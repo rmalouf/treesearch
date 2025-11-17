@@ -6,7 +6,7 @@
 //! - Iterating over trees from multiple files (glob patterns)
 //! - Searching patterns across multiple files
 
-use crate::conllu::{TreeIterator, ParseError};
+use crate::conllu::{ParseError, TreeIterator};
 use crate::pattern::Pattern;
 use crate::searcher::{Match, search};
 use crate::tree::Tree;
@@ -34,12 +34,10 @@ impl MatchIterator {
     }
 
     fn new<R: BufRead + 'static>(trees: TreeIterator<R>, pattern: Pattern) -> Self {
-        let inner = trees
-            .filter_map(Result::ok)
-            .flat_map(move |tree| {
-                let matches: Vec<Match> = search(&tree, &pattern).collect();
-                matches.into_iter().map(move |m| (tree.clone(), m))
-            });
+        let inner = trees.filter_map(Result::ok).flat_map(move |tree| {
+            let matches: Vec<Match> = search(&tree, &pattern).collect();
+            matches.into_iter().map(move |m| (tree.clone(), m))
+        });
 
         Self {
             inner: Box::new(inner),
@@ -92,13 +90,13 @@ impl MultiFileTreeIterator {
         use rayon::prelude::*;
         self.file_paths
             .into_par_iter()
-            .flat_map_iter(|path| {
-                match TreeIterator::from_file(&path) {
-                    Ok(reader) => Box::new(reader) as Box<dyn Iterator<Item = Result<Tree, ParseError>>>,
-                    Err(e) => {
-                        eprintln!("Warning: Failed to open {:?}: {}", path, e);
-                        Box::new(std::iter::empty())
-                    }
+            .flat_map_iter(|path| match TreeIterator::from_file(&path) {
+                Ok(reader) => {
+                    Box::new(reader) as Box<dyn Iterator<Item = Result<Tree, ParseError>>>
+                }
+                Err(e) => {
+                    eprintln!("Warning: Failed to open {:?}: {}", path, e);
+                    Box::new(std::iter::empty())
                 }
             })
     }
@@ -173,17 +171,15 @@ impl MultiFileMatchIterator {
     pub fn par_iter(self) -> impl rayon::iter::ParallelIterator<Item = (Tree, Match)> {
         use rayon::prelude::*;
         let pattern = self.pattern;
-        self.file_paths
-            .into_par_iter()
-            .flat_map_iter(move |path| {
-                match MatchIterator::from_file(&path, pattern.clone()) {
-                    Ok(iter) => Box::new(iter) as Box<dyn Iterator<Item = (Tree, Match)>>,
-                    Err(e) => {
-                        eprintln!("Warning: Failed to open {:?}: {}", path, e);
-                        Box::new(std::iter::empty())
-                    }
+        self.file_paths.into_par_iter().flat_map_iter(move |path| {
+            match MatchIterator::from_file(&path, pattern.clone()) {
+                Ok(iter) => Box::new(iter) as Box<dyn Iterator<Item = (Tree, Match)>>,
+                Err(e) => {
+                    eprintln!("Warning: Failed to open {:?}: {}", path, e);
+                    Box::new(std::iter::empty())
                 }
-            })
+            }
+        })
     }
 }
 

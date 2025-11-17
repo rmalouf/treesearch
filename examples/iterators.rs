@@ -2,7 +2,7 @@
 
 use std::path::Path;
 use treesearch::{
-    TreeIterator, MatchIterator, MultiFileMatchIterator, MultiFileTreeIterator, parse_query,
+    MatchIterator, MultiFileMatchIterator, MultiFileTreeIterator, TreeIterator, parse_query,
 };
 
 fn main() {

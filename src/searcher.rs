@@ -8,27 +8,27 @@
 //! TODO: Implement CSP solver
 
 use crate::RelationType;
-use crate::parser::parse_query;
 use crate::pattern::{Constraint, Pattern};
+use crate::query::parse_query;
 use crate::tree::Word;
 use crate::tree::{Tree, WordId};
 
 /// Error during search
 #[derive(Debug)]
 pub enum SearchError {
-    ParseError(crate::parser::ParseError),
+    QueryError(crate::query::QueryError),
 }
 
-impl From<crate::parser::ParseError> for SearchError {
-    fn from(e: crate::parser::ParseError) -> Self {
-        SearchError::ParseError(e)
+impl From<crate::query::QueryError> for SearchError {
+    fn from(e: crate::query::QueryError) -> Self {
+        SearchError::QueryError(e)
     }
 }
 
 impl std::fmt::Display for SearchError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SearchError::ParseError(e) => write!(f, "Parse error: {}", e),
+            SearchError::QueryError(e) => write!(f, "Parse error: {}", e),
         }
     }
 }
@@ -402,7 +402,7 @@ mod tests {
         let result = search_query(&tree, "V [invalid syntax");
         assert!(result.is_err());
         match result {
-            Err(SearchError::ParseError(_)) => {} // Expected
+            Err(SearchError::QueryError(_)) => {} // Expected
             _ => panic!("Expected ParseError"),
         }
     }
