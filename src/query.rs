@@ -13,34 +13,34 @@ struct QueryParser;
 
 /// Error type for parse failures
 #[derive(Debug)]
-pub struct ParseError {
+pub struct QueryError {
     pub message: String,
 }
 
-impl std::fmt::Display for ParseError {
+impl std::fmt::Display for QueryError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Parse error: {}", self.message)
     }
 }
 
-impl std::error::Error for ParseError {}
+impl std::error::Error for QueryError {}
 
-impl From<pest::error::Error<Rule>> for ParseError {
+impl From<pest::error::Error<Rule>> for QueryError {
     fn from(err: pest::error::Error<Rule>) -> Self {
-        ParseError {
+        QueryError {
             message: err.to_string(),
         }
     }
 }
 
 /// Parse a query string into a Pattern
-pub fn parse_query(input: &str) -> Result<Pattern, ParseError> {
+pub fn parse_query(input: &str) -> Result<Pattern, QueryError> {
     let mut pairs = QueryParser::parse(Rule::query, input)?;
     let mut pattern = Pattern::new();
 
     // Get the query rule (there should be exactly one)
     let Some(query_pair) = pairs.next() else {
-        return Err(ParseError {
+        return Err(QueryError {
             message: "No query found".to_string(),
         });
     };
@@ -51,7 +51,7 @@ pub fn parse_query(input: &str) -> Result<Pattern, ParseError> {
             Rule::statement => {
                 // statement contains either node_decl or edge_decl
                 let Some(inner) = statement.into_inner().next() else {
-                    return Err(ParseError {
+                    return Err(QueryError {
                         message: "Empty statement".to_string(),
                     });
                 };
@@ -78,18 +78,18 @@ pub fn parse_query(input: &str) -> Result<Pattern, ParseError> {
 }
 
 /// Parse a variable declaration: Name [constraint, constraint];
-fn parse_var_decl(pair: pest::iterators::Pair<Rule>) -> Result<PatternVar, ParseError> {
+fn parse_var_decl(pair: pest::iterators::Pair<Rule>) -> Result<PatternVar, QueryError> {
     let mut inner = pair.into_inner();
 
     let Some(ident_pair) = inner.next() else {
-        return Err(ParseError {
+        return Err(QueryError {
             message: "Expected identifier in variable declaration".to_string(),
         });
     };
     let var_name = ident_pair.as_str().to_string();
 
     let Some(constraint_list) = inner.next() else {
-        return Err(ParseError {
+        return Err(QueryError {
             message: "Expected constraint list".to_string(),
         });
     };
@@ -100,7 +100,7 @@ fn parse_var_decl(pair: pest::iterators::Pair<Rule>) -> Result<PatternVar, Parse
 }
 
 /// Parse constraint list: may be empty or comma-separated constraints
-fn parse_constraint_list(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, ParseError> {
+fn parse_constraint_list(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, QueryError> {
     let constraints: Vec<Constraint> = pair
         .into_inner()
         .map(parse_constraint)
@@ -114,25 +114,25 @@ fn parse_constraint_list(pair: pest::iterators::Pair<Rule>) -> Result<Constraint
 }
 
 /// Parse a single constraint: key="value"
-fn parse_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, ParseError> {
+fn parse_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, QueryError> {
     let mut inner = pair.into_inner();
 
     let Some(key_pair) = inner.next() else {
-        return Err(ParseError {
+        return Err(QueryError {
             message: "Expected constraint key".to_string(),
         });
     };
     let key = key_pair.as_str();
 
     let Some(value_pair) = inner.next() else {
-        return Err(ParseError {
+        return Err(QueryError {
             message: "Expected constraint value".to_string(),
         });
     };
 
     // Extract string from string_literal rule
     let Some(value_inner) = value_pair.into_inner().next() else {
-        return Err(ParseError {
+        return Err(QueryError {
             message: "Expected string inner".to_string(),
         });
     };
@@ -143,18 +143,18 @@ fn parse_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, Par
         "pos" => Ok(Constraint::POS(value)),
         "form" => Ok(Constraint::Form(value)),
         "deprel" => Ok(Constraint::DepRel(value)),
-        _ => Err(ParseError {
+        _ => Err(QueryError {
             message: format!("Unknown constraint key: {}", key),
         }),
     }
 }
 
 /// Parse edge declaration: Source -[label]-> Target; or Source -> Target;
-fn parse_edge_decl(pair: pest::iterators::Pair<Rule>) -> Result<EdgeConstraint, ParseError> {
+fn parse_edge_decl(pair: pest::iterators::Pair<Rule>) -> Result<EdgeConstraint, QueryError> {
     let mut inner = pair.into_inner();
 
     let Some(from_pair) = inner.next() else {
-        return Err(ParseError {
+        return Err(QueryError {
             message: "Expected source variable in edge constraint".to_string(),
         });
     };
@@ -162,7 +162,7 @@ fn parse_edge_decl(pair: pest::iterators::Pair<Rule>) -> Result<EdgeConstraint, 
 
     // The next element could be edge_label (if present) or the target variable
     let Some(next) = inner.next() else {
-        return Err(ParseError {
+        return Err(QueryError {
             message: "Expected edge label or target variable".to_string(),
         });
     };
@@ -171,7 +171,7 @@ fn parse_edge_decl(pair: pest::iterators::Pair<Rule>) -> Result<EdgeConstraint, 
         // We have a label, so get the target variable next
         let label_str = next.as_str().to_string();
         let Some(to_pair) = inner.next() else {
-            return Err(ParseError {
+            return Err(QueryError {
                 message: "Expected target variable in edge constraint".to_string(),
             });
         };

@@ -2,10 +2,9 @@
 //!
 //! Run with: cargo run --example latwp
 
-use treesearch::{parse_query, MultiFileMatchIterator};
+use treesearch::{MultiFileMatchIterator, parse_query};
 
 fn main() {
-
     let query = r#"
             N1 [pos="NOUN"];
             Of [form="of"];
