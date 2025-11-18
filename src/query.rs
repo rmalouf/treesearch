@@ -4,6 +4,7 @@
 
 use pest::Parser;
 use pest_derive::Parser;
+use thiserror::Error;
 
 use crate::pattern::{Constraint, EdgeConstraint, Pattern, PatternVar, RelationType};
 
@@ -11,26 +12,14 @@ use crate::pattern::{Constraint, EdgeConstraint, Pattern, PatternVar, RelationTy
 #[grammar = "query.pest"]
 struct QueryParser;
 
-/// Error type for parse failures
-#[derive(Debug)]
-pub struct QueryError {
-    pub message: String,
-}
+/// Error type for query parsing failures
+#[derive(Debug, Error)]
+pub enum QueryError {
+    #[error("Query error: {0}")]
+    ParseError(#[from] pest::error::Error<Rule>),
 
-impl std::fmt::Display for QueryError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Parse error: {}", self.message)
-    }
-}
-
-impl std::error::Error for QueryError {}
-
-impl From<pest::error::Error<Rule>> for QueryError {
-    fn from(err: pest::error::Error<Rule>) -> Self {
-        QueryError {
-            message: err.to_string(),
-        }
-    }
+    #[error("Query error: Unknown constraint key: {0}")]
+    UnknownConstraintKey(String),
 }
 
 /// Parse a query string into a Pattern
@@ -39,33 +28,25 @@ pub fn parse_query(input: &str) -> Result<Pattern, QueryError> {
     let mut pattern = Pattern::new();
 
     // Get the query rule (there should be exactly one)
-    let Some(query_pair) = pairs.next() else {
-        return Err(QueryError {
-            message: "No query found".to_string(),
-        });
-    };
+    let query_pair = pairs.next().unwrap();
 
     // Process all statements in the query
     for statement in query_pair.into_inner() {
         match statement.as_rule() {
             Rule::statement => {
                 // statement contains either node_decl or edge_decl
-                let Some(inner) = statement.into_inner().next() else {
-                    return Err(QueryError {
-                        message: "Empty statement".to_string(),
-                    });
-                };
-
-                match inner.as_rule() {
-                    Rule::node_decl => {
-                        let var = parse_var_decl(inner)?;
-                        pattern.add_var(var);
+                if let Some(inner) = statement.into_inner().next() {
+                    match inner.as_rule() {
+                        Rule::node_decl => {
+                            let var = parse_var_decl(inner)?;
+                            pattern.add_var(var);
+                        }
+                        Rule::edge_decl => {
+                            let edge_constraint = parse_edge_decl(inner)?;
+                            pattern.add_edge_constraint(edge_constraint);
+                        }
+                        _ => {}
                     }
-                    Rule::edge_decl => {
-                        let edge_constraint = parse_edge_decl(inner)?;
-                        pattern.add_edge_constraint(edge_constraint);
-                    }
-                    _ => {}
                 }
             }
             Rule::EOI => {} // End of input
@@ -73,7 +54,7 @@ pub fn parse_query(input: &str) -> Result<Pattern, QueryError> {
         }
     }
 
-    pattern.compile_pattern();
+    pattern.compile_pattern()?;
     Ok(pattern)
 }
 
@@ -81,19 +62,10 @@ pub fn parse_query(input: &str) -> Result<Pattern, QueryError> {
 fn parse_var_decl(pair: pest::iterators::Pair<Rule>) -> Result<PatternVar, QueryError> {
     let mut inner = pair.into_inner();
 
-    let Some(ident_pair) = inner.next() else {
-        return Err(QueryError {
-            message: "Expected identifier in variable declaration".to_string(),
-        });
-    };
+    let ident_pair = inner.next().unwrap();
     let var_name = ident_pair.as_str().to_string();
 
-    let Some(constraint_list) = inner.next() else {
-        return Err(QueryError {
-            message: "Expected constraint list".to_string(),
-        });
-    };
-
+    let constraint_list = inner.next().unwrap();
     let constraints = parse_constraint_list(constraint_list)?;
 
     Ok(PatternVar::new(&var_name, constraints))
@@ -117,35 +89,15 @@ fn parse_constraint_list(pair: pest::iterators::Pair<Rule>) -> Result<Constraint
 fn parse_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, QueryError> {
     let mut inner = pair.into_inner();
 
-    let Some(key_pair) = inner.next() else {
-        return Err(QueryError {
-            message: "Expected constraint key".to_string(),
-        });
-    };
-    let key = key_pair.as_str();
-
-    let Some(value_pair) = inner.next() else {
-        return Err(QueryError {
-            message: "Expected constraint value".to_string(),
-        });
-    };
-
-    // Extract string from string_literal rule
-    let Some(value_inner) = value_pair.into_inner().next() else {
-        return Err(QueryError {
-            message: "Expected string inner".to_string(),
-        });
-    };
-    let value = value_inner.as_str().to_string();
+    let key = inner.next().unwrap().as_str();
+    let value = inner.next().unwrap().into_inner().as_str().to_string();
 
     match key {
         "lemma" => Ok(Constraint::Lemma(value)),
         "pos" => Ok(Constraint::POS(value)),
         "form" => Ok(Constraint::Form(value)),
         "deprel" => Ok(Constraint::DepRel(value)),
-        _ => Err(QueryError {
-            message: format!("Unknown constraint key: {}", key),
-        }),
+        _ => Err(QueryError::UnknownConstraintKey(key.to_string())),
     }
 }
 
@@ -153,29 +105,15 @@ fn parse_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, Que
 fn parse_edge_decl(pair: pest::iterators::Pair<Rule>) -> Result<EdgeConstraint, QueryError> {
     let mut inner = pair.into_inner();
 
-    let Some(from_pair) = inner.next() else {
-        return Err(QueryError {
-            message: "Expected source variable in edge constraint".to_string(),
-        });
-    };
-    let from = from_pair.as_str().to_string();
+    let from = inner.next().unwrap().as_str().to_string();
 
     // The next element could be edge_label (if present) or the target variable
-    let Some(next) = inner.next() else {
-        return Err(QueryError {
-            message: "Expected edge label or target variable".to_string(),
-        });
-    };
+    let next = inner.next().unwrap();
 
     let (label, to) = if next.as_rule() == Rule::edge_label {
         // We have a label, so get the target variable next
         let label_str = next.as_str().to_string();
-        let Some(to_pair) = inner.next() else {
-            return Err(QueryError {
-                message: "Expected target variable in edge constraint".to_string(),
-            });
-        };
-        let to_var = to_pair.as_str().to_string();
+        let to_var = inner.next().unwrap().as_str().to_string();
         (Some(label_str), to_var)
     } else {
         // No label, this is the target variable
@@ -195,6 +133,12 @@ fn parse_edge_decl(pair: pest::iterators::Pair<Rule>) -> Result<EdgeConstraint, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_query_errors() {
+        let query = "";
+        let pattern = parse_query(query).unwrap();
+    }
 
     #[test]
     fn test_parse_empty_constraint() {
