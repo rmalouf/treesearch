@@ -12,28 +12,15 @@ use crate::pattern::{Constraint, Pattern};
 use crate::query::parse_query;
 use crate::tree::Word;
 use crate::tree::{Tree, WordId};
+use thiserror::Error;
 
 /// Error during search
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum SearchError {
-    QueryError(crate::query::QueryError),
+    /// Query parsing error
+    #[error("Query error: {0}")]
+    QueryError(#[from] crate::query::QueryError),
 }
-
-impl From<crate::query::QueryError> for SearchError {
-    fn from(e: crate::query::QueryError) -> Self {
-        SearchError::QueryError(e)
-    }
-}
-
-impl std::fmt::Display for SearchError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SearchError::QueryError(e) => write!(f, "Parse error: {}", e),
-        }
-    }
-}
-
-impl std::error::Error for SearchError {}
 
 /// A match is a binding from pattern variable IDs (VarId) to tree word IDs (WordId)
 pub type Match = Vec<WordId>;
