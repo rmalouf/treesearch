@@ -1,3 +1,5 @@
+#![allow(clippy::large_enum_variant, clippy::result_large_err)]
+
 //! Treesearch: High-performance dependency tree pattern matching
 //!
 //! A toolkit for querying linguistic dependency parses at scale.
