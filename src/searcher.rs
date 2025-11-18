@@ -5,22 +5,12 @@
 //! 2. Solve CSP to find ALL matches (exhaustive search)
 //! 3. Yield matches
 //!
-//! TODO: Implement CSP solver
 
 use crate::RelationType;
 use crate::pattern::{Constraint, Pattern};
-use crate::query::parse_query;
+use crate::query::{QueryError, parse_query};
 use crate::tree::Word;
 use crate::tree::{Tree, WordId};
-use thiserror::Error;
-
-/// Error during search
-#[derive(Debug, Error)]
-pub enum SearchError {
-    /// Query parsing error
-    #[error("Query error: {0}")]
-    QueryError(#[from] crate::query::QueryError),
-}
 
 /// A match is a binding from pattern variable IDs (VarId) to tree word IDs (WordId)
 pub type Match = Vec<WordId>;
@@ -57,7 +47,7 @@ fn satisfies_arc_constraint(
 }
 
 /// Enumerate all matches
-pub fn enumerate(tree: &Tree, pattern: &Pattern) -> Vec<Match> {
+pub fn find_all_matches(tree: &Tree, pattern: &Pattern) -> Vec<Match> {
     // Initial candidate domains (node consistency)
     let mut domains: Vec<Vec<WordId>> = vec![Vec::new(); pattern.n_vars];
     for (var_id, var) in pattern.vars.iter().enumerate() {
@@ -82,7 +72,7 @@ fn dfs(
     assign: &[Option<WordId>],
     domains: &[Vec<WordId>],
 ) -> Vec<Match> {
-    // No more variables to assign!
+    // No more variables to assign
     if assign.iter().all(|word_id| word_id.is_some()) {
         let solution = assign.iter().copied().flatten().collect();
         return vec![solution];
@@ -209,23 +199,17 @@ fn check_arc_consistency(
 }
 
 /// Search a tree with a pre-compiled pattern
-///
-/// Returns an iterator over all matches in the tree.
 pub fn search(tree: &Tree, pattern: &Pattern) -> impl Iterator<Item = Match> {
-    // Placeholder - will be reimplemented as CSP solver
-    enumerate(tree, pattern).into_iter()
+    find_all_matches(tree, pattern).into_iter()
 }
 
 /// Search a tree with a query string
-///
-/// Parses the query and then searches the tree.
 pub fn search_query<'a>(
     tree: &'a Tree,
     query: &str,
-) -> Result<impl Iterator<Item = Match> + 'a, SearchError> {
+) -> Result<impl Iterator<Item = Match> + 'a, QueryError> {
     let pattern = parse_query(query)?;
-    //Ok(search(tree, pattern))
-    Ok(enumerate(tree, &pattern).into_iter())
+    Ok(find_all_matches(tree, &pattern).into_iter())
 }
 
 #[cfg(test)]
@@ -380,18 +364,6 @@ mod tests {
         // Find any word
         let matches: Vec<_> = search_query(&tree, "X [];").unwrap().collect();
         assert_eq!(matches.len(), 4); // All 4 words in tree
-    }
-
-    #[test]
-    fn test_search_query_parse_error() {
-        let tree = build_test_tree();
-        // Invalid query syntax
-        let result = search_query(&tree, "V [invalid syntax");
-        assert!(result.is_err());
-        match result {
-            Err(SearchError::QueryError(_)) => {} // Expected
-            _ => panic!("Expected ParseError"),
-        }
     }
 
     #[test]

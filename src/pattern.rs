@@ -3,7 +3,6 @@
 //! This module defines the AST for dependency tree patterns used
 //! in the CSP-based matching algorithm.
 
-use crate::query::QueryError;
 use std::collections::HashMap;
 use std::fmt::Debug;
 
@@ -124,7 +123,7 @@ impl Pattern {
         self.edge_constraints.push(edge_constraint);
     }
 
-    pub fn compile_pattern(&mut self) -> Result<(), QueryError> {
+    pub fn compile_pattern(&mut self) {
         assert!(!self.compiled, "Can't compile pattern more than once!");
 
         // Compile variables - build var_names mapping and initialize edge/required vectors
@@ -163,7 +162,6 @@ impl Pattern {
         }
 
         self.compiled = true;
-        Ok(())
     }
 
     /// Get the VarId of a variable by its name
