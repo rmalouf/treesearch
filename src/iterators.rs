@@ -60,7 +60,7 @@ impl Iterator for MatchIterator {
 /// across all files. Files are processed in sorted order for deterministic results.
 /// Files that fail to open are skipped with a warning to stderr.
 pub struct MultiFileTreeIterator {
-    file_paths: Vec<PathBuf>,
+    pub(crate) file_paths: Vec<PathBuf>,
     current_iter: Option<Box<dyn Iterator<Item = Result<Tree, ParseError>>>>,
     file_index: usize,
 }
@@ -139,8 +139,8 @@ impl Iterator for MultiFileTreeIterator {
 /// Files are processed in sorted order. Files that fail to open or trees that fail
 /// to parse are skipped with warnings to stderr.
 pub struct MultiFileMatchIterator {
-    file_paths: Vec<PathBuf>,
-    pattern: Pattern,
+    pub(crate) file_paths: Vec<PathBuf>,
+    pub(crate) pattern: Pattern,
     current_iter: Option<MatchIterator>,
     file_index: usize,
 }
