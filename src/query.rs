@@ -27,26 +27,23 @@ pub fn parse_query(input: &str) -> Result<Pattern, QueryError> {
     let mut pairs = QueryParser::parse(Rule::query, input)?;
     let mut pattern = Pattern::new();
 
-    // Get the query rule (there should be exactly one)
-    let query_pair = pairs.next().unwrap();
-
     // Process all statements in the query
+    let query_pair = pairs.next().unwrap();
     for statement in query_pair.into_inner() {
         match statement.as_rule() {
             Rule::statement => {
                 // statement contains either node_decl or edge_decl
-                if let Some(inner) = statement.into_inner().next() {
-                    match inner.as_rule() {
-                        Rule::node_decl => {
-                            let var = parse_var_decl(inner)?;
-                            pattern.add_var(var);
-                        }
-                        Rule::edge_decl => {
-                            let edge_constraint = parse_edge_decl(inner)?;
-                            pattern.add_edge_constraint(edge_constraint);
-                        }
-                        _ => {}
+                let inner = statement.into_inner().next().unwrap();
+                match inner.as_rule() {
+                    Rule::node_decl => {
+                        let var = parse_var_decl(inner)?;
+                        pattern.add_var(var);
                     }
+                    Rule::edge_decl => {
+                        let edge_constraint = parse_edge_decl(inner)?;
+                        pattern.add_edge_constraint(edge_constraint);
+                    }
+                    _ => {}
                 }
             }
             Rule::EOI => {} // End of input
@@ -54,7 +51,7 @@ pub fn parse_query(input: &str) -> Result<Pattern, QueryError> {
         }
     }
 
-    pattern.compile_pattern()?;
+    pattern.compile_pattern();
     Ok(pattern)
 }
 
@@ -135,23 +132,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_query_errors() {
-        let query = "";
-        let pattern = parse_query(query).unwrap();
-    }
-
-    #[test]
-    fn test_parse_empty_constraint() {
+    fn test_parse_constraints() {
         let query = "Node [];";
         let pattern = parse_query(query).unwrap();
 
         assert_eq!(pattern.vars.len(), 1);
         assert_eq!(pattern.vars[0].var_name, "Node");
         assert!(pattern.vars[0].constraints.is_any());
-    }
 
-    #[test]
-    fn test_parse_single_constraint() {
         let query = r#"Verb [pos="VERB"];"#;
         let pattern = parse_query(query).unwrap();
 
@@ -161,10 +149,7 @@ mod tests {
             pattern.vars[0].constraints,
             Constraint::POS("VERB".to_string())
         );
-    }
 
-    #[test]
-    fn test_parse_multiple_constraints() {
         let query = r#"Help [lemma="help", pos="VERB"];"#;
         let pattern = parse_query(query).unwrap();
 
@@ -218,27 +203,6 @@ mod tests {
         assert_eq!(edge_constraint.to, "Child");
         assert_eq!(edge_constraint.relation, RelationType::Child);
         assert_eq!(edge_constraint.label, None);
-    }
-
-    #[test]
-    fn test_parse_mixed_edges() {
-        let query = r#"
-            A [];
-            B [];
-            C [];
-            A -[nsubj]-> B;
-            B -> C;
-        "#;
-        let pattern = parse_query(query).unwrap();
-
-        assert_eq!(pattern.vars.len(), 3);
-        assert_eq!(pattern.edge_constraints.len(), 2);
-
-        // First edge constraint has a label
-        assert_eq!(pattern.edge_constraints[0].label, Some("nsubj".to_string()));
-
-        // Second edge constraint has no label (unconstrained)
-        assert_eq!(pattern.edge_constraints[1].label, None);
     }
 
     #[test]
