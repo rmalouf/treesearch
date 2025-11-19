@@ -3,17 +3,17 @@
 A toolkit for querying linguistic dependency parses at scale.
 
 Example usage:
-    >>> from treesearch import Pattern, MatchIterator
+    >>> import treesearch
     >>>
     >>> # Parse a query into a pattern
-    >>> pattern = Pattern.from_query('''
+    >>> pattern = treesearch.parse_query('''
     ...     Verb [pos="VERB"];
     ...     Noun [pos="NOUN"];
     ...     Verb -[nsubj]-> Noun;
     ... ''')
     >>>
     >>> # Search a single file
-    >>> for tree, match in MatchIterator.from_file("corpus.conllu", pattern):
+    >>> for tree, match in treesearch.search_file("corpus.conllu", pattern):
     ...     verb_id = match[0]  # First variable
     ...     noun_id = match[1]  # Second variable
     ...     verb = tree.get_word(verb_id)
@@ -21,8 +21,7 @@ Example usage:
     ...     print(f"{verb.form} -> {noun.form}")
     >>>
     >>> # Search multiple files in parallel
-    >>> from treesearch import MultiFileMatchIterator
-    >>> for tree, match in MultiFileMatchIterator.from_glob("data/*.conllu", pattern):
+    >>> for tree, match in treesearch.search_files("data/*.conllu", pattern):
     ...     # Process matches from all files
     ...     pass
 """
@@ -34,12 +33,17 @@ try:
     from .treesearch import (
         Tree,
         Word,
-        Match,
         Pattern,
-        search,
+        TreeIterator,
         MatchIterator,
         MultiFileTreeIterator,
         MultiFileMatchIterator,
+        parse_query,
+        search,
+        read_trees,
+        search_file,
+        read_trees_glob,
+        search_files,
     )
 except ImportError as e:
     # Provide helpful error message if native extension not built
@@ -54,10 +58,15 @@ except ImportError as e:
 __all__ = [
     "Tree",
     "Word",
-    "Match",
     "Pattern",
-    "search",
+    "TreeIterator",
     "MatchIterator",
     "MultiFileTreeIterator",
     "MultiFileMatchIterator",
+    "parse_query",
+    "search",
+    "read_trees",
+    "search_file",
+    "read_trees_glob",
+    "search_files",
 ]
