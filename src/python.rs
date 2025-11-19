@@ -15,7 +15,7 @@ use crate::iterators::{
 };
 use crate::pattern::Pattern as RustPattern;
 use crate::query::parse_query;
-use crate::searcher::{search, Match as RustMatch};
+use crate::searcher::search;
 use crate::tree::{Tree as RustTree, Word as RustWord};
 
 /// A dependency tree
@@ -220,7 +220,7 @@ fn py_search(tree: &PyTree, pattern: &PyPattern) -> Vec<Vec<usize>> {
 /// Iterator over trees from a single file
 #[pyclass(unsendable)]
 struct TreeIterator {
-    inner: Option<crate::conllu::TreeIterator>,
+    inner: Option<crate::conllu::TreeIterator<std::io::BufReader<Box<dyn std::io::Read>>>>,
 }
 
 #[pymethods]
@@ -506,6 +506,10 @@ fn treesearch(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTree>()?;
     m.add_class::<PyWord>()?;
     m.add_class::<PyPattern>()?;
+    m.add_class::<TreeIterator>()?;
+    m.add_class::<MatchIterator>()?;
+    m.add_class::<MultiFileTreeIterator>()?;
+    m.add_class::<MultiFileMatchIterator>()?;
 
     // Functions
     m.add_function(wrap_pyfunction!(py_parse_query, m)?)?;

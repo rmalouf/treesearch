@@ -26,6 +26,11 @@ keywords = ["nlp", "linguistics", "dependency-parsing", "corpus-linguistics", "t
 Homepage = "https://github.com/rmalouf/treesearch"
 Repository = "https://github.com/rmalouf/treesearch"
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0",
+]
+
 [tool.maturin]
 features = ["pyo3/extension-module"]
 module-name = "treesearch"
