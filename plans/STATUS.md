@@ -1,6 +1,6 @@
 # Current Project Status
 
-**Last Updated**: Nov 2025
+**Last Updated**: November 2025
 
 ## Implementation Status
 
@@ -8,25 +8,32 @@
 
 **Core Pattern Matching Engine**:
 - CSP solver with DFS + forward checking
-- Query language parser (Pest)
-- Pattern AST representation
-- CoNLL-U file parsing with gzip support
-- Tree data structures with string interning
-- 38 tests passing, 2372 lines of code
+- Query language parser (Pest-based, `query.rs`)
+- Pattern AST representation with constraints
+- CoNLL-U file parsing with transparent gzip support
+- Tree data structures with string interning (rustc-hash FxHash + hashbrown)
+- Iterator-based API for trees and matches (`iterators.rs`)
+- Parallel file processing using rayon
+- 50 tests passing, 3094 lines of code
+
+**Python Bindings**:
+- PyO3 wrapper code in `src/python.rs`
+- Functional API (refactored from OO in commit 137499c)
+- Full test suite passing (pytest)
+- Functions: `parse_query`, `search`, `read_trees`, `search_file`, `read_trees_glob`, `search_files`
+- Data classes: `Tree`, `Word`, `Pattern`
 
 ### 🔄 In Progress
 
-**Python Bindings**:
-- PyO3 wrapper code started in `src/python.rs`
-- Not yet functional or tested
-- Needs: maturin build configuration, test suite
+**Performance Benchmarks**:
+- Basic benchmarks exist (`benches/coha.rs`, `benches/conllu.rs`)
+- Need expansion to cover real-world query patterns
 
 ### ⏳ Not Started
 
-**Performance & Polish**:
-- Benchmarks (Criterion framework ready but no benchmarks written)
-- Multi-file processing with rayon
+**Documentation & Polish**:
 - Comprehensive rustdoc for public APIs
+- API documentation needs update to reflect functional API changes
 
 **Future Enhancements**:
 - Extended query language features (negation, regex, more operators)
@@ -35,10 +42,10 @@
 
 ## Next Priorities
 
-1. **Python bindings** - Complete PyO3 wrappers and test
-2. **Benchmarks** - Establish performance baseline
-3. **Documentation** - Add rustdoc comments
-4. **Multi-file** - Add rayon-based parallel processing
+1. **Benchmarks** - Expand coverage beyond basic benchmarks to establish performance baseline
+2. **Documentation** - Add comprehensive rustdoc comments for public APIs
+3. **Extended query features** - Add negation, regex support, additional relation types
+4. **Performance optimization** - Based on benchmark results
 
 ## Architecture Notes
 
