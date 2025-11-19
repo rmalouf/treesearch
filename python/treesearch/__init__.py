@@ -3,23 +3,28 @@
 A toolkit for querying linguistic dependency parses at scale.
 
 Example usage:
-    >>> from treesearch import CoNLLUReader, search_query
+    >>> from treesearch import Pattern, MatchIterator
     >>>
-    >>> # Read trees from a CoNLL-U file
-    >>> reader = CoNLLUReader.from_file("corpus.conllu")
-    >>>
-    >>> # Search for a pattern
-    >>> query = '''
+    >>> # Parse a query into a pattern
+    >>> pattern = Pattern.from_query('''
     ...     Verb [pos="VERB"];
     ...     Noun [pos="NOUN"];
     ...     Verb -[nsubj]-> Noun;
-    ... '''
+    ... ''')
     >>>
-    >>> for tree in reader:
-    ...     for match in search_query(tree, query):
-    ...         verb = match.get_node("Verb")
-    ...         noun = match.get_node("Noun")
-    ...         print(f"{verb.form} -> {noun.form}")
+    >>> # Search a single file
+    >>> for tree, match in MatchIterator.from_file("corpus.conllu", pattern):
+    ...     verb_id = match[0]  # First variable
+    ...     noun_id = match[1]  # Second variable
+    ...     verb = tree.get_word(verb_id)
+    ...     noun = tree.get_word(noun_id)
+    ...     print(f"{verb.form} -> {noun.form}")
+    >>>
+    >>> # Search multiple files in parallel
+    >>> from treesearch import MultiFileMatchIterator
+    >>> for tree, match in MultiFileMatchIterator.from_glob("data/*.conllu", pattern):
+    ...     # Process matches from all files
+    ...     pass
 """
 
 __version__ = "0.1.0"
@@ -28,10 +33,13 @@ __version__ = "0.1.0"
 try:
     from .treesearch import (
         Tree,
-        Node,
+        Word,
         Match,
-        search_query,
-        CoNLLUReader,
+        Pattern,
+        search,
+        MatchIterator,
+        MultiFileTreeIterator,
+        MultiFileMatchIterator,
     )
 except ImportError as e:
     # Provide helpful error message if native extension not built
@@ -45,8 +53,11 @@ except ImportError as e:
 
 __all__ = [
     "Tree",
-    "Node",
+    "Word",
     "Match",
-    "search_query",
-    "CoNLLUReader",
+    "Pattern",
+    "search",
+    "MatchIterator",
+    "MultiFileTreeIterator",
+    "MultiFileMatchIterator",
 ]
