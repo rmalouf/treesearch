@@ -8,10 +8,11 @@ High-performance toolkit for querying linguistic dependency parses at scale. Rus
 
 ## Core Architecture
 
-**1. CoNLL-U Parsing** - Read and parse Universal Dependencies files
+**1. CoNLL-U Parsing** - Read and parse Universal Dependencies files with transparent gzip support
 **2. Pattern Matching CSP** - Execute structural queries with constraint satisfaction
 **3. Exhaustive Search** - Find ALL valid matches, no pruning
-**4. Python Bindings** (PyO3) - Pythonic API for research workflows
+**4. Parallel Processing** - File-level parallelization using rayon
+**5. Python Bindings** (PyO3) - Functional API for research workflows
 
 ### Query Language
 
@@ -36,46 +37,53 @@ To -[mark]-> Verb;    # To has child Verb with deprel=mark
 - Global constraint: AllDifferent (no two variables bind to same word)
 - Result: ALL valid solutions (exhaustive)
 
-## Current Status (Nov 2025)
+## Current Status (November 2025)
 
 ### Completed ✅
 
 **Core Implementation** (100% complete)
-- ✅ CSP solver with DFS + forward checking (searcher.rs: 472 lines, 18 tests)
-- ✅ Query language parser using Pest (parser.rs: 264 lines, 6 tests)
-- ✅ Pattern AST with constraints (pattern.rs: 200+ lines)
-- ✅ CoNLL-U parser with gzip support (conllu.rs: 446 lines, 14 tests)
-- ✅ Tree data structures with string interning (tree.rs: 400+ lines)
-- ✅ 38 tests passing (2372 lines of code)
+- ✅ CSP solver with DFS + forward checking (searcher.rs)
+- ✅ Query language parser using Pest (query.rs, formerly parser.rs)
+- ✅ Pattern AST with constraints (pattern.rs)
+- ✅ CoNLL-U parser with transparent gzip support (conllu.rs)
+- ✅ Tree data structures with string interning using rustc-hash FxHash + hashbrown (tree.rs)
+- ✅ Iterator-based APIs for trees and matches (iterators.rs)
+- ✅ Parallel file processing with rayon
+- ✅ 50 tests passing (3094 lines of code)
+
+**Python Bindings** (100% complete)
+- ✅ PyO3 bindings with functional API (python.rs)
+- ✅ Full test suite passing (pytest)
+- ✅ Functions: `parse_query`, `search`, `read_trees`, `search_file`, `read_trees_glob`, `search_files`
+- ✅ Data classes: `Tree`, `Word`, `Pattern`
 
 ### In Progress 🔄
 
-**Python Bindings**:
-- 🔄 PyO3 bindings partially implemented (python.rs exists)
-- ⏳ Not yet functional or tested
+**Performance Benchmarks**:
+- 🔄 Basic benchmarks exist (`benches/coha.rs`, `benches/conllu.rs`)
+- 🔄 Need expansion to cover real-world query patterns
 
 ### Remaining Work ⏳
 
-**Polish & Performance**:
-- ⏳ Complete Python bindings (PyO3)
-- ⏳ Performance benchmarks (Criterion)
-- ⏳ Multi-file processing with rayon
-- ⏳ Comprehensive rustdoc
+**Documentation & Polish**:
+- ⏳ Comprehensive rustdoc for public APIs
+- ⏳ Update API documentation to reflect functional API
 
 **Future Enhancements**:
-- ⏳ Extended query features (negation, regex)
-- ⏳ More relation types (ancestor, sibling, etc.)
-- ⏳ Performance optimization based on benchmarks
+- ⏳ Extended query features (negation, regex, more operators)
+- ⏳ Additional relation types (ancestor, sibling, etc.)
+- ⏳ Performance optimization based on benchmark results
 
 ## Technology Stack
 
-- **Language**: Rust 2021 edition
-- **Python**: PyO3 + maturin
-- **Parser**: Pest 2.7
-- **String interning**: lasso with FxHash
-- **Compression**: flate2 (gzip)
-- **Parallelization**: Rayon 1.11 (planned)
-- **Benchmarking**: Criterion 0.7
+- **Language**: Rust 2024 edition
+- **Python**: PyO3 0.27 + maturin
+- **Parser**: Pest 2.8
+- **Hashing**: rustc-hash 2.1 (FxHash) + hashbrown 0.16
+- **Compression**: flate2 1.1 (gzip with zlib-rs)
+- **Allocator**: mimalloc 0.1
+- **Parallelization**: Rayon 1.11
+- **Benchmarking**: divan 0.1
 
 ## Key Design Principles
 
@@ -85,28 +93,34 @@ To -[mark]-> Verb;    # To has child Verb with deprel=mark
 4. **Efficient search**: CSP with forward checking prevents exponential blowup
 5. **Python-friendly**: Ergonomic bindings for research workflows
 
-## Example Workflow (Planned)
+## Example Workflow
 
 ```python
-from treesearch import TreeSearcher, CoNLLUReader
+import treesearch as ts
 
-# Load treebank
-reader = CoNLLUReader.from_file("corpus.conllu")
-trees = list(reader)
-
-# Execute query
-searcher = TreeSearcher()
-query = """
+# Parse query once
+query_str = """
     Verb [pos="VERB"];
     Subj [pos="NOUN"];
     Verb -[nsubj]-> Subj;
 """
+pattern = ts.parse_query(query_str)
 
-for tree in trees:
-    for match in searcher.search(tree, query):
-        # Custom analysis on matched structures
-        verb = match['Verb']
-        subj = match['Subj']
+# Search single file
+for match in ts.search_file("corpus.conllu", pattern):
+    verb_idx, subj_idx = match
+    print(f"Found match: verb={verb_idx}, subject={subj_idx}")
+
+# Or search multiple files in parallel
+for match in ts.search_files("data/*.conllu", pattern, parallel=True):
+    # Process matches from all files
+    pass
+
+# Or work with individual trees
+for tree in ts.read_trees("corpus.conllu"):
+    for match in ts.search(tree, pattern):
+        verb = tree.words[match[0]]
+        subj = tree.words[match[1]]
         print(f"{verb.form} ← {subj.form}")
 ```
 

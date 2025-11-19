@@ -4,47 +4,37 @@
 
 ## Overview
 
-Treesearch provides a simple API for searching linguistic dependency trees using a pattern-matching query language. The typical workflow is:
+Treesearch provides a functional API for searching linguistic dependency trees using a pattern-matching query language. The typical workflow is:
 
-1. Load CoNLL-U data with `CoNLLUReader`
-2. Create a `TreeSearcher`
-3. Search trees with query strings
-4. Access matched nodes by variable name
+1. Parse query string to `Pattern` with `parse_query()`
+2. Search files with `search_file()` or `search_files()`
+3. Or read trees with `read_trees()` and search with `search()`
+4. Access matched nodes by index
 
-## Basic Usage
+## Basic Usage (Python)
 
-```rust
-use treesearch::{CoNLLUReader, TreeSearcher};
+```python
+import treesearch as ts
 
-// 1. Load your treebank
-let reader = CoNLLUReader::from_file("corpus.conll")?;
-
-// 2. Create a searcher (reusable across trees)
-let searcher = TreeSearcher::new();
-
-// 3. Define your query
-let query = r#"
+# 1. Parse your query once
+query = """
     Verb [pos="VERB"];
     Noun [pos="NOUN"];
     Verb -[nsubj]-> Noun;
-"#;
+"""
+pattern = ts.parse_query(query)
 
-// 4. Search each tree
-for tree in reader {
-    let tree = tree?;
-    let matches = searcher.search_query(&tree, query)?;
+# 2. Search a single file
+for match in ts.search_file("corpus.conllu", pattern):
+    verb_idx, noun_idx = match
+    print(f"Match: verb={verb_idx}, noun={noun_idx}")
 
-    // 5. Access results by variable name
-    for result in matches {
-        let verb_id = result.get("Verb").unwrap();
-        let noun_id = result.get("Noun").unwrap();
-
-        let verb = tree.get_node(verb_id).unwrap();
-        let noun = tree.get_node(noun_id).unwrap();
-
-        println!("{} ← {}", verb.lemma, noun.lemma);
-    }
-}
+# 3. Or work with individual trees
+for tree in ts.read_trees("corpus.conllu"):
+    for match in ts.search(tree, pattern):
+        verb = tree.words[match[0]]
+        noun = tree.words[match[1]]
+        print(f"{verb.form} ← {noun.form}")
 ```
 
 ## Query Language
@@ -106,169 +96,238 @@ V -[obj]-> N;
 N -[amod]-> A;
 ```
 
-## API Reference
+## Python API Reference
 
-### CoNLLUReader
+### Core Functions
 
-Parse CoNLL-U formatted treebanks.
+#### `parse_query(query: str) -> Pattern`
 
-```rust
-// From file
-let reader = CoNLLUReader::from_file("path/to/corpus.conll")?;
+Parse a query string into a Pattern object.
 
-// From string
-let reader = CoNLLUReader::from_string(conllu_text);
-
-// Iterate over trees
-for tree in reader {
-    let tree = tree?; // Result<Tree, ParseError>
-    // ...
-}
+```python
+pattern = ts.parse_query("""
+    Verb [pos="VERB"];
+    Noun [pos="NOUN"];
+    Verb -[nsubj]-> Noun;
+""")
 ```
 
-### TreeSearcher
+#### `search(tree: Tree, pattern: Pattern) -> Iterator[list[int]]`
 
-Execute queries on dependency trees.
+Search a single tree for pattern matches.
 
-```rust
-let searcher = TreeSearcher::new();
-
-// Search with query string
-let matches = searcher.search_query(&tree, query_string)?;
-
-// Iterate over all matches
-for result in matches {
-    // Access bindings...
-}
+```python
+for match in ts.search(tree, pattern):
+    # match is a list of word indices
+    verb_idx, noun_idx = match
+    verb = tree.words[verb_idx]
+    noun = tree.words[noun_idx]
 ```
 
-### Match
+#### `read_trees(path: str) -> Iterator[Tree]`
 
-Results of pattern matching with variable bindings.
+Read trees from a CoNLL-U file (supports gzip).
 
-```rust
-// Access by variable name
-let node_id = result.get("VariableName")?;
-
-// Iterate over all bindings with names
-for (var_name, node_id) in result.iter_named() {
-    println!("{} = node {}", var_name, node_id);
-}
-
-// Direct access to bindings (position-based)
-let node_id = result.bindings[&0]; // First variable
+```python
+for tree in ts.read_trees("corpus.conllu"):
+    print(f"Tree has {len(tree.words)} words")
 ```
 
-### Tree
+#### `search_file(path: str, pattern: Pattern) -> Iterator[list[int]]`
 
-Dependency tree with CoNLL-U annotations.
+Search a single file for pattern matches.
 
-```rust
-// Get node by ID
-let node = tree.get_node(node_id)?;
+```python
+for match in ts.search_file("corpus.conllu", pattern):
+    # match is a list of word indices
+    print(match)
+```
 
-// Access node properties
-println!("Form: {}", node.form);        // Word form
-println!("Lemma: {}", node.lemma);      // Lemma
-println!("POS: {}", node.pos);          // UPOS tag
-println!("DepRel: {}", node.deprel);    // Dependency relation
+#### `read_trees_glob(pattern: str, parallel: bool = True) -> Iterator[Tree]`
 
-// Optional fields
-if let Some(xpos) = &node.xpos {
-    println!("XPOS: {}", xpos);
-}
+Read trees from multiple files matching a glob pattern.
 
-// Features (morphological)
-if let Some(case) = node.feats.get("Case") {
-    println!("Case: {}", case);
-}
+```python
+# Sequential
+for tree in ts.read_trees_glob("data/*.conllu", parallel=False):
+    # Process tree...
+    pass
 
-// Tree metadata
-if let Some(text) = &tree.sentence_text {
-    println!("Sentence: {}", text);
-}
+# Parallel (default)
+for tree in ts.read_trees_glob("data/*.conllu"):
+    # Trees from multiple files processed in parallel
+    pass
+```
+
+#### `search_files(glob_pattern: str, query_pattern: Pattern, parallel: bool = True) -> Iterator[list[int]]`
+
+Search multiple files matching a glob pattern.
+
+```python
+pattern = ts.parse_query("Verb [pos=\"VERB\"];")
+
+# Parallel search across all files
+for match in ts.search_files("data/*.conllu", pattern):
+    print(match)
+```
+
+### Data Classes
+
+#### `Tree`
+
+Represents a dependency tree.
+
+**Attributes:**
+- `words: list[Word]` - List of words in the tree (index 0 is ROOT)
+- `metadata: dict[str, str]` - Tree metadata from CoNLL-U comments
+
+```python
+tree = next(ts.read_trees("corpus.conllu"))
+print(f"Sentence has {len(tree.words)} words")
+for word in tree.words:
+    print(f"{word.id}: {word.form}")
+```
+
+#### `Word`
+
+Represents a single word/node in the tree.
+
+**Attributes:**
+- `id: int` - Word ID (1-indexed in CoNLL-U)
+- `form: str` - Word form
+- `lemma: str` - Lemma
+- `upos: str` - Universal POS tag
+- `xpos: str | None` - Language-specific POS tag
+- `feats: dict[str, str]` - Morphological features
+- `head: int` - Head word ID (0 for root)
+- `deprel: str` - Dependency relation
+- `deps: str | None` - Enhanced dependencies
+- `misc: str | None` - Miscellaneous annotations
+
+```python
+word = tree.words[5]
+print(f"Form: {word.form}")
+print(f"Lemma: {word.lemma}")
+print(f"POS: {word.upos}")
+print(f"DepRel: {word.deprel}")
+if word.xpos:
+    print(f"XPOS: {word.xpos}")
+```
+
+#### `Pattern`
+
+Represents a parsed query pattern. Created by `parse_query()`.
+
+```python
+pattern = ts.parse_query("Verb [pos=\"VERB\"];")
+# Use pattern with search functions
 ```
 
 ## Complete Example
 
-```rust
-use treesearch::{CoNLLUReader, TreeSearcher};
+```python
+import treesearch as ts
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Load corpus
-    let reader = CoNLLUReader::from_file("./corpus.conll")?;
-    let searcher = TreeSearcher::new();
+# Find all control verbs (VERB with VERB xcomp)
+query = """
+    Main [pos="VERB"];
+    Comp [pos="VERB"];
+    Main -[xcomp]-> Comp;
+"""
 
-    // Find all control verbs (VERB with VERB xcomp)
-    let query = r#"
-        Main [pos="VERB"];
-        Comp [pos="VERB"];
-        Main -[xcomp]-> Comp;
-    "#;
+# Parse query once
+pattern = ts.parse_query(query)
 
-    // Search and display results
-    for tree in reader {
-        let tree = tree?;
-        let matches = searcher.search_query(&tree, query)?;
+# Search trees and display results
+for tree in ts.read_trees("corpus.conllu"):
+    for match in ts.search(tree, pattern):
+        main_idx, comp_idx = match
+        main = tree.words[main_idx]
+        comp = tree.words[comp_idx]
+        print(f"  Main = {main.form} (lemma: {main.lemma})")
+        print(f"  Comp = {comp.form} (lemma: {comp.lemma})")
+        print()
 
-        for result in matches {
-            // Use iter_named() for clean iteration
-            for (var_name, node_id) in result.iter_named() {
-                let node = tree.get_node(node_id).unwrap();
-                println!("  {} = {} (lemma: {})",
-                    var_name, node.form, node.lemma);
-            }
-            println!();
-        }
-    }
-
-    Ok(())
-}
+# Or search files directly (more efficient)
+for match in ts.search_file("corpus.conllu", pattern):
+    main_idx, comp_idx = match
+    print(f"Match: main={main_idx}, comp={comp_idx}")
 ```
 
 ## Error Handling
 
-All user-facing operations return `Result` types:
+All operations raise Python exceptions on error:
 
-```rust
-// Parse errors
-match CoNLLUReader::from_file("corpus.conll") {
-    Ok(reader) => { /* ... */ }
-    Err(e) => eprintln!("Failed to open file: {}", e),
-}
+```python
+try:
+    # Parse errors
+    pattern = ts.parse_query("Invalid [syntax")
+except Exception as e:
+    print(f"Query parse error: {e}")
 
-// Query syntax errors
-match searcher.search_query(&tree, query) {
-    Ok(matches) => { /* ... */ }
-    Err(e) => eprintln!("Invalid query: {}", e),
-}
+try:
+    # File not found
+    for tree in ts.read_trees("nonexistent.conllu"):
+        pass
+except Exception as e:
+    print(f"File error: {e}")
 
-// Tree iteration errors
-for tree_result in reader {
-    match tree_result {
-        Ok(tree) => { /* ... */ }
-        Err(e) => eprintln!("Parse error: {}", e),
-    }
-}
+try:
+    # Malformed CoNLL-U
+    for tree in ts.read_trees("bad_format.conllu"):
+        pass
+except Exception as e:
+    print(f"Parse error: {e}")
 ```
 
 ## Performance Notes
 
-- **TreeSearcher is reusable**: Create once, use for all trees
-- **Index-based filtering**: Candidates are pre-filtered before VM execution
-- **Leftmost matching**: Returns first match in left-to-right word order
-- **Parallel processing**: Use `rayon` to process multiple trees concurrently
+- **Parse queries once**: `Pattern` objects are reusable across searches
+- **Exhaustive search**: Finds ALL matches, not just first/leftmost
+- **CSP-based matching**: Forward checking prevents exponential blowup
+- **Parallel processing**: Use `parallel=True` (default) for multi-file operations
+- **Memory efficient**: Iterator-based API streams results
 
-```rust
-use rayon::prelude::*;
+### Parallel Processing
 
-let trees: Vec<Tree> = reader.collect::<Result<_, _>>()?;
-let searcher = TreeSearcher::new();
+```python
+# Parallel file reading (default)
+for tree in ts.read_trees_glob("data/*.conllu", parallel=True):
+    # Trees from different files processed in parallel
+    pass
 
-// Process trees in parallel
-trees.par_iter().for_each(|tree| {
-    if let Ok(matches) = searcher.search_query(tree, query) {
-        // Process matches...
-    }
-});
+# Parallel search across files (default)
+pattern = ts.parse_query("Verb [pos=\"VERB\"];")
+for match in ts.search_files("data/*.conllu", pattern, parallel=True):
+    # Searches run in parallel across files
+    pass
+
+# Sequential processing (if needed)
+for match in ts.search_files("data/*.conllu", pattern, parallel=False):
+    # Process files one at a time
+    pass
+```
+
+### Best Practices
+
+```python
+# ✅ GOOD: Parse query once, reuse
+pattern = ts.parse_query(query_string)
+for tree in ts.read_trees("corpus.conllu"):
+    for match in ts.search(tree, pattern):
+        # Process match
+
+# ❌ BAD: Re-parsing query every iteration
+for tree in ts.read_trees("corpus.conllu"):
+    pattern = ts.parse_query(query_string)  # Wasteful!
+    for match in ts.search(tree, pattern):
+        # Process match
+
+# ✅ GOOD: Use search_file for simple cases
+for match in ts.search_file("corpus.conllu", pattern):
+    # More efficient than reading trees manually
+
+# ✅ GOOD: Use parallel=True for multiple files
+for match in ts.search_files("data/*.conllu", pattern):
+    # Parallel processing by default
 ```
