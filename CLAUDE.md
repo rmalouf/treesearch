@@ -6,23 +6,33 @@ Treesearch is a high-performance toolkit for querying linguistic dependency pars
 
 **Author**: Rob Malouf (rmalouf@sdsu.edu)
 **License**: MIT
-**Status**: Core implementation complete, Python bindings in progress
+**Status**: Core complete (50 tests passing), Python bindings need compilation fix
+
+---
+
+**CURRENT PRIORITY**: Fix Python bindings compilation error in `src/python.rs`
+- Error: `TreeIterator<R>` generic parameter removed in refactor but still referenced
+- Old build works but is stale (pre-refactor)
+
+---
 
 ## Current Development Phase
 
-**Core Complete, Python Bindings WIP** (Nov 2025)
+**Core Complete, Python Bindings Refactored** (Nov 2025)
 
-The core pattern matching engine is fully implemented using constraint satisfaction. Python bindings are partially implemented but not yet functional.
+The core pattern matching engine is fully implemented using constraint satisfaction with parallel file processing. Python bindings have been refactored from OO to functional API but currently have compilation errors that need fixing.
 
 ### Current Status
-- ✅ Query language parser (Pest-based)
+- ✅ Query language parser (Pest-based, `query.rs`)
 - ✅ Pattern AST representation with constraints
 - ✅ CoNLL-U parsing with transparent gzip support
 - ✅ Tree data structures with string interning (lasso + FxHash)
 - ✅ CSP solver with DFS + forward checking
-- ✅ 38 tests passing (2372 lines of code)
-- 🔄 **Python bindings** (partially implemented)
-- ⏳ **Performance benchmarks** (not started)
+- ✅ Iterator-based API for trees and matches (`iterators.rs`)
+- ✅ Parallel file processing using rayon
+- ✅ 50 tests passing (3094 lines of code)
+- 🔄 **Python bindings** (refactored to functional API, compilation broken)
+- 🔄 **Performance benchmarks** (basic benchmarks exist, need expansion)
 
 ## Architecture
 
@@ -30,8 +40,11 @@ The core pattern matching engine is fully implemented using constraint satisfact
 
 1. **Constraint satisfaction approach**: Pattern matching as CSP solving with exhaustive search
 2. **All solutions**: Find ALL possible matches, no filtering or pruning based on leftmost/shortest/etc.
-3. **File-level parallelization**: Using rayon (planned, not yet implemented)
-4. **Error handling strategy**:
+3. **File-level parallelization**: Using rayon for parallel file processing (implemented)
+4. **Functional over OO**: Prefer functional APIs over object-oriented ones. Use objects/structs for data storage, not for organizing namespaces.
+   - Recent refactor (commit 137499c): Python bindings changed from OO to functional API
+5. **Iterator-based design**: Use iterators for memory efficiency and composability
+6. **Error handling strategy**:
    - **User input errors** (malformed queries, invalid CoNLL-U, missing files) → `Result::Err` with clear message
    - **Internal bugs** (violated invariants, unreachable states) → `panic!` with descriptive message
    - **Never silently skip or provide fallback values** - all errors must be loud and visible
@@ -39,7 +52,7 @@ The core pattern matching engine is fully implemented using constraint satisfact
 ### Key Components
 
 #### Rust Core (`src/`)
-- `lib.rs` - Main library entry point with module declarations
+- `lib.rs` - Main library entry point with module declarations and re-exports
 - `tree.rs` - Tree data structures for representing dependency parses
   - String interning using lasso with FxHash
   - Parent/child relationships
@@ -48,39 +61,74 @@ The core pattern matching engine is fully implemented using constraint satisfact
   - Variable constraints (lemma, pos, form, deprel)
   - Edge constraints (child, precedes, follows)
   - Constraint combinators (And, Or)
-- `parser.rs` - Query language parser using Pest
-- `query.pest` - Pest grammar for query language
+- `query.rs` - Query language parser using Pest (previously `parser.rs`)
+  - Pest grammar for query language
+  - Error handling with thiserror
 - `conllu.rs` - CoNLL-U file parsing
   - Transparent gzip detection via magic bytes
   - Iterator-based API for memory efficiency
   - Full error reporting with line numbers
-- `searcher.rs` - CSP solver for pattern matching (IMPLEMENTED)
+- `searcher.rs` - CSP solver for pattern matching
   - DFS with forward checking
   - MRV (Minimum Remaining Values) variable ordering
   - AllDifferent constraint
   - Arc consistency checking
-- `python.rs` - Python bindings via PyO3 (WIP)
+- `iterators.rs` - Iterator interfaces for trees and matches
+  - `MatchIterator` - Search patterns across trees
+  - `MultiFileMatchIterator` - Search across multiple files with glob patterns
+  - `MultiFileTreeIterator` - Iterate trees from multiple files
+- `bytes.rs` - Byte handling utilities
+- `python.rs` - Python bindings via PyO3 (functional API, compilation currently broken)
 
 #### Python Bindings (`python/`)
-- PyO3-based bindings (partial implementation in `src/python.rs`)
-- Will provide ergonomic Python API over Rust core
+- PyO3-based bindings in `src/python.rs` (functional API)
+- Package structure in `python/treesearch/`
+- Functional API design:
+  - `parse_query(query: str) -> Pattern` - Parse query strings
+  - `search(tree, pattern) -> [[int]]` - Search single tree
+  - `read_trees(path) -> TreeIterator` - Read from CoNLL-U file
+  - `search_file(path, pattern) -> MatchIterator` - Search single file
+  - `read_trees_glob(pattern, parallel=True) -> MultiFileTreeIterator` - Read multiple files
+  - `search_files(pattern, pattern, parallel=True) -> MultiFileMatchIterator` - Search multiple files
+- Data classes: `Tree`, `Word`, `Pattern` (for data storage, not namespace organization)
+- **Note**: Currently has compilation errors after refactor, needs fixing
 
 #### Planning Documents (`plans/`)
-- `PROJECT_SUMMARY.md` - Overall project roadmap and design
-- `PHASE_1_PLAN.md` - Phase 1 planning (may be outdated)
+- `PROJECT_SUMMARY.md` - Overall project roadmap and design (may be outdated)
+- `STATUS.md` - Project status tracking
+- `PARSING_OPTIMIZATION_PLAN.md` - Parsing optimization notes
+- `PHASE_1_PLAN.md` - Phase 1 planning (outdated)
+
+#### Examples and Documentation
+- `examples/` - Rust examples (`latwp.rs`, `latwp_par.rs`) and Python examples
+- `benches/` - Performance benchmarks (`coha.rs`, `conllu.rs`)
+- `API.md` - API reference (may not reflect current functional API)
+- `README.md` - User-facing documentation
 
 ## Directory Structure
 
 ```
 treesearch/
-├── src/              # Rust core implementation
-├── python/           # Python package structure (Phase 1+)
+├── src/              # Rust core implementation (9 modules, 3094 lines)
+│   ├── lib.rs        # Module declarations and re-exports
+│   ├── tree.rs       # Tree data structures
+│   ├── pattern.rs    # Pattern AST
+│   ├── query.rs      # Query parser (formerly parser.rs)
+│   ├── searcher.rs   # CSP solver
+│   ├── conllu.rs     # CoNLL-U parsing
+│   ├── iterators.rs  # Iterator interfaces
+│   ├── bytes.rs      # Byte utilities
+│   └── python.rs     # Python bindings (compilation broken)
+├── python/           # Python package structure
+│   └── treesearch/   # Package directory
 ├── tests/            # Integration tests
-├── benches/          # Performance benchmarks (Criterion)
-├── examples/         # Usage examples
-├── plans/            # Design documents and roadmaps
+├── benches/          # Performance benchmarks (coha.rs, conllu.rs)
+├── examples/         # Rust and Python usage examples
+├── plans/            # Design documents (may be outdated)
 ├── Cargo.toml        # Rust dependencies and config
 ├── pyproject.toml    # Python packaging config (maturin)
+├── CLAUDE.md         # This file - comprehensive project guide
+├── API.md            # API reference (may be outdated)
 └── README.md         # User-facing documentation
 ```
 
@@ -101,7 +149,7 @@ cargo build --release
 # Run benchmarks
 cargo bench
 
-# Build Python package (not yet functional)
+# Build Python package (currently has compilation errors)
 maturin develop
 ```
 
@@ -138,29 +186,37 @@ The CSP solver finds ALL possible matches. No pruning strategies like "leftmost"
 Designed to handle very large corpora (500M+ tokens) with:
 - String interning to reduce memory overhead
 - Efficient tree representations
-- File-level parallelization using rayon (planned)
+- File-level parallelization using rayon (implemented)
 - Transparent gzip support
+- Iterator-based APIs to avoid loading entire corpus into memory
 
 ## Working with This Codebase
 
 ### Current Architecture
 
 ```
-Query String  →  Parser  →  Pattern AST  →  CSP Solver  →  All Matches
-                   ✅          ✅              ✅              ✅
+Query String  →  Parser  →  Pattern AST  →  CSP Solver  →  Iterators  →  Matches
+                   ✅          ✅              ✅            ✅           ✅
+                                                             ↓
+                                                        Parallel
+                                                        Processing ✅
 ```
 
-All core components are implemented and working.
+All core Rust components are implemented and working. Python bindings need compilation fixes.
 
 ### When Adding Features
-1. **Python bindings** are the current priority
-2. **Benchmarks** should be added to establish performance baselines
+1. **Python bindings** - Fix the compilation error first
+   - Error: `TreeIterator` in `python.rs` uses generic parameter `<R>` but this was removed in refactor
+   - Need to update all `TreeIterator<R>` references to match current API
+2. **Benchmarks** - Expand beyond basic benchmarks to cover real-world queries
 3. Add tests as you implement
-4. Update planning docs when design decisions change
+4. Update CLAUDE.md when major changes are made
+5. Planning docs in `plans/` may be outdated and should be updated if consulted
 
 ### Code Style
 - Rust: Standard rustfmt style
 - Python: Ruff with line-length=100, target py312
+- API Design: Prefer functional interfaces over object-oriented. Avoid gratuitous objects - use them for data storage, not namespace organization.
 - Documentation: Inline rustdoc comments for public APIs
 
 ### Testing Strategy
@@ -180,13 +236,17 @@ Searches for structural patterns in dependency parse trees (linguistic data). Th
 - ✅ CoNLL-U file parsing with gzip detection
 - ✅ Tree data structures with string interning
 - ✅ CSP solver with exhaustive search (DFS + forward checking)
-- ✅ 38 tests passing
+- ✅ Iterator-based APIs for single and multi-file processing
+- ✅ Parallel file processing with rayon
+- ✅ 50 tests passing (3094 lines of code)
 
 ### What Needs Work
-- 🔄 Python bindings (started but not functional)
-- ⏳ Performance benchmarks
-- ⏳ Multi-file processing with rayon
-- ⏳ Extended query features (negation, regex, more relation types)
+- 🔄 **Python bindings** - Fix compilation errors after functional API refactor
+  - Current issue: Generic parameter mismatch in `TreeIterator<R>`
+  - Old OO build still works but is stale (built before latest refactor)
+- 🔄 **Performance benchmarks** - Expand beyond basic benchmarks
+- ⏳ **Documentation** - Update API docs to reflect functional API
+- ⏳ **Extended query features** (negation, regex, more relation types)
 
 ### Performance Goals
 - Handle 500M+ token corpora
@@ -206,17 +266,22 @@ This is for corpus linguistics research, where researchers need to find specific
 
 2. **Understanding the codebase**: Start with these files in order:
    - `README.md` - User-level overview
-   - `plans/PROJECT_SUMMARY.md` - Design rationale and current status
-   - `src/parser.rs` - Query language parsing
+   - `CLAUDE.md` - This file - comprehensive project guide
+   - `src/lib.rs` - Module organization and public API
+   - `src/query.rs` - Query language parsing (formerly `parser.rs`)
    - `src/pattern.rs` - Pattern AST
    - `src/tree.rs` - Tree data structures
    - `src/conllu.rs` - CoNLL-U parsing
-   - `src/searcher.rs` - CSP solver (IMPLEMENTED)
+   - `src/searcher.rs` - CSP solver
+   - `src/iterators.rs` - Iterator interfaces
+   - `src/python.rs` - Python bindings (currently broken)
 
 3. **Making changes**:
-   - Current focus: Python bindings and benchmarks
+   - **Immediate priority**: Fix Python bindings compilation error
+   - Secondary focus: Expand benchmarks and documentation
    - Run `cargo test` and `cargo check` before committing
-   - Update planning docs when design changes
+   - Keep CLAUDE.md up to date with major changes
+   - Planning docs in `plans/` may be outdated
 
 ## References
 
