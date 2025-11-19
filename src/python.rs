@@ -5,8 +5,8 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::path::PathBuf;
-use std::sync::mpsc::{channel, Receiver};
 use std::sync::Arc;
+use std::sync::mpsc::{Receiver, channel};
 use std::thread;
 
 use crate::iterators::{
@@ -167,7 +167,6 @@ impl PyWord {
         )
     }
 }
-
 
 /// A compiled pattern for tree matching
 #[pyclass(name = "Pattern")]
@@ -346,7 +345,9 @@ fn create_parallel_tree_iterator(iter: RustMultiFileTreeIterator) -> MultiFileTr
         file_paths
             .into_par_iter()
             .flat_map_iter(|path| match TreeIterator::from_file(&path) {
-                Ok(reader) => Box::new(reader.filter_map(Result::ok)) as Box<dyn Iterator<Item = _>>,
+                Ok(reader) => {
+                    Box::new(reader.filter_map(Result::ok)) as Box<dyn Iterator<Item = _>>
+                }
                 Err(e) => {
                     eprintln!("Warning: Failed to open {:?}: {}", path, e);
                     Box::new(std::iter::empty())
@@ -445,15 +446,15 @@ fn create_parallel_match_iterator(iter: RustMultiFileMatchIterator) -> MultiFile
     thread::spawn(move || {
         file_paths
             .into_par_iter()
-            .flat_map_iter(move |path| {
-                match RustMatchIterator::from_file(&path, pattern.clone()) {
+            .flat_map_iter(
+                move |path| match RustMatchIterator::from_file(&path, pattern.clone()) {
                     Ok(iter) => Box::new(iter) as Box<dyn Iterator<Item = _>>,
                     Err(e) => {
                         eprintln!("Warning: Failed to open {:?}: {}", path, e);
                         Box::new(std::iter::empty())
                     }
-                }
-            })
+                },
+            )
             .for_each(|(tree, m)| {
                 let result = (
                     PyTree {
