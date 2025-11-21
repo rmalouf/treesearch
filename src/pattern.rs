@@ -75,28 +75,19 @@ impl PatternVar {
 /// Type of structural relation between nodes
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RelationType {
-    /// Direct parent-child relation
     Child,
-    /// Ancestor relation (transitive closure of parent)
     Ancestor,
-    /// Descendant relation (transitive closure of child)
     Descendant,
-    /// Linear precedence (left sibling)
     Precedes,
-    /// Linear precedence (right sibling)
     Follows,
 }
 
 /// A constraint on the structural relationship between two pattern variables
 #[derive(Debug, Clone)]
 pub struct EdgeConstraint {
-    /// Source variable (by variable name)
     pub from: String,
-    /// Target variable (by variable name)
     pub to: String,
-    /// Type of structural relation required
     pub relation: RelationType,
-    /// Optional constraint on the edge label (e.g., deprel in the tree)
     pub label: Option<String>,
 }
 
