@@ -210,9 +210,9 @@ fn py_parse_query(query: &str) -> PyResult<PyPattern> {
 ///     pattern: The compiled pattern
 ///
 /// Returns:
-///     List of matches (each match is a list of word IDs)
+///     List of matches (each match is a dict mapping variable names to word IDs)
 #[pyfunction(name = "search")]
-fn py_search(tree: &PyTree, pattern: &PyPattern) -> Vec<Vec<usize>> {
+fn py_search(tree: &PyTree, pattern: &PyPattern) -> Vec<std::collections::HashMap<String, usize>> {
     search(&tree.inner, &pattern.inner).collect()
 }
 
@@ -267,7 +267,7 @@ impl MatchIterator {
         slf
     }
 
-    fn __next__(&mut self) -> Option<(PyTree, Vec<usize>)> {
+    fn __next__(&mut self) -> Option<(PyTree, std::collections::HashMap<String, usize>)> {
         self.inner.as_mut().and_then(|iter| {
             iter.next().map(|(tree, m)| {
                 (
@@ -288,7 +288,7 @@ impl MatchIterator {
 ///     pattern: Compiled pattern to search for
 ///
 /// Returns:
-///     Iterator over (tree, match) tuples, where match is a list of word IDs
+///     Iterator over (tree, match) tuples, where match is a dict mapping variable names to word IDs
 #[pyfunction]
 fn search_file(path: &str, pattern: &PyPattern) -> PyResult<MatchIterator> {
     RustMatchIterator::from_file(&PathBuf::from(path), pattern.inner.clone())
@@ -396,7 +396,7 @@ fn create_sequential_tree_iterator(iter: RustMultiFileTreeIterator) -> MultiFile
 /// Iterator over matches from multiple files (with optional parallel processing)
 #[pyclass(unsendable)]
 struct MultiFileMatchIterator {
-    receiver: Receiver<(PyTree, Vec<usize>)>,
+    receiver: Receiver<(PyTree, std::collections::HashMap<String, usize>)>,
 }
 
 #[pymethods]
@@ -405,7 +405,7 @@ impl MultiFileMatchIterator {
         slf
     }
 
-    fn __next__(&mut self) -> Option<(PyTree, Vec<usize>)> {
+    fn __next__(&mut self) -> Option<(PyTree, std::collections::HashMap<String, usize>)> {
         self.receiver.recv().ok()
     }
 }
@@ -418,7 +418,7 @@ impl MultiFileMatchIterator {
 ///     parallel: Whether to process files in parallel (default: True)
 ///
 /// Returns:
-///     Iterator over (tree, match) tuples, where match is a list of word IDs
+///     Iterator over (tree, match) tuples, where match is a dict mapping variable names to word IDs
 #[pyfunction]
 #[pyo3(signature = (glob_pattern, pattern, parallel=true))]
 fn search_files(
@@ -456,7 +456,7 @@ fn create_parallel_match_iterator(iter: RustMultiFileMatchIterator) -> MultiFile
                 },
             )
             .for_each(|(tree, m)| {
-                let result = (
+                let result: (PyTree, std::collections::HashMap<String, usize>) = (
                     PyTree {
                         inner: Arc::new(tree),
                     },
@@ -479,7 +479,7 @@ fn create_sequential_match_iterator(iter: RustMultiFileMatchIterator) -> MultiFi
             match RustMatchIterator::from_file(&path, pattern.clone()) {
                 Ok(match_iter) => {
                     for (tree, m) in match_iter {
-                        let result = (
+                        let result: (PyTree, std::collections::HashMap<String, usize>) = (
                             PyTree {
                                 inner: Arc::new(tree),
                             },
