@@ -4,12 +4,15 @@
 
 use pest::Parser;
 use pest_derive::Parser;
+use std::collections::HashMap;
 use thiserror::Error;
 
-use crate::pattern::{Constraint, EdgeConstraint, Pattern, PatternVar, RelationType};
+use crate::pattern::{
+    Constraint, EdgeConstraint, Pattern, PatternVar, RelationType, compile_pattern,
+};
 
 #[derive(Parser)]
-#[grammar = "query.pest"]
+#[grammar = "query_grammar.pest"]
 struct QueryParser;
 
 /// Error type for query parsing failures
@@ -20,12 +23,16 @@ pub enum QueryError {
 
     #[error("Query error: Unknown constraint key: {0}")]
     UnknownConstraintKey(String),
+
+    #[error("Query error: Duplicate variable: {0}")]
+    DuplicateVariable(String),
 }
 
 /// Parse a query string into a Pattern
 pub fn parse_query(input: &str) -> Result<Pattern, QueryError> {
     let mut pairs = QueryParser::parse(Rule::query, input)?;
-    let mut pattern = Pattern::new();
+    let mut vars: HashMap<String, PatternVar> = HashMap::new();
+    let mut edges: Vec<EdgeConstraint> = Vec::new();
 
     // Process all statements in the query
     let query_pair = pairs.next().unwrap();
@@ -37,13 +44,20 @@ pub fn parse_query(input: &str) -> Result<Pattern, QueryError> {
                 match inner.as_rule() {
                     Rule::node_decl => {
                         let var = parse_var_decl(inner)?;
-                        pattern.add_var(var);
+                        if vars.contains_key(&var.var_name) {
+                            return Err(QueryError::DuplicateVariable(var.var_name));
+                        };
+                        vars.insert(var.var_name.to_string(), var);
+                        //                        pattern.add_var(var);
                     }
                     Rule::edge_decl => {
                         let edge_constraint = parse_edge_decl(inner)?;
-                        pattern.add_edge_constraint(edge_constraint);
+                        edges.push(edge_constraint);
+                        //                        pattern.add_edge_constraint(edge_constraint);
                     }
-                    _ => {}
+                    _ => {
+                        panic!("Unexpected statement type")
+                    }
                 }
             }
             Rule::EOI => {} // End of input
@@ -51,8 +65,7 @@ pub fn parse_query(input: &str) -> Result<Pattern, QueryError> {
         }
     }
 
-    pattern.compile_pattern();
-    Ok(pattern)
+    Ok(compile_pattern(vars, edges))
 }
 
 /// Parse a variable declaration: Name [constraint, constraint];
@@ -136,27 +149,26 @@ mod tests {
         let query = "Node [];";
         let pattern = parse_query(query).unwrap();
 
-        assert_eq!(pattern.vars.len(), 1);
-        assert_eq!(pattern.vars[0].var_name, "Node");
-        assert!(pattern.vars[0].constraints.is_any());
+        assert_eq!(pattern.var_constraints.len(), 1);
+        assert_eq!(*pattern.var_ids.get("Node").unwrap(), 0);
+        assert!(pattern.var_constraints[0].is_any());
 
         let query = r#"Verb [pos="VERB"];"#;
         let pattern = parse_query(query).unwrap();
 
-        assert_eq!(pattern.vars.len(), 1);
-        assert_eq!(pattern.vars[0].var_name, "Verb");
+        assert_eq!(pattern.var_constraints.len(), 1);
+        assert_eq!(*pattern.var_ids.get("Verb").unwrap(), 0);
         assert_eq!(
-            pattern.vars[0].constraints,
+            pattern.var_constraints[0],
             Constraint::POS("VERB".to_string())
         );
 
         let query = r#"Help [lemma="help", pos="VERB"];"#;
         let pattern = parse_query(query).unwrap();
 
-        assert_eq!(pattern.vars.len(), 1);
-        assert_eq!(pattern.vars[0].var_name, "Help");
-
-        match &pattern.vars[0].constraints {
+        assert_eq!(pattern.var_constraints.len(), 1);
+        assert_eq!(*pattern.var_ids.get("Help").unwrap(), 0);
+        match &pattern.var_constraints[0] {
             Constraint::And(constraints) => {
                 assert_eq!(constraints.len(), 2);
                 assert_eq!(constraints[0], Constraint::Lemma("help".to_string()));
@@ -175,8 +187,7 @@ mod tests {
         "#;
         let pattern = parse_query(query).unwrap();
 
-        assert!(pattern.compiled);
-        assert_eq!(pattern.vars.len(), 2);
+        assert_eq!(pattern.var_constraints.len(), 2);
         assert_eq!(pattern.edge_constraints.len(), 1);
 
         let edge_constraint = &pattern.edge_constraints[0];
@@ -195,7 +206,7 @@ mod tests {
         "#;
         let pattern = parse_query(query).unwrap();
 
-        assert_eq!(pattern.vars.len(), 2);
+        assert_eq!(pattern.var_constraints.len(), 2);
         assert_eq!(pattern.edge_constraints.len(), 1);
 
         let edge_constraint = &pattern.edge_constraints[0];
@@ -218,15 +229,12 @@ mod tests {
         "#;
         let pattern = parse_query(query).unwrap();
 
-        assert_eq!(pattern.vars.len(), 3);
+        assert_eq!(pattern.var_constraints.len(), 3);
+        assert!(pattern.var_ids.contains_key("Help"));
+        assert!(pattern.var_ids.contains_key("To"));
+        assert!(pattern.var_ids.contains_key("YHead"));
+
         assert_eq!(pattern.edge_constraints.len(), 2);
-
-        // Verify variables
-        assert_eq!(pattern.vars[0].var_name, "Help");
-        assert_eq!(pattern.vars[1].var_name, "To");
-        assert_eq!(pattern.vars[2].var_name, "YHead");
-
-        // Verify edge constraints
         assert_eq!(pattern.edge_constraints[0].from, "Help");
         assert_eq!(pattern.edge_constraints[0].to, "To");
         assert_eq!(pattern.edge_constraints[1].from, "To");
@@ -243,22 +251,86 @@ mod tests {
         "#;
         let pattern = parse_query(query).unwrap();
 
-        assert_eq!(pattern.vars.len(), 4);
-        assert_eq!(
-            pattern.vars[0].constraints,
-            Constraint::Lemma("run".to_string())
+        assert_eq!(pattern.var_constraints.len(), 4);
+        assert!(
+            pattern
+                .var_constraints
+                .contains(&Constraint::Lemma("run".to_string()))
         );
-        assert_eq!(
-            pattern.vars[1].constraints,
-            Constraint::POS("VERB".to_string())
+        assert!(
+            pattern
+                .var_constraints
+                .contains(&Constraint::POS("VERB".to_string()))
         );
-        assert_eq!(
-            pattern.vars[2].constraints,
-            Constraint::Form("running".to_string())
+        assert!(
+            pattern
+                .var_constraints
+                .contains(&Constraint::Form("running".to_string()))
         );
-        assert_eq!(
-            pattern.vars[3].constraints,
-            Constraint::DepRel("nsubj".to_string())
+        assert!(
+            pattern
+                .var_constraints
+                .contains(&Constraint::DepRel("nsubj".to_string()))
         );
+    }
+
+    #[test]
+    fn test_forward_reference_in_edge() {
+        // Edge constraint references a variable defined later in the query
+        let query = r#"
+            Help [lemma="help"];
+            Help -> To;
+            To [lemma="to"];
+        "#;
+        let pattern = parse_query(query).unwrap();
+
+        // Parser accepts this, but should validate that all variables exist
+        assert_eq!(pattern.var_constraints.len(), 2);
+        assert_eq!(pattern.edge_constraints.len(), 1);
+        assert_eq!(pattern.edge_constraints[0].from, "Help");
+        assert_eq!(pattern.edge_constraints[0].to, "To");
+    }
+
+    #[test]
+    fn test_both_vars_undefined_in_edge() {
+        // Edge constraint where both variables are undefined
+        let query = r#"
+            Node [pos="NOUN"];
+            Foo -> Bar;
+        "#;
+        let pattern = parse_query(query).unwrap();
+
+        assert_eq!(pattern.var_constraints.len(), 3);
+        assert_eq!(pattern.edge_constraints.len(), 1);
+        assert_eq!(pattern.edge_constraints[0].from, "Foo");
+        assert_eq!(pattern.edge_constraints[0].to, "Bar");
+    }
+
+    #[test]
+    fn test_self_reference_in_edge() {
+        // Edge constraint where a variable references itself
+        let query = r#"
+            Node [pos="NOUN"];
+            Node -> Node;
+        "#;
+        let pattern = parse_query(query).unwrap();
+
+        // This is likely invalid but parser should accept it
+        assert_eq!(pattern.var_constraints.len(), 1);
+        assert_eq!(pattern.edge_constraints.len(), 1);
+        assert_eq!(pattern.edge_constraints[0].from, "Node");
+        assert_eq!(pattern.edge_constraints[0].to, "Node");
+    }
+
+    #[test]
+    fn test_duplicate_variable_definition() {
+        // Same variable with conflicting constraints
+        let query = r#"
+            Node [pos="NOUN"];
+            Node [pos="VERB"];
+            Node -> Node;
+        "#;
+        let pattern = parse_query(query);
+        assert!(matches!(pattern, Err(QueryError::DuplicateVariable(_))));
     }
 }
