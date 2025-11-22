@@ -39,7 +39,7 @@ pub fn parse_query(input: &str) -> Result<Pattern, QueryError> {
     for statement in query_pair.into_inner() {
         match statement.as_rule() {
             Rule::statement => {
-                // statement contains either node_decl or edge_decl
+                // statement contains either node_decl, edge_decl, or precedence_decl
                 let inner = statement.into_inner().next().unwrap();
                 match inner.as_rule() {
                     Rule::node_decl => {
@@ -48,14 +48,17 @@ pub fn parse_query(input: &str) -> Result<Pattern, QueryError> {
                             return Err(QueryError::DuplicateVariable(var.var_name));
                         };
                         vars.insert(var.var_name.to_string(), var);
-                        //                        pattern.add_var(var);
                     }
                     Rule::edge_decl => {
                         let edge_constraint = parse_edge_decl(inner)?;
                         edges.push(edge_constraint);
                         //                        pattern.add_edge_constraint(edge_constraint);
                     }
-                    _ => {
+                    Rule::precedence_decl => {
+                        let edge_constraint = parse_precedence_decl(inner)?;
+                        edges.push(edge_constraint);
+                    }
+            _ => {
                         panic!("Unexpected statement type")
                     }
                 }
@@ -130,13 +133,37 @@ fn parse_edge_decl(pair: pest::iterators::Pair<Rule>) -> Result<EdgeConstraint, 
         (None, next.as_str().to_string())
     };
 
-    // For now, all edge constraints use Child relation (parent -> child)
-    // We can extend this later to support different arrow types for other relations
     Ok(EdgeConstraint {
         from,
         to,
         relation: RelationType::Child,
         label,
+    })
+}
+
+/// Parse precedence declaration: First << Second; or First < Second;
+fn parse_precedence_decl(pair: pest::iterators::Pair<Rule>) -> Result<EdgeConstraint, QueryError> {
+    let mut inner = pair.into_inner();
+
+    let from = inner.next().unwrap().as_str().to_string();
+
+    // The operator is a precedence_op rule
+    let op_pair = inner.next().unwrap();
+    let operator = op_pair.as_str();
+
+    let to = inner.next().unwrap().as_str().to_string();
+
+    let relation = match operator {
+        "<<" => RelationType::Precedes,
+        "<" => RelationType::ImmediatelyPrecedes,
+        _ => panic!("Unexpected precedence operator: {}", operator),
+    };
+
+    Ok(EdgeConstraint {
+        from,
+        to,
+        relation,
+        label: None,
     })
 }
 
@@ -332,5 +359,110 @@ mod tests {
         "#;
         let pattern = parse_query(query);
         assert!(matches!(pattern, Err(QueryError::DuplicateVariable(_))));
+    }
+
+    #[test]
+    fn test_parse_precedes() {
+        // Test << (precedes) operator
+        let query = r#"
+            First [pos="NOUN"];
+            Second [pos="VERB"];
+            First << Second;
+        "#;
+        let pattern = parse_query(query).unwrap();
+
+        assert_eq!(pattern.var_constraints.len(), 2);
+        assert_eq!(pattern.edge_constraints.len(), 1);
+
+        let edge_constraint = &pattern.edge_constraints[0];
+        assert_eq!(edge_constraint.from, "First");
+        assert_eq!(edge_constraint.to, "Second");
+        assert_eq!(edge_constraint.relation, RelationType::Precedes);
+        assert_eq!(edge_constraint.label, None);
+    }
+
+    #[test]
+    fn test_parse_immediately_precedes() {
+        // Test < (immediately precedes) operator
+        let query = r#"
+            Adj [pos="ADJ"];
+            Noun [pos="NOUN"];
+            Adj < Noun;
+        "#;
+        let pattern = parse_query(query).unwrap();
+
+        assert_eq!(pattern.var_constraints.len(), 2);
+        assert_eq!(pattern.edge_constraints.len(), 1);
+
+        let edge_constraint = &pattern.edge_constraints[0];
+        assert_eq!(edge_constraint.from, "Adj");
+        assert_eq!(edge_constraint.to, "Noun");
+        assert_eq!(edge_constraint.relation, RelationType::ImmediatelyPrecedes);
+        assert_eq!(edge_constraint.label, None);
+    }
+
+    #[test]
+    fn test_parse_mixed_precedence_and_dependency() {
+        // Test query with both dependency edges and precedence constraints
+        let query = r#"
+            Verb [pos="VERB"];
+            Subj [pos="NOUN"];
+            Obj [pos="NOUN"];
+            Verb -[nsubj]-> Subj;
+            Verb -[obj]-> Obj;
+            Subj << Verb;
+            Verb << Obj;
+        "#;
+        let pattern = parse_query(query).unwrap();
+
+        assert_eq!(pattern.var_constraints.len(), 3);
+        assert_eq!(pattern.edge_constraints.len(), 4);
+
+        // Check that we have both Child and Precedes relations
+        let has_child = pattern
+            .edge_constraints
+            .iter()
+            .any(|e| e.relation == RelationType::Child);
+        let has_precedes = pattern
+            .edge_constraints
+            .iter()
+            .any(|e| e.relation == RelationType::Precedes);
+
+        assert!(has_child);
+        assert!(has_precedes);
+    }
+
+    #[test]
+    fn test_parse_precedence_chain() {
+        // Test chained precedence: A < B << C
+        let query = r#"
+            A [];
+            B [];
+            C [];
+            A < B;
+            B << C;
+        "#;
+        let pattern = parse_query(query).unwrap();
+
+        assert_eq!(pattern.var_constraints.len(), 3);
+        assert_eq!(pattern.edge_constraints.len(), 2);
+
+        // Find the immediate precedes constraint
+        let immediate = pattern
+            .edge_constraints
+            .iter()
+            .find(|e| e.relation == RelationType::ImmediatelyPrecedes)
+            .unwrap();
+        assert_eq!(immediate.from, "A");
+        assert_eq!(immediate.to, "B");
+
+        // Find the precedes constraint
+        let precedes = pattern
+            .edge_constraints
+            .iter()
+            .find(|e| e.relation == RelationType::Precedes)
+            .unwrap();
+        assert_eq!(precedes.from, "B");
+        assert_eq!(precedes.to, "C");
     }
 }

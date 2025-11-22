@@ -79,7 +79,7 @@ pub enum RelationType {
     Ancestor,
     Descendant,
     Precedes,
-    Follows,
+    ImmediatelyPrecedes,
 }
 
 /// A constraint on the structural relationship between two pattern variables
@@ -190,8 +190,6 @@ mod tests {
 
     #[test]
     fn test_pattern_creation() {
-        let mut pattern = Pattern::new();
-
         let mut vars = HashMap::new();
         vars.insert(
             "verb".to_string(),
