@@ -2,13 +2,19 @@
 
 query = { SOI ~ statement* ~ EOI }
 
-statement = { node_decl | edge_decl }
+statement = { node_decl | edge_decl | precedence_decl }
 
 // Node declaration: Name [constraint, constraint];
 node_decl = { ident ~ "[" ~ constraint_list ~ "]" ~ ";" }
 
 // Edge declaration: Parent -[label]-> Child; or Parent -> Child;
 edge_decl = { ident ~ ("-[" ~ edge_label ~ "]->" | "->") ~ ident ~ ";" }
+
+// Precedence declarations: Node1 ( << | <) Node2;
+precedence_decl = { ident ~ precedence_op ~ ident ~ ";" }
+
+// Precedence operators
+precedence_op = { "<<" | "<" }
 
 // Constraint list (can be empty)
 constraint_list = { (constraint ~ ("," ~ constraint)*)? }
