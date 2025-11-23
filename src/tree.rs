@@ -278,7 +278,8 @@ mod tests {
     }
 
     #[test]
-    fn test_children_by_deprel_multiple_matches() {
+    fn test_children_by_deprel() {
+        // Test multiple matches
         let mut tree = Tree::default();
         tree.add_minimal_word(0, b"and", b"and", b"CCONJ", b"_", None, b"root");
         tree.add_minimal_word(1, b"cats", b"cat", b"NOUN", b"_", Some(0), b"conj");
@@ -287,16 +288,10 @@ mod tests {
         tree.compile_tree();
 
         let coord = tree.get_word(0).unwrap();
-        let _conjuncts = coord.children_by_deprel(&tree, "conj");
-        // TODO: fix these
-        // assert_eq!(conjuncts.len(), 3);
-        // assert_eq!(conjuncts[0].lemma, "cat");
-        // assert_eq!(conjuncts[1].lemma, "dog");
-        // assert_eq!(conjuncts[2].lemma, "bird");
-    }
+        let conjuncts = coord.children_by_deprel(&tree, "conj");
+        assert_eq!(conjuncts.len(), 3);
 
-    #[test]
-    fn test_children_by_deprel_single_match() {
+        // Test single match
         let mut tree = Tree::default();
         tree.add_minimal_word(0, b"runs", b"run", b"VERB", b"_", None, b"root");
         tree.add_minimal_word(1, b"dog", b"dog", b"NOUN", b"_", Some(0), b"nsubj");
@@ -304,28 +299,14 @@ mod tests {
         tree.compile_tree();
 
         let verb = tree.get_word(0).unwrap();
-
         let subjects = verb.children_by_deprel(&tree, "nsubj");
         assert_eq!(subjects.len(), 1);
-        // TODO: fix
-        // assert_eq!(subjects[0].lemma, "dog");
-    }
 
-    #[test]
-    fn test_children_by_deprel_no_matches() {
-        let mut tree = Tree::default();
-        tree.add_minimal_word(0, b"runs", b"run", b"VERB", b"_", None, b"root");
-        tree.add_minimal_word(1, b"dog", b"dog", b"NOUN", b"_", Some(0), b"nsubj");
-        tree.compile_tree();
-
-        let verb = tree.get_word(0).unwrap();
-
+        // Test no matches
         let objects = verb.children_by_deprel(&tree, "obj");
         assert_eq!(objects.len(), 0);
-    }
 
-    #[test]
-    fn test_children_by_deprel_mixed_children() {
+        // Test filtering among mixed children
         let mut tree = Tree::default();
         tree.add_minimal_word(0, b"runs", b"run", b"VERB", b"_", None, b"root");
         tree.add_minimal_word(1, b"dog", b"dog", b"NOUN", b"_", Some(0), b"nsubj");
@@ -335,12 +316,7 @@ mod tests {
         tree.compile_tree();
 
         let verb = tree.get_word(0).unwrap();
-
-        // Should only return obl children
         let obliques = verb.children_by_deprel(&tree, "obl");
         assert_eq!(obliques.len(), 2);
-        // TODO: fix these
-        // assert_eq!(obliques[0].lemma, "park");
-        // assert_eq!(obliques[1].lemma, "store");
     }
 }
