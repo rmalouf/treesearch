@@ -245,6 +245,64 @@ impl Tree {
         self.words[from_id].children.contains(&to_id)
     }
 
+    /// Find dependency path from ancestor X to descendant Y.
+    /// Returns None if X and Y are the same node or if no path exists.
+    /// Returns Some(vec![X, ..., Y]) if Y is a descendant of X.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use treesearch::Tree;
+    /// let mut tree = Tree::default();
+    /// tree.add_minimal_word(0, b"runs", b"run", b"VERB", b"_", None, b"root");
+    /// tree.add_minimal_word(1, b"dog", b"dog", b"NOUN", b"_", Some(0), b"nsubj");
+    /// tree.compile_tree();
+    ///
+    /// let x = &tree.words[0];
+    /// let y = &tree.words[1];
+    /// let path = tree.find_path(x, y).unwrap();
+    /// assert_eq!(path.len(), 2);
+    /// assert_eq!(path[0].id, 0);
+    /// assert_eq!(path[1].id, 1);
+    /// ```
+    pub fn find_path<'a>(&'a self, x: &'a Word, y: &'a Word) -> Option<Vec<&'a Word>> {
+        // Return None if same node
+        if x.id == y.id {
+            return None;
+        }
+
+        let mut path = vec![x];
+        self.dfs_find_path(x, y, &mut path)
+    }
+
+    /// Helper method for find_path: DFS traversal to find target node.
+    fn dfs_find_path<'a>(
+        &'a self,
+        current: &'a Word,
+        target: &'a Word,
+        path: &mut Vec<&'a Word>,
+    ) -> Option<Vec<&'a Word>> {
+        // Check each child
+        for &child_id in &current.children {
+            let child = &self.words[child_id];
+
+            // Found target
+            if child.id == target.id {
+                path.push(child);
+                return Some(path.clone());
+            }
+
+            // Recursively search in child's subtree
+            path.push(child);
+            if let Some(found) = self.dfs_find_path(child, target, path) {
+                return Some(found);
+            }
+            path.pop(); // backtrack
+        }
+
+        None
+    }
+
     pub fn len(&self) -> usize {
         self.words.len()
     }
@@ -318,5 +376,51 @@ mod tests {
         let verb = tree.get_word(0).unwrap();
         let obliques = verb.children_by_deprel(&tree, "obl");
         assert_eq!(obliques.len(), 2);
+    }
+
+    #[test]
+    fn test_find_path() {
+        // Tree structure:
+        //       runs (0)
+        //      /    \
+        //   dog(1)  park(2)
+        //    |        |
+        //  big(3)   the(4)
+        let mut tree = Tree::default();
+        tree.add_minimal_word(0, b"runs", b"run", b"VERB", b"_", None, b"root");
+        tree.add_minimal_word(1, b"dog", b"dog", b"NOUN", b"_", Some(0), b"nsubj");
+        tree.add_minimal_word(2, b"park", b"park", b"NOUN", b"_", Some(0), b"obl");
+        tree.add_minimal_word(3, b"big", b"big", b"ADJ", b"_", Some(1), b"amod");
+        tree.add_minimal_word(4, b"the", b"the", b"DET", b"_", Some(2), b"det");
+        tree.compile_tree();
+
+        // Direct child: 0 -> 1
+        let path = tree.find_path(&tree.words[0], &tree.words[1]).unwrap();
+        assert_eq!(path.len(), 2);
+        assert_eq!(path[0].id, 0);
+        assert_eq!(path[1].id, 1);
+
+        // Multi-level: 0 -> 1 -> 3
+        let path = tree.find_path(&tree.words[0], &tree.words[3]).unwrap();
+        assert_eq!(path.len(), 3);
+        assert_eq!(path[0].id, 0);
+        assert_eq!(path[1].id, 1);
+        assert_eq!(path[2].id, 3);
+
+        // Different branch: 0 -> 2 -> 4
+        let path = tree.find_path(&tree.words[0], &tree.words[4]).unwrap();
+        assert_eq!(path.len(), 3);
+        assert_eq!(path[0].id, 0);
+        assert_eq!(path[1].id, 2);
+        assert_eq!(path[2].id, 4);
+
+        // No path (siblings)
+        assert!(tree.find_path(&tree.words[1], &tree.words[2]).is_none());
+
+        // No path (reverse direction)
+        assert!(tree.find_path(&tree.words[1], &tree.words[0]).is_none());
+
+        // Same node
+        assert!(tree.find_path(&tree.words[0], &tree.words[0]).is_none());
     }
 }
