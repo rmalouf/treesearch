@@ -46,6 +46,12 @@ impl PyTree {
         self.inner.sentence_text.clone()
     }
 
+    /// Get metadata
+    #[getter]
+    fn metadata(&self) -> std::collections::HashMap<String, String> {
+        self.inner.metadata.clone()
+    }
+
     /// String representation
     fn __repr__(&self) -> String {
         format!("Tree({} words)", self.inner.words.len())
