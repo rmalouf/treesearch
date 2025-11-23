@@ -269,7 +269,9 @@ mod tests {
         let tree = build_test_tree();
 
         // Test lemma constraint - should find one match
-        let matches: Vec<_> = search_query(&tree, "V [lemma=\"help\"];").unwrap().collect();
+        let matches: Vec<_> = search_query(&tree, "V [lemma=\"help\"];")
+            .unwrap()
+            .collect();
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0], hashmap! { "V" => 0 });
 
@@ -285,7 +287,9 @@ mod tests {
         assert_eq!(matches[0], hashmap! { "W" => 2 });
 
         // Test deprel constraint
-        let matches: Vec<_> = search_query(&tree, "X [deprel=\"xcomp\"];").unwrap().collect();
+        let matches: Vec<_> = search_query(&tree, "X [deprel=\"xcomp\"];")
+            .unwrap()
+            .collect();
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0], hashmap! { "X" => 3});
     }
