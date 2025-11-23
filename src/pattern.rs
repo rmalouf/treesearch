@@ -13,20 +13,13 @@ pub type VarId = usize;
 /// A constraint on a variable's attributes (node attributes in matched tree)
 #[derive(Debug, Clone, PartialEq)]
 pub enum Constraint {
-    /// Match any node
     Any,
-    /// Match a specific lemma
     Lemma(String),
-    /// Match a specific POS tag
-    POS(String),
-    /// Match a specific form
+    UPOS(String),
+    XPOS(String),
     Form(String),
-    /// Match a specific dependency relation
     DepRel(String),
-    /// Conjunction of constraints
     And(Vec<Constraint>),
-    /// Disjunction of constraints
-    Or(Vec<Constraint>),
 }
 
 impl Constraint {
@@ -123,6 +116,24 @@ impl Pattern {
         }
     }
 
+    pub fn with_constraints(
+        vars: HashMap<String, PatternVar>,
+        edges: Vec<EdgeConstraint>,
+    ) -> Pattern {
+        let mut pattern = Pattern::new();
+
+        for var in vars.into_values() {
+            pattern.add_var(var.var_name, var.constraint);
+        }
+
+        for edge_constraint in edges.into_iter() {
+            pattern.add_edge_constraint(edge_constraint);
+        }
+
+        pattern.n_vars = pattern.var_constraints.len();
+        pattern
+    }
+
     pub fn add_var(&mut self, var_name: String, constr: Constraint) {
         match self.var_ids.entry(var_name.to_owned()) {
             Entry::Occupied(e) => {
@@ -169,21 +180,6 @@ impl Default for Pattern {
     }
 }
 
-pub fn compile_pattern(vars: HashMap<String, PatternVar>, edges: Vec<EdgeConstraint>) -> Pattern {
-    let mut pattern = Pattern::new();
-
-    for var in vars.into_values() {
-        pattern.add_var(var.var_name, var.constraint);
-    }
-
-    for edge_constraint in edges.into_iter() {
-        pattern.add_edge_constraint(edge_constraint);
-    }
-
-    pattern.n_vars = pattern.var_constraints.len();
-    pattern
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -193,11 +189,11 @@ mod tests {
         let mut vars = HashMap::new();
         vars.insert(
             "verb".to_string(),
-            PatternVar::new("verb", Constraint::POS("VERB".to_string())),
+            PatternVar::new("verb", Constraint::UPOS("VERB".to_string())),
         );
         vars.insert(
             "noun".to_string(),
-            PatternVar::new("noun", Constraint::POS("NOUN".to_string())),
+            PatternVar::new("noun", Constraint::UPOS("NOUN".to_string())),
         );
 
         let edges = vec![EdgeConstraint {
@@ -207,7 +203,7 @@ mod tests {
             label: Some("nsubj".to_string()),
         }];
 
-        let pattern = compile_pattern(vars, edges);
+        let pattern = Pattern::with_constraints(vars, edges);
 
         assert_eq!(pattern.var_names.len(), 2);
         assert_eq!(pattern.var_constraints.len(), 2);

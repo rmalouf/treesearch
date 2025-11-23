@@ -94,9 +94,12 @@ impl PyWord {
     /// Language-specific POS tag
     #[getter]
     fn xpos(&self) -> Option<String> {
-        self.inner
-            .xpos
-            .map(|sym| String::from_utf8_lossy(&self.tree.string_pool.resolve(sym)).to_string())
+        let resolved = self.tree.string_pool.resolve(self.inner.xpos);
+        if *resolved == *b"_" {
+            None
+        } else {
+            Some(String::from_utf8_lossy(&resolved).to_string())
+        }
     }
 
     /// Dependency relation

@@ -21,6 +21,9 @@ classifiers = [
     "Topic :: Text Processing :: Linguistic",
 ]
 keywords = ["nlp", "linguistics", "dependency-parsing", "corpus-linguistics", "treebank"]
+dependencies = [
+    "tqdm>=4.67.1",
+]
 
 [project.urls]
 Homepage = "https://github.com/rmalouf/treesearch"
