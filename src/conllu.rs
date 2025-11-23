@@ -94,10 +94,7 @@ impl<R: BufRead> TreeIterator<R> {
         let form = next_field!();
         let lemma = next_field!();
         let upos = next_field!();
-        let xpos = match next_field!() {
-            b"_" => None,
-            s => Some(s),
-        };
+        let xpos = next_field!();
         let feats = self.parse_features(next_field!())?;
         let head = parse_head(next_field!())?;
         let deprel = next_field!();

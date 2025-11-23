@@ -7,9 +7,7 @@ use pest_derive::Parser;
 use std::collections::HashMap;
 use thiserror::Error;
 
-use crate::pattern::{
-    Constraint, EdgeConstraint, Pattern, PatternVar, RelationType, compile_pattern,
-};
+use crate::pattern::{Constraint, EdgeConstraint, Pattern, PatternVar, RelationType};
 
 #[derive(Parser)]
 #[grammar = "query_grammar.pest"]
@@ -58,7 +56,7 @@ pub fn parse_query(input: &str) -> Result<Pattern, QueryError> {
                         let edge_constraint = parse_precedence_decl(inner)?;
                         edges.push(edge_constraint);
                     }
-            _ => {
+                    _ => {
                         panic!("Unexpected statement type")
                     }
                 }
@@ -68,7 +66,7 @@ pub fn parse_query(input: &str) -> Result<Pattern, QueryError> {
         }
     }
 
-    Ok(compile_pattern(vars, edges))
+    Ok(Pattern::with_constraints(vars, edges))
 }
 
 /// Parse a variable declaration: Name [constraint, constraint];
@@ -107,7 +105,8 @@ fn parse_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, Que
 
     match key {
         "lemma" => Ok(Constraint::Lemma(value)),
-        "pos" => Ok(Constraint::POS(value)),
+        "upos" => Ok(Constraint::UPOS(value)),
+        "xpos" => Ok(Constraint::XPOS(value)),
         "form" => Ok(Constraint::Form(value)),
         "deprel" => Ok(Constraint::DepRel(value)),
         _ => Err(QueryError::UnknownConstraintKey(key.to_string())),
@@ -180,17 +179,17 @@ mod tests {
         assert_eq!(*pattern.var_ids.get("Node").unwrap(), 0);
         assert!(pattern.var_constraints[0].is_any());
 
-        let query = r#"Verb [pos="VERB"];"#;
+        let query = r#"Verb [upos="VERB"];"#;
         let pattern = parse_query(query).unwrap();
 
         assert_eq!(pattern.var_constraints.len(), 1);
         assert_eq!(*pattern.var_ids.get("Verb").unwrap(), 0);
         assert_eq!(
             pattern.var_constraints[0],
-            Constraint::POS("VERB".to_string())
+            Constraint::UPOS("VERB".to_string())
         );
 
-        let query = r#"Help [lemma="help", pos="VERB"];"#;
+        let query = r#"Help [lemma="help", upos="VERB"];"#;
         let pattern = parse_query(query).unwrap();
 
         assert_eq!(pattern.var_constraints.len(), 1);
@@ -199,7 +198,7 @@ mod tests {
             Constraint::And(constraints) => {
                 assert_eq!(constraints.len(), 2);
                 assert_eq!(constraints[0], Constraint::Lemma("help".to_string()));
-                assert_eq!(constraints[1], Constraint::POS("VERB".to_string()));
+                assert_eq!(constraints[1], Constraint::UPOS("VERB".to_string()));
             }
             _ => panic!("Expected And constraint"),
         }
@@ -272,7 +271,7 @@ mod tests {
     fn test_parse_all_constraint_types() {
         let query = r#"
             N1 [lemma="run"];
-            N2 [pos="VERB"];
+            N2 [upos="VERB"];
             N3 [form="running"];
             N4 [deprel="nsubj"];
         "#;
@@ -287,7 +286,7 @@ mod tests {
         assert!(
             pattern
                 .var_constraints
-                .contains(&Constraint::POS("VERB".to_string()))
+                .contains(&Constraint::UPOS("VERB".to_string()))
         );
         assert!(
             pattern
@@ -322,7 +321,7 @@ mod tests {
     fn test_both_vars_undefined_in_edge() {
         // Edge constraint where both variables are undefined
         let query = r#"
-            Node [pos="NOUN"];
+            Node [upos="NOUN"];
             Foo -> Bar;
         "#;
         let pattern = parse_query(query).unwrap();
@@ -337,7 +336,7 @@ mod tests {
     fn test_self_reference_in_edge() {
         // Edge constraint where a variable references itself
         let query = r#"
-            Node [pos="NOUN"];
+            Node [upos="NOUN"];
             Node -> Node;
         "#;
         let pattern = parse_query(query).unwrap();
@@ -353,8 +352,8 @@ mod tests {
     fn test_duplicate_variable_definition() {
         // Same variable with conflicting constraints
         let query = r#"
-            Node [pos="NOUN"];
-            Node [pos="VERB"];
+            Node [upos="NOUN"];
+            Node [upos="VERB"];
             Node -> Node;
         "#;
         let pattern = parse_query(query);
@@ -365,8 +364,8 @@ mod tests {
     fn test_parse_precedes() {
         // Test << (precedes) operator
         let query = r#"
-            First [pos="NOUN"];
-            Second [pos="VERB"];
+            First [upos="NOUN"];
+            Second [upos="VERB"];
             First << Second;
         "#;
         let pattern = parse_query(query).unwrap();
@@ -385,8 +384,8 @@ mod tests {
     fn test_parse_immediately_precedes() {
         // Test < (immediately precedes) operator
         let query = r#"
-            Adj [pos="ADJ"];
-            Noun [pos="NOUN"];
+            Adj [upos="ADJ"];
+            Noun [upos="NOUN"];
             Adj < Noun;
         "#;
         let pattern = parse_query(query).unwrap();
@@ -405,9 +404,9 @@ mod tests {
     fn test_parse_mixed_precedence_and_dependency() {
         // Test query with both dependency edges and precedence constraints
         let query = r#"
-            Verb [pos="VERB"];
-            Subj [pos="NOUN"];
-            Obj [pos="NOUN"];
+            Verb [upos="VERB"];
+            Subj [upos="NOUN"];
+            Obj [upos="NOUN"];
             Verb -[nsubj]-> Subj;
             Verb -[obj]-> Obj;
             Subj << Verb;

@@ -23,7 +23,7 @@ constraint_list = { (constraint ~ ("," ~ constraint)*)? }
 constraint = { constraint_key ~ "=" ~ string_literal }
 
 // Constraint keys
-constraint_key = { "lemma" | "pos" | "form" | "deprel" }
+constraint_key = { "lemma" | "upos" | "xpos" | "form" | "deprel" }
 
 // Edge label (deprel name)
 edge_label = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_" | ":" | "-")* }

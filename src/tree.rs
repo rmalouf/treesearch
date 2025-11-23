@@ -32,7 +32,7 @@ pub struct Word {
     pub form: Sym,
     pub lemma: Sym,
     pub upos: Sym,
-    pub xpos: Option<Sym>,
+    pub xpos: Sym,
     pub feats: Features,
     pub head: Option<WordId>,
     pub deprel: Sym,
@@ -47,6 +47,7 @@ impl Word {
         form: Sym,
         lemma: Sym,
         upos: Sym,
+        xpos: Sym,
         head: Option<WordId>,
         deprel: Sym,
     ) -> Self {
@@ -56,7 +57,7 @@ impl Word {
             form,
             lemma,
             upos,
-            xpos: None,
+            xpos,
             feats: Features::new(),
             head,
             deprel,
@@ -71,7 +72,7 @@ impl Word {
         form: Sym,
         lemma: Sym,
         upos: Sym,
-        xpos: Option<Sym>,
+        xpos: Sym,
         feats: Features,
         head: Option<WordId>,
         deprel: Sym,
@@ -149,14 +150,18 @@ impl Tree {
         form: &[u8],
         lemma: &[u8],
         upos: &[u8],
+        xpos: &[u8],
         head: Option<WordId>,
         deprel: &[u8],
     ) {
         let form_sym = self.string_pool.get_or_intern(form);
         let lemma_sym = self.string_pool.get_or_intern(lemma);
         let upos_sym = self.string_pool.get_or_intern(upos);
+        let xpos_sym = self.string_pool.get_or_intern(xpos);
         let deprel_sym = self.string_pool.get_or_intern(deprel);
-        let word = Word::new_minimal(id, form_sym, lemma_sym, upos_sym, head, deprel_sym);
+        let word = Word::new_minimal(
+            id, form_sym, lemma_sym, upos_sym, xpos_sym, head, deprel_sym,
+        );
         self.words.push(word);
     }
 
@@ -168,7 +173,7 @@ impl Tree {
         form: &[u8],
         lemma: &[u8],
         upos: &[u8],
-        xpos: Option<&[u8]>,
+        xpos: &[u8],
         feats: Features,
         head: Option<WordId>,
         deprel: &[u8],
@@ -176,10 +181,7 @@ impl Tree {
         let form_sym = self.string_pool.get_or_intern(form);
         let lemma_sym = self.string_pool.get_or_intern(lemma);
         let upos_sym = self.string_pool.get_or_intern(upos);
-        let xpos_sym = match xpos {
-            Some(x) => Some(self.string_pool.get_or_intern(x)),
-            None => None,
-        };
+        let xpos_sym = self.string_pool.get_or_intern(xpos);
         let deprel_sym = self.string_pool.get_or_intern(deprel);
 
         let word = Word::new(
@@ -266,8 +268,8 @@ mod tests {
     #[test]
     fn test_tree_creation() {
         let mut tree = Tree::default();
-        tree.add_minimal_word(0, b"runs", b"run", b"VERB", None, b"root");
-        tree.add_minimal_word(1, b"dog", b"dog", b"NOUN", Some(0), b"nsubj");
+        tree.add_minimal_word(0, b"runs", b"run", b"VERB", b"_", None, b"root");
+        tree.add_minimal_word(1, b"dog", b"dog", b"NOUN", b"_", Some(0), b"nsubj");
         tree.compile_tree();
 
         assert_eq!(tree.words.len(), 2);
@@ -278,14 +280,14 @@ mod tests {
     #[test]
     fn test_children_by_deprel_multiple_matches() {
         let mut tree = Tree::default();
-        tree.add_minimal_word(0, b"and", b"and", b"CCONJ", None, b"root");
-        tree.add_minimal_word(1, b"cats", b"cat", b"NOUN", Some(0), b"conj");
-        tree.add_minimal_word(2, b"dogs", b"dog", b"NOUN", Some(0), b"conj");
-        tree.add_minimal_word(3, b"birds", b"bird", b"NOUN", Some(0), b"conj");
+        tree.add_minimal_word(0, b"and", b"and", b"CCONJ", b"_", None, b"root");
+        tree.add_minimal_word(1, b"cats", b"cat", b"NOUN", b"_", Some(0), b"conj");
+        tree.add_minimal_word(2, b"dogs", b"dog", b"NOUN", b"_", Some(0), b"conj");
+        tree.add_minimal_word(3, b"birds", b"bird", b"NOUN", b"_", Some(0), b"conj");
         tree.compile_tree();
 
         let coord = tree.get_word(0).unwrap();
-        let conjuncts = coord.children_by_deprel(&tree, "conj");
+        let _conjuncts = coord.children_by_deprel(&tree, "conj");
         // TODO: fix these
         // assert_eq!(conjuncts.len(), 3);
         // assert_eq!(conjuncts[0].lemma, "cat");
@@ -296,9 +298,9 @@ mod tests {
     #[test]
     fn test_children_by_deprel_single_match() {
         let mut tree = Tree::default();
-        tree.add_minimal_word(0, b"runs", b"run", b"VERB", None, b"root");
-        tree.add_minimal_word(1, b"dog", b"dog", b"NOUN", Some(0), b"nsubj");
-        tree.add_minimal_word(2, b"quickly", b"quickly", b"ADV", Some(0), b"advmod");
+        tree.add_minimal_word(0, b"runs", b"run", b"VERB", b"_", None, b"root");
+        tree.add_minimal_word(1, b"dog", b"dog", b"NOUN", b"_", Some(0), b"nsubj");
+        tree.add_minimal_word(2, b"quickly", b"quickly", b"ADV", b"_", Some(0), b"advmod");
         tree.compile_tree();
 
         let verb = tree.get_word(0).unwrap();
@@ -312,8 +314,8 @@ mod tests {
     #[test]
     fn test_children_by_deprel_no_matches() {
         let mut tree = Tree::default();
-        tree.add_minimal_word(0, b"runs", b"run", b"VERB", None, b"root");
-        tree.add_minimal_word(1, b"dog", b"dog", b"NOUN", Some(0), b"nsubj");
+        tree.add_minimal_word(0, b"runs", b"run", b"VERB", b"_", None, b"root");
+        tree.add_minimal_word(1, b"dog", b"dog", b"NOUN", b"_", Some(0), b"nsubj");
         tree.compile_tree();
 
         let verb = tree.get_word(0).unwrap();
@@ -325,11 +327,11 @@ mod tests {
     #[test]
     fn test_children_by_deprel_mixed_children() {
         let mut tree = Tree::default();
-        tree.add_minimal_word(0, b"runs", b"run", b"VERB", None, b"root");
-        tree.add_minimal_word(1, b"dog", b"dog", b"NOUN", Some(0), b"nsubj");
-        tree.add_minimal_word(2, b"park", b"park", b"NOUN", Some(0), b"obl");
-        tree.add_minimal_word(3, b"store", b"store", b"NOUN", Some(0), b"obl");
-        tree.add_minimal_word(4, b"quickly", b"quickly", b"ADV", Some(0), b"advmod");
+        tree.add_minimal_word(0, b"runs", b"run", b"VERB", b"_", None, b"root");
+        tree.add_minimal_word(1, b"dog", b"dog", b"NOUN", b"_", Some(0), b"nsubj");
+        tree.add_minimal_word(2, b"park", b"park", b"NOUN", b"_", Some(0), b"obl");
+        tree.add_minimal_word(3, b"store", b"store", b"NOUN", b"_", Some(0), b"obl");
+        tree.add_minimal_word(4, b"quickly", b"quickly", b"ADV", b"_", Some(0), b"advmod");
         tree.compile_tree();
 
         let verb = tree.get_word(0).unwrap();

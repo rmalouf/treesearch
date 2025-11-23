@@ -20,15 +20,16 @@ pub type Match = HashMap<String, WordId>;
 fn satisfies_var_constraint(tree: &Tree, word: &Word, constraint: &Constraint) -> bool {
     match constraint {
         Constraint::Lemma(lemma) => *tree.string_pool.resolve(word.lemma) == *lemma.as_bytes(),
-        Constraint::POS(pos) => *tree.string_pool.resolve(word.upos) == *pos.as_bytes(),
+        Constraint::UPOS(pos) => *tree.string_pool.resolve(word.upos) == *pos.as_bytes(),
+        Constraint::XPOS(pos) => *tree.string_pool.resolve(word.xpos) == *pos.as_bytes(),
         Constraint::Form(form) => *tree.string_pool.resolve(word.form) == *form.as_bytes(),
         Constraint::DepRel(deprel) => *tree.string_pool.resolve(word.deprel) == *deprel.as_bytes(),
         Constraint::And(constraints) => constraints
             .iter()
             .all(|constraint| satisfies_var_constraint(tree, word, constraint)),
-        Constraint::Or(constraints) => constraints
-            .iter()
-            .any(|constraint| satisfies_var_constraint(tree, word, constraint)),
+        //        Constraint::Or(constraints) => constraints
+        //            .iter()
+        //            .any(|constraint| satisfies_var_constraint(tree, word, constraint)),
         Constraint::Any => true, // No filtering
     }
 }
@@ -230,10 +231,10 @@ mod tests {
 
     fn build_test_tree() -> Tree {
         let mut tree = Tree::default();
-        tree.add_minimal_word(0, b"helped", b"help", b"VERB", None, b"root");
-        tree.add_minimal_word(1, b"us", b"we", b"PRON", Some(0), b"obj");
-        tree.add_minimal_word(2, b"to", b"to", b"PART", Some(3), b"mark");
-        tree.add_minimal_word(3, b"win", b"win", b"VERB", Some(0), b"xcomp");
+        tree.add_minimal_word(0, b"helped", b"help", b"VERB", b"_", None, b"root");
+        tree.add_minimal_word(1, b"us", b"we", b"PRON", b"_", Some(0), b"obj");
+        tree.add_minimal_word(2, b"to", b"to", b"PART", b"_", Some(3), b"mark");
+        tree.add_minimal_word(3, b"win", b"win", b"VERB", b"_", Some(0), b"xcomp");
         tree.compile_tree();
         tree
     }
@@ -243,9 +244,9 @@ mod tests {
     ///                         -> b"dogs" (conj)
     fn build_coord_tree() -> Tree {
         let mut tree = Tree::default();
-        tree.add_minimal_word(0, b"and", b"and", b"CCONJ", None, b"root");
-        tree.add_minimal_word(1, b"cats", b"cat", b"NOUN", Some(0), b"conj");
-        tree.add_minimal_word(2, b"dogs", b"dog", b"NOUN", Some(0), b"conj");
+        tree.add_minimal_word(0, b"and", b"and", b"CCONJ", b"_", None, b"root");
+        tree.add_minimal_word(1, b"cats", b"cat", b"NOUN", b"_", Some(0), b"conj");
+        tree.add_minimal_word(2, b"dogs", b"dog", b"NOUN", b"_", Some(0), b"conj");
         tree.compile_tree();
         tree
     }
@@ -255,10 +256,10 @@ mod tests {
     ///              -> b"running" (xcomp) -> b"quickly" (advmod)
     fn build_multi_verb_tree() -> Tree {
         let mut tree = Tree::default();
-        tree.add_minimal_word(0, b"saw", b"see", b"VERB", None, b"root");
-        tree.add_minimal_word(1, b"John", b"John", b"PROPN", Some(0), b"nsubj");
-        tree.add_minimal_word(2, b"running", b"run", b"VERB", Some(0), b"xcomp");
-        tree.add_minimal_word(3, b"quickly", b"quickly", b"ADV", Some(2), b"advmod");
+        tree.add_minimal_word(0, b"saw", b"see", b"VERB", b"_", None, b"root");
+        tree.add_minimal_word(1, b"John", b"John", b"PROPN", b"_", Some(0), b"nsubj");
+        tree.add_minimal_word(2, b"running", b"run", b"VERB", b"_", Some(0), b"xcomp");
+        tree.add_minimal_word(3, b"quickly", b"quickly", b"ADV", b"_", Some(2), b"advmod");
         tree.compile_tree();
         tree
     }
@@ -276,7 +277,7 @@ mod tests {
     #[test]
     fn test_search_query_single_var_pos() {
         let tree = build_test_tree();
-        let matches: Vec<_> = search_query(&tree, "V [pos=\"VERB\"];").unwrap().collect();
+        let matches: Vec<_> = search_query(&tree, "V [upos=\"VERB\"];").unwrap().collect();
         // Should match both verbs: "helped" and "win"
         assert_eq!(matches.len(), 2);
         assert_eq!(matches[0], hashmap! { "V" => 0 });
@@ -307,7 +308,7 @@ mod tests {
         // Find word with two conj children
         let matches: Vec<_> = search_query(
             &tree,
-            "C [pos=\"CCONJ\"]; N1 []; N2 []; C -[conj]-> N1; C -[conj]-> N2;",
+            "C [upos=\"CCONJ\"]; N1 []; N2 []; C -[conj]-> N1; C -[conj]-> N2;",
         )
         .unwrap()
         .collect();
@@ -348,15 +349,15 @@ mod tests {
     fn test_search_query_no_matches() {
         let tree = build_test_tree();
         // Search for something that doesn't exist
-        let matches: Vec<_> = search_query(&tree, "N [pos=\"NOUN\"];").unwrap().collect();
+        let matches: Vec<_> = search_query(&tree, "N [upos=\"NOUN\"];").unwrap().collect();
         assert_eq!(matches.len(), 0);
     }
 
     #[test]
     fn test_search_query_constraint_and() {
         let tree = build_test_tree();
-        // Find word with both lemma and pos constraints
-        let matches: Vec<_> = search_query(&tree, "V [lemma=\"help\", pos=\"VERB\"];")
+        // Find word with both lemma and upos constraints
+        let matches: Vec<_> = search_query(&tree, "V [lemma=\"help\", upos=\"VERB\"];")
             .unwrap()
             .collect();
         assert_eq!(matches.len(), 1);
@@ -375,7 +376,7 @@ mod tests {
     fn test_search_query_exhaustive_matching() {
         let tree = build_coord_tree();
         // Find all nouns (exhaustive search should find both)
-        let matches: Vec<_> = search_query(&tree, "N [pos=\"NOUN\"];").unwrap().collect();
+        let matches: Vec<_> = search_query(&tree, "N [upos=\"NOUN\"];").unwrap().collect();
         // Should find both "cats" and "dogs"
         assert_eq!(matches.len(), 2);
         assert!(matches.contains(&hashmap! { "N" => 1 })); // cats
@@ -388,7 +389,7 @@ mod tests {
         // Complex pattern: verb with nsubj and xcomp children
         let matches: Vec<_> = search_query(
             &tree,
-            "V1 [pos=\"VERB\"]; S []; V2 [pos=\"VERB\"]; V1 -[nsubj]-> S; V1 -> V2;",
+            "V1 [upos=\"VERB\"]; S []; V2 [upos=\"VERB\"]; V1 -[nsubj]-> S; V1 -> V2;",
         )
         .unwrap()
         .collect();
@@ -430,12 +431,10 @@ mod tests {
         let tree = build_test_tree();
 
         // "helped" << "win" should match (0 precedes 3)
-        let matches: Vec<_> = search_query(
-            &tree,
-            "V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 << V2;",
-        )
-        .unwrap()
-        .collect();
+        let matches: Vec<_> =
+            search_query(&tree, "V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 << V2;")
+                .unwrap()
+                .collect();
 
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0], hashmap! { "V1" => 0, "V2" => 3 });
@@ -448,24 +447,23 @@ mod tests {
         let tree = build_test_tree();
 
         // Without precedence, we'd match both verbs regardless of order
-        let matches_no_constraint: Vec<_> = search_query(
-            &tree,
-            "V1 [pos=\"VERB\"]; V2 [pos=\"VERB\"];",
-        )
-        .unwrap()
-        .collect();
+        let matches_no_constraint: Vec<_> =
+            search_query(&tree, "V1 [upos=\"VERB\"]; V2 [upos=\"VERB\"];")
+                .unwrap()
+                .collect();
         assert_eq!(matches_no_constraint.len(), 2); // (0,3) and (3,0)
 
         // But "win" << "helped" should NOT match (3 does not precede 0)
-        let matches_with_constraint: Vec<_> = search_query(
-            &tree,
-            "V1 [lemma=\"win\"]; V2 [lemma=\"help\"]; V1 << V2;",
-        )
-        .unwrap()
-        .collect();
+        let matches_with_constraint: Vec<_> =
+            search_query(&tree, "V1 [lemma=\"win\"]; V2 [lemma=\"help\"]; V1 << V2;")
+                .unwrap()
+                .collect();
 
-        assert_eq!(matches_with_constraint.len(), 0,
-            "Expected no matches since 'win' (word 3) does not precede 'helped' (word 0)");
+        assert_eq!(
+            matches_with_constraint.len(),
+            0,
+            "Expected no matches since 'win' (word 3) does not precede 'helped' (word 0)"
+        );
     }
 
     #[test]
@@ -475,12 +473,9 @@ mod tests {
         let tree = build_test_tree();
 
         // "to" < "win" should match (2 immediately precedes 3)
-        let matches: Vec<_> = search_query(
-            &tree,
-            "T [lemma=\"to\"]; V [lemma=\"win\"]; T < V;",
-        )
-        .unwrap()
-        .collect();
+        let matches: Vec<_> = search_query(&tree, "T [lemma=\"to\"]; V [lemma=\"win\"]; T < V;")
+            .unwrap()
+            .collect();
 
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0], hashmap! { "T" => 2, "V" => 3 });
@@ -493,25 +488,24 @@ mod tests {
         let tree = build_test_tree();
 
         // Without constraint, "helped" and "win" can both match as verbs
-        let matches_no_constraint: Vec<_> = search_query(
-            &tree,
-            "V1 [lemma=\"help\"]; V2 [lemma=\"win\"];",
-        )
-        .unwrap()
-        .collect();
+        let matches_no_constraint: Vec<_> =
+            search_query(&tree, "V1 [lemma=\"help\"]; V2 [lemma=\"win\"];")
+                .unwrap()
+                .collect();
         assert_eq!(matches_no_constraint.len(), 1);
 
         // But "helped" < "win" should NOT match because they're not adjacent
         // (word 1 "us" is between them)
-        let matches_with_constraint: Vec<_> = search_query(
-            &tree,
-            "V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 < V2;",
-        )
-        .unwrap()
-        .collect();
+        let matches_with_constraint: Vec<_> =
+            search_query(&tree, "V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 < V2;")
+                .unwrap()
+                .collect();
 
-        assert_eq!(matches_with_constraint.len(), 0,
-            "Expected no matches since 'helped' (0) and 'win' (3) are not adjacent");
+        assert_eq!(
+            matches_with_constraint.len(),
+            0,
+            "Expected no matches since 'helped' (0) and 'win' (3) are not adjacent"
+        );
     }
 
     #[test]
@@ -521,21 +515,17 @@ mod tests {
         let tree = build_test_tree();
 
         // "helped" << "win" should match (non-adjacent precedence OK)
-        let precedes_matches: Vec<_> = search_query(
-            &tree,
-            "V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 << V2;",
-        )
-        .unwrap()
-        .collect();
+        let precedes_matches: Vec<_> =
+            search_query(&tree, "V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 << V2;")
+                .unwrap()
+                .collect();
         assert_eq!(precedes_matches.len(), 1);
 
         // But "helped" < "win" should NOT match (not adjacent)
-        let immediately_precedes_matches: Vec<_> = search_query(
-            &tree,
-            "V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 < V2;",
-        )
-        .unwrap()
-        .collect();
+        let immediately_precedes_matches: Vec<_> =
+            search_query(&tree, "V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 < V2;")
+                .unwrap()
+                .collect();
         assert_eq!(immediately_precedes_matches.len(), 0);
     }
 
@@ -567,25 +557,23 @@ mod tests {
         let tree = build_test_tree();
 
         // Without precedence, dependency edge matches
-        let matches_no_precedence: Vec<_> = search_query(
-            &tree,
-            "V1 []; V2 []; V1 -[xcomp]-> V2;",
-        )
-        .unwrap()
-        .collect();
+        let matches_no_precedence: Vec<_> = search_query(&tree, "V1 []; V2 []; V1 -[xcomp]-> V2;")
+            .unwrap()
+            .collect();
         assert_eq!(matches_no_precedence.len(), 1);
 
         // But if we add a false precedence constraint (win << helped),
         // the match should fail even though the dependency exists
-        let matches_with_false_precedence: Vec<_> = search_query(
-            &tree,
-            "V1 []; V2 []; V1 -[xcomp]-> V2; V2 << V1;",
-        )
-        .unwrap()
-        .collect();
+        let matches_with_false_precedence: Vec<_> =
+            search_query(&tree, "V1 []; V2 []; V1 -[xcomp]-> V2; V2 << V1;")
+                .unwrap()
+                .collect();
 
-        assert_eq!(matches_with_false_precedence.len(), 0,
-            "Expected no matches because V2 (win=3) cannot precede V1 (helped=0)");
+        assert_eq!(
+            matches_with_false_precedence.len(),
+            0,
+            "Expected no matches because V2 (win=3) cannot precede V1 (helped=0)"
+        );
     }
 
     #[test]
@@ -595,12 +583,9 @@ mod tests {
         let tree = build_coord_tree();
 
         // "and" << "cats" should match (0 precedes 1)
-        let matches: Vec<_> = search_query(
-            &tree,
-            "C [lemma=\"and\"]; N [lemma=\"cat\"]; C << N;",
-        )
-        .unwrap()
-        .collect();
+        let matches: Vec<_> = search_query(&tree, "C [lemma=\"and\"]; N [lemma=\"cat\"]; C << N;")
+            .unwrap()
+            .collect();
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0], hashmap! { "C" => 0, "N" => 1 });
     }
