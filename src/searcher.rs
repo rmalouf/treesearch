@@ -7,7 +7,7 @@
 //!
 
 use crate::RelationType;
-use crate::pattern::{Constraint, DirectedEdge, Pattern};
+use crate::pattern::{Constraint, Pattern};
 use crate::query::{QueryError, parse_query};
 use crate::tree::Word;
 use crate::tree::{Tree, WordId};
