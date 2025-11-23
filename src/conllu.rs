@@ -13,48 +13,62 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
+use thiserror::Error;
 
 /// Error during CoNLL-U parsing
-#[derive(Debug)]
-pub struct ParseError {
-    pub line_num: Option<usize>,
-    pub line_content: Option<String>,
-    pub message: String,
-}
+#[derive(Debug, Error)]
+pub enum ParseError {
+    #[error("Parse error at line {line_num}: {message}\n  Line: {line_content}")]
+    LineError {
+        line_num: usize,
+        line_content: String,
+        message: String,
+    },
 
-impl std::fmt::Display for ParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match (&self.line_num, &self.line_content) {
-            (Some(num), Some(content)) => {
-                write!(
-                    f,
-                    "Parse error at line {}: {}\n  Line: {}",
-                    num, self.message, content
-                )
-            }
-            (Some(num), None) => {
-                write!(f, "Parse error at line {}: {}", num, self.message)
-            }
-            (None, Some(content)) => {
-                write!(f, "Parse error: {}\n  Line: {}", self.message, content)
-            }
-            (None, None) => {
-                write!(f, "Parse error: {}", self.message)
-            }
-        }
-    }
-}
+    #[error("Parse error at line {line_num}: {message}")]
+    LineErrorNoContent { line_num: usize, message: String },
 
-impl std::error::Error for ParseError {}
+    #[error("Parse error: {message}")]
+    GenericError { message: String },
 
-impl From<std::str::Utf8Error> for ParseError {
-    fn from(e: std::str::Utf8Error) -> Self {
-        ParseError {
-            line_num: None,
-            line_content: None,
-            message: format!("Invalid UTF-8 sequence: {}", e),
-        }
-    }
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
+
+    #[error("Invalid UTF-8 sequence: {0}")]
+    Utf8Error(#[from] std::str::Utf8Error),
+
+    #[error("Missing field {field_num}")]
+    MissingField { field_num: usize },
+
+    #[error("Extended deprels not yet supported")]
+    UnsupportedExtendedDeprels,
+
+    #[error("Misc annotation not yet supported")]
+    UnsupportedMiscAnnotation,
+
+    #[error("Expected 10 fields, found more than 10")]
+    TooManyFields,
+
+    #[error("Invalid FEATS pair (missing '='): {pair}")]
+    InvalidFeatsPair { pair: String },
+
+    #[error("Invalid DEPS pair: {pair}")]
+    InvalidDepsPair { pair: String },
+
+    #[error("Multiword tokens (e.g., {token_id}) are not supported")]
+    UnsupportedMultiwordToken { token_id: String },
+
+    #[error("Empty nodes (e.g., {token_id}) are not supported")]
+    UnsupportedEmptyNode { token_id: String },
+
+    #[error("Invalid token ID: {token_id}")]
+    InvalidTokenId { token_id: String },
+
+    #[error("Invalid HEAD: {head}")]
+    InvalidHead { head: String },
+
+    #[error("Invalid MISC pair (missing '='): {pair}")]
+    InvalidMiscPair { pair: String },
 }
 
 /// CoNLL-U reader that iterates over sentences
@@ -79,13 +93,12 @@ impl<R: BufRead> TreeIterator<R> {
         // Helper macro to consume the next field with error handling
         macro_rules! next_field {
             () => {{
-                let result = fields.next().ok_or_else(|| ParseError {
-                    line_num: None,
-                    line_content: None,
-                    message: format!("Missing field {}", field_num),
+                let result = fields.next().ok_or_else(|| {
+                    let num = field_num;
+                    field_num += 1;
+                    ParseError::MissingField { field_num: num }
                 })?;
                 field_num += 1;
-                let _ = field_num; // avoid warning about unused value
                 result
             }};
         }
@@ -99,26 +112,14 @@ impl<R: BufRead> TreeIterator<R> {
         let head = parse_head(next_field!())?;
         let deprel = next_field!();
         if next_field!() != b"_" {
-            return Err(ParseError {
-                line_num: None,
-                line_content: None,
-                message: "Extended deprels not yet supported".to_string(),
-            });
+            return Err(ParseError::UnsupportedExtendedDeprels);
         }
         if next_field!() != b"_" {
-            return Err(ParseError {
-                line_num: None,
-                line_content: None,
-                message: "Misc annotation not yet supported".to_string(),
-            });
+            return Err(ParseError::UnsupportedMiscAnnotation);
         }
 
         if fields.next().is_some() {
-            return Err(ParseError {
-                line_num: None,
-                line_content: None,
-                message: "Expected 10 fields, found more than 10".to_string(),
-            });
+            return Err(ParseError::TooManyFields);
         }
 
         tree.add_word(
@@ -138,13 +139,8 @@ impl<R: BufRead> TreeIterator<R> {
             //            let mut kv = pair.split(|b| *b == b'=');
             //            let (Some(k), Some(v)) = (kv.next(), kv.next()) else {
             let Some((k, v)) = bs_split_once(pair, b'=') else {
-                return Err(ParseError {
-                    line_num: None,
-                    line_content: None,
-                    message: format!(
-                        "Invalid FEATS pair (missing '='): {}",
-                        str::from_utf8(pair)?
-                    ),
+                return Err(ParseError::InvalidFeatsPair {
+                    pair: str::from_utf8(pair)?.to_string(),
                 });
             };
             feats.push((
@@ -165,18 +161,14 @@ impl<R: BufRead> TreeIterator<R> {
 
         for pair in s.split(|b| *b == b'|') {
             let Some((head_str, deprel)) = bs_split_once(pair, b':') else {
-                return Err(ParseError {
-                    line_num: None,
-                    line_content: None,
-                    message: format!("Invalid DEPS pair: {}", str::from_utf8(pair)?),
+                return Err(ParseError::InvalidDepsPair {
+                    pair: str::from_utf8(pair)?.to_string(),
                 });
             };
 
             let Some(head) = bs_atoi(head_str) else {
-                return Err(ParseError {
-                    line_num: None,
-                    line_content: None,
-                    message: format!("Invalid DEPS pair: {}", str::from_utf8(pair)?),
+                return Err(ParseError::InvalidDepsPair {
+                    pair: str::from_utf8(pair)?.to_string(),
                 });
             };
 
@@ -250,11 +242,7 @@ impl<R: BufRead> Iterator for TreeIterator<R> {
 
             match self.reader.read_until(b'\n', &mut buffer) {
                 Err(e) => {
-                    return Some(Err(ParseError {
-                        line_num: Some(self.line_num),
-                        line_content: None,
-                        message: format!("IO error: {}", e),
-                    }));
+                    return Some(Err(ParseError::IoError(e)));
                 }
                 Ok(0) => break, // EOF - always break
                 Ok(_) => {
@@ -277,10 +265,14 @@ impl<R: BufRead> Iterator for TreeIterator<R> {
                     } else {
                         // Regular token line - parse immediately
                         has_content = true;
-                        if let Err(mut e) = self.parse_line(&mut tree, line, word_id) {
-                            e.line_num = Some(self.line_num);
-                            e.line_content = Some(String::from_utf8_lossy(line).to_string());
-                            return Some(Err(e));
+                        if let Err(e) = self.parse_line(&mut tree, line, word_id) {
+                            // Wrap error with line context
+                            let enriched_error = ParseError::LineError {
+                                line_num: self.line_num,
+                                line_content: String::from_utf8_lossy(line).to_string(),
+                                message: e.to_string(),
+                            };
+                            return Some(Err(enriched_error));
                         }
                         word_id += 1;
                     }
@@ -326,31 +318,19 @@ fn parse_comment(
 /// Parse ID field (single integer only)
 fn parse_id(s: &[u8]) -> Result<TokenId, ParseError> {
     if s.contains(&b'-') {
-        return Err(ParseError {
-            line_num: None,
-            line_content: None,
-            message: format!(
-                "Multiword tokens (e.g., {}) are not supported",
-                str::from_utf8(s)?
-            ),
+        return Err(ParseError::UnsupportedMultiwordToken {
+            token_id: str::from_utf8(s)?.to_string(),
         });
     }
     if s.contains(&b'.') {
-        return Err(ParseError {
-            line_num: None,
-            line_content: None,
-            message: format!(
-                "Empty nodes (e.g., {}) are not supported",
-                str::from_utf8(s)?
-            ),
+        return Err(ParseError::UnsupportedEmptyNode {
+            token_id: str::from_utf8(s)?.to_string(),
         });
     }
 
     let Some(id) = bs_atoi(s) else {
-        return Err(ParseError {
-            line_num: None,
-            line_content: None,
-            message: format!("Invalid token ID: {}", str::from_utf8(s)?),
+        return Err(ParseError::InvalidTokenId {
+            token_id: str::from_utf8(s)?.to_string(),
         });
     };
     Ok(id)
@@ -362,10 +342,8 @@ fn parse_head(s: &[u8]) -> Result<Option<WordId>, ParseError> {
         Ok(None) // Root word
     } else {
         let Some(head) = bs_atoi(s) else {
-            return Err(ParseError {
-                line_num: None,
-                line_content: None,
-                message: format!("Invalid HEAD: {}", str::from_utf8(s)?),
+            return Err(ParseError::InvalidHead {
+                head: str::from_utf8(s)?.to_string(),
             });
         };
         // HEAD is 1-indexed in CoNLL-U, convert to 0-indexed WordIds
@@ -382,10 +360,8 @@ fn _parse_misc(s: &str) -> Result<Misc, ParseError> {
     let mut misc = Misc::new();
     for pair in s.split('|') {
         let Some((k, v)) = pair.split_once('=') else {
-            return Err(ParseError {
-                line_num: None,
-                line_content: None,
-                message: format!("Invalid MISC pair (missing '='): {}", pair),
+            return Err(ParseError::InvalidMiscPair {
+                pair: pair.to_string(),
             });
         };
         misc.insert(k.to_string(), v.to_string());
