@@ -65,7 +65,6 @@ impl PatternVar {
     }
 }
 
-/// Type of structural relation between nodes
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RelationType {
     Child,
@@ -75,7 +74,6 @@ pub enum RelationType {
     ImmediatelyPrecedes,
 }
 
-/// A constraint on the structural relationship between two pattern variables
 #[derive(Debug, Clone)]
 pub struct EdgeConstraint {
     pub from: String,
@@ -84,22 +82,22 @@ pub struct EdgeConstraint {
     pub label: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub enum DirectedEdge {
+    In(usize),
+    Out(usize),
+}
+
 /// A complete pattern to match against dependency trees
 #[derive(Debug, Clone)]
 pub struct Pattern {
-    /// Number of variables in the pattern
     pub n_vars: usize,
-    /// Variable name -> VarId mapping
     pub var_ids: HashMap<String, VarId>,
-    /// VarId -> Variable name
     pub var_names: Vec<String>,
-    /// Outgoing edge constraint indices by variable
     pub out_edges: Vec<Vec<usize>>,
-    /// Incoming edge constraint indices by variable
     pub in_edges: Vec<Vec<usize>>,
-    /// Pattern variables
+    pub incident_edges: Vec<Vec<DirectedEdge>>,
     pub var_constraints: Vec<Constraint>,
-    /// Edge constraints connecting the variables
     pub edge_constraints: Vec<EdgeConstraint>,
 }
 
@@ -111,6 +109,7 @@ impl Pattern {
             var_names: Vec::new(),
             in_edges: Vec::new(),
             out_edges: Vec::new(),
+            incident_edges: Vec::new(),
             var_constraints: Vec::new(),
             edge_constraints: Vec::new(),
         }
@@ -147,6 +146,7 @@ impl Pattern {
                 self.var_constraints.push(constr);
                 self.out_edges.push(Vec::new());
                 self.in_edges.push(Vec::new());
+                self.incident_edges.push(Vec::new()); // TODO: replace in_edges, out_edges someday
             }
         }
     }
@@ -169,7 +169,8 @@ impl Pattern {
 
         self.out_edges[*from_var_id].push(edge_id);
         self.in_edges[*to_var_id].push(edge_id);
-
+        self.incident_edges[*from_var_id].push(DirectedEdge::Out(edge_id));
+        self.incident_edges[*to_var_id].push(DirectedEdge::In(edge_id));
         self.edge_constraints.push(edge_constraint);
     }
 }
