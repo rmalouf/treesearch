@@ -226,8 +226,6 @@ impl<R: BufRead> Iterator for TreeIterator<R> {
     type Item = Result<Tree, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut metadata = HashMap::new();
-        let mut sentence_text = None;
         let mut tree = Tree::with_metadata(&self.string_pool, None, HashMap::new());
         let mut word_id: WordId = 0;
         let mut buffer: Vec<u8> = Vec::with_capacity(100);
@@ -259,7 +257,7 @@ impl<R: BufRead> Iterator for TreeIterator<R> {
 
                     if buffer[0] == b'#' {
                         // Comment/metadata line
-                        parse_comment(line, &mut metadata, &mut sentence_text);
+                        parse_comment(line, &mut tree);
                     } else {
                         // Regular token line - parse immediately
                         has_content = true;
@@ -283,20 +281,14 @@ impl<R: BufRead> Iterator for TreeIterator<R> {
             return None;
         }
 
-        // Update metadata and compile tree
-        tree.sentence_text = sentence_text;
-        tree.metadata = metadata;
+        // Compile tree
         tree.compile_tree();
         Some(Ok(tree))
     }
 }
 
 /// Parse a comment line (starts with #)
-fn parse_comment(
-    line: &[u8],
-    metadata: &mut HashMap<String, String>,
-    sentence_text: &mut Option<String>,
-) {
+fn parse_comment(line: &[u8], tree: &mut Tree) {
     // TODO: deal with bytestring stuff here
 
     // Check for key = value format
@@ -306,9 +298,9 @@ fn parse_comment(
         let value = value.trim();
 
         if key == "text" {
-            *sentence_text = Some(value.to_string());
+            tree.sentence_text = Some(value.to_string());
         } else {
-            metadata.insert(key.to_string(), value.to_string());
+            tree.metadata.insert(key.to_string(), value.to_string());
         }
     }
 }
