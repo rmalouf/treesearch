@@ -52,6 +52,28 @@ impl PyTree {
         self.inner.metadata.clone()
     }
 
+    /// Find dependency path from ancestor X to descendant Y
+    ///
+    /// Args:
+    ///     x: Starting word (ancestor)
+    ///     y: Target word (descendant)
+    ///
+    /// Returns:
+    ///     List of words forming the path from X to Y, or None if no path exists
+    fn find_path(&self, x: &PyWord, y: &PyWord) -> Option<Vec<PyWord>> {
+        self.inner
+            .find_path(&x.inner, &y.inner)
+            .map(|words| {
+                words
+                    .into_iter()
+                    .map(|word| PyWord {
+                        inner: word.clone(),
+                        tree: Arc::clone(&self.inner),
+                    })
+                    .collect()
+            })
+    }
+
     /// String representation
     fn __repr__(&self) -> String {
         format!("Tree({} words)", self.inner.words.len())
