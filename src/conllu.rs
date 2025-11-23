@@ -535,7 +535,10 @@ mod tests {
         let conllu = "1\tword\tlemma\tNOUN\tNN\t_\t2\tnsubj\t2:dep\t_\n\n"; // DEPS field not "_"
         let mut reader = TreeIterator::from_string(conllu);
         let err = reader.next().unwrap().unwrap_err();
-        assert!(err.to_string().contains("Extended deprels not yet supported"));
+        assert!(
+            err.to_string()
+                .contains("Extended deprels not yet supported")
+        );
     }
 
     #[test]
@@ -543,7 +546,10 @@ mod tests {
         let conllu = "1\tword\tlemma\tNOUN\tNN\t_\t2\tnsubj\t_\tSpaceAfter=No\n\n"; // MISC field not "_"
         let mut reader = TreeIterator::from_string(conllu);
         let err = reader.next().unwrap().unwrap_err();
-        assert!(err.to_string().contains("Misc annotation not yet supported"));
+        assert!(
+            err.to_string()
+                .contains("Misc annotation not yet supported")
+        );
     }
 
     #[test]
