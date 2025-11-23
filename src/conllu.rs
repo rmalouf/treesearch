@@ -55,11 +55,8 @@ pub enum ParseError {
     #[error("Invalid DEPS pair: {pair}")]
     InvalidDepsPair { pair: String },
 
-    #[error("Multiword tokens (e.g., {token_id}) are not supported")]
-    UnsupportedMultiwordToken { token_id: String },
-
-    #[error("Empty nodes (e.g., {token_id}) are not supported")]
-    UnsupportedEmptyNode { token_id: String },
+    #[error("Multiword tokens and empty nodes are not supported: {token_id}")]
+    UnsupportedToken { token_id: String },
 
     #[error("Invalid token ID: {token_id}")]
     InvalidTokenId { token_id: String },
@@ -99,6 +96,7 @@ impl<R: BufRead> TreeIterator<R> {
                     ParseError::MissingField { field_num: num }
                 })?;
                 field_num += 1;
+                let _ = field_num;
                 result
             }};
         }
@@ -318,12 +316,12 @@ fn parse_comment(
 /// Parse ID field (single integer only)
 fn parse_id(s: &[u8]) -> Result<TokenId, ParseError> {
     if s.contains(&b'-') {
-        return Err(ParseError::UnsupportedMultiwordToken {
+        return Err(ParseError::UnsupportedToken {
             token_id: str::from_utf8(s)?.to_string(),
         });
     }
     if s.contains(&b'.') {
-        return Err(ParseError::UnsupportedEmptyNode {
+        return Err(ParseError::UnsupportedToken {
             token_id: str::from_utf8(s)?.to_string(),
         });
     }
@@ -469,6 +467,108 @@ mod tests {
         assert_eq!(parse_head(b"1").unwrap(), Some(0)); // 1-indexed to 0-indexed
         assert_eq!(parse_head(b"5").unwrap(), Some(4));
     }
+
+    // Error handling tests
+    #[test]
+    fn test_error_multiword_token() {
+        let err = parse_id(b"1-2").unwrap_err();
+        assert!(matches!(err, ParseError::UnsupportedToken { .. }));
+        assert!(err.to_string().contains("1-2"));
+    }
+
+    #[test]
+    fn test_error_empty_node() {
+        let err = parse_id(b"2.1").unwrap_err();
+        assert!(matches!(err, ParseError::UnsupportedToken { .. }));
+        assert!(err.to_string().contains("2.1"));
+    }
+
+    #[test]
+    fn test_error_invalid_token_id() {
+        let err = parse_id(b"abc").unwrap_err();
+        assert!(matches!(err, ParseError::InvalidTokenId { .. }));
+        assert!(err.to_string().contains("abc"));
+    }
+
+    #[test]
+    fn test_error_invalid_head() {
+        let err = parse_head(b"xyz").unwrap_err();
+        assert!(matches!(err, ParseError::InvalidHead { .. }));
+        assert!(err.to_string().contains("xyz"));
+    }
+
+    #[test]
+    fn test_error_missing_fields() {
+        let conllu = "1\tword\n\n"; // Only 2 fields instead of 10
+        let mut reader = TreeIterator::from_string(conllu);
+        let err = reader.next().unwrap().unwrap_err();
+        // Should be wrapped in LineError with context
+        assert!(matches!(err, ParseError::LineError { .. }));
+        assert!(err.to_string().contains("line 1"));
+    }
+
+    #[test]
+    fn test_error_too_many_fields() {
+        // 11 fields - all valid until we check field count
+        let conllu = "1\tword\tlemma\tNOUN\tNN\t_\t0\troot\t_\t_\textra\n\n";
+        let mut reader = TreeIterator::from_string(conllu);
+        let err = reader.next().unwrap().unwrap_err();
+        assert!(matches!(err, ParseError::LineError { .. }));
+        assert!(err.to_string().contains("10 fields"));
+    }
+
+    #[test]
+    fn test_error_invalid_feats_pair() {
+        let pool = BytestringPool::new();
+        let mut reader = TreeIterator {
+            reader: BufReader::new(std::io::Cursor::new("")),
+            line_num: 0,
+            string_pool: pool,
+        };
+        let err = reader.parse_features(b"InvalidPair").unwrap_err();
+        assert!(matches!(err, ParseError::InvalidFeatsPair { .. }));
+        assert!(err.to_string().contains("InvalidPair"));
+    }
+
+    #[test]
+    fn test_error_unsupported_enhanced_deprels() {
+        let conllu = "1\tword\tlemma\tNOUN\tNN\t_\t2\tnsubj\t2:dep\t_\n\n"; // DEPS field not "_"
+        let mut reader = TreeIterator::from_string(conllu);
+        let err = reader.next().unwrap().unwrap_err();
+        assert!(err.to_string().contains("Extended deprels not yet supported"));
+    }
+
+    #[test]
+    fn test_error_unsupported_misc() {
+        let conllu = "1\tword\tlemma\tNOUN\tNN\t_\t2\tnsubj\t_\tSpaceAfter=No\n\n"; // MISC field not "_"
+        let mut reader = TreeIterator::from_string(conllu);
+        let err = reader.next().unwrap().unwrap_err();
+        assert!(err.to_string().contains("Misc annotation not yet supported"));
+    }
+
+    #[test]
+    fn test_error_line_context_preserved() {
+        // Test that line number and content are preserved in error messages
+        let conllu = r#"# comment line
+1	word	lemma	NOUN	NN	_	0	root	_	_
+
+abc	invalid	lemma	NOUN	NN	_	0	root	_	_
+
+"#;
+        let mut reader = TreeIterator::from_string(conllu);
+        let first = reader.next(); // Get first valid tree
+        assert!(first.is_some());
+        assert!(first.unwrap().is_ok());
+
+        let second = reader.next(); // Get error from second tree
+        assert!(second.is_some());
+        let err = second.unwrap().unwrap_err();
+
+        let err_str = err.to_string();
+        assert!(err_str.contains("line 4")); // Line number in error
+        assert!(err_str.contains("abc")); // Line content in error
+    }
+
     /*
         #[test]
         fn test_parse_deps() {
