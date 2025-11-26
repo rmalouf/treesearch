@@ -25,15 +25,16 @@ query = """
 pattern = ts.parse_query(query)
 
 # 2. Search a single file
-for match in ts.search_file("corpus.conllu", pattern):
-    verb_idx, noun_idx = match
-    print(f"Match: verb={verb_idx}, noun={noun_idx}")
+for tree, match in ts.search_file("corpus.conllu", pattern):
+    verb = tree.get_word(match["Verb"])
+    noun = tree.get_word(match["Noun"])
+    print(f"Match: {verb.form} ← {noun.form}")
 
 # 3. Or work with individual trees
 for tree in ts.read_trees("corpus.conllu"):
     for match in ts.search(tree, pattern):
-        verb = tree.words[match[0]]
-        noun = tree.words[match[1]]
+        verb = tree.get_word(match["Verb"])
+        noun = tree.get_word(match["Noun"])
         print(f"{verb.form} ← {noun.form}")
 ```
 
@@ -48,14 +49,15 @@ VariableName [constraint];
 ```
 
 **Available constraints:**
-- `pos="VERB"` - Part-of-speech tag
+- `upos="VERB"` - Universal part-of-speech tag
+- `xpos="VBD"` - Language-specific POS tag
 - `lemma="run"` - Lemma
 - `form="running"` - Word form
 - `deprel="nsubj"` - Dependency relation (to parent)
 
 **Multiple constraints** (AND):
 ```
-V [pos="VERB", lemma="be"];
+V [upos="VERB", lemma="be"];
 ```
 
 **Empty constraint** (matches any node):
@@ -79,19 +81,19 @@ Parent -[deprel]-> Child;
 
 ```
 // VERB with nominal subject
-V [pos="VERB"];
-N [pos="NOUN"];
+V [upos="VERB"];
+N [upos="NOUN"];
 V -[nsubj]-> N;
 
 // Verb with xcomp (control verb)
-Main [pos="VERB"];
-Comp [pos="VERB"];
+Main [upos="VERB"];
+Comp [upos="VERB"];
 Main -[xcomp]-> Comp;
 
 // Complex: VERB → NOUN → ADJ
-V [pos="VERB"];
-N [pos="NOUN"];
-A [pos="ADJ"];
+V [upos="VERB"];
+N [upos="NOUN"];
+A [upos="ADJ"];
 V -[obj]-> N;
 N -[amod]-> A;
 ```
@@ -106,22 +108,22 @@ Parse a query string into a Pattern object.
 
 ```python
 pattern = ts.parse_query("""
-    Verb [pos="VERB"];
-    Noun [pos="NOUN"];
+    Verb [upos="VERB"];
+    Noun [upos="NOUN"];
     Verb -[nsubj]-> Noun;
 """)
 ```
 
-#### `search(tree: Tree, pattern: Pattern) -> Iterator[list[int]]`
+#### `search(tree: Tree, pattern: Pattern) -> Iterator[dict[str, int]]`
 
-Search a single tree for pattern matches.
+Search a single tree for pattern matches. Returns an iterator of match dictionaries where keys are variable names and values are word IDs.
 
 ```python
 for match in ts.search(tree, pattern):
-    # match is a list of word indices
-    verb_idx, noun_idx = match
-    verb = tree.words[verb_idx]
-    noun = tree.words[noun_idx]
+    # match is a dictionary: {"Verb": 3, "Noun": 5}
+    verb = tree.get_word(match["Verb"])
+    noun = tree.get_word(match["Noun"])
+    print(f"{verb.form} ← {noun.form}")
 ```
 
 #### `read_trees(path: str) -> Iterator[Tree]`
@@ -130,17 +132,19 @@ Read trees from a CoNLL-U file (supports gzip).
 
 ```python
 for tree in ts.read_trees("corpus.conllu"):
-    print(f"Tree has {len(tree.words)} words")
+    print(f"Tree has {len(tree)} words")
+    print(f"Sentence: {tree.sentence_text}")
 ```
 
-#### `search_file(path: str, pattern: Pattern) -> Iterator[list[int]]`
+#### `search_file(path: str, pattern: Pattern) -> Iterator[tuple[Tree, dict[str, int]]]`
 
-Search a single file for pattern matches.
+Search a single file for pattern matches. Returns an iterator of (tree, match) tuples.
 
 ```python
-for match in ts.search_file("corpus.conllu", pattern):
-    # match is a list of word indices
-    print(match)
+for tree, match in ts.search_file("corpus.conllu", pattern):
+    # match is a dictionary: {"Verb": 3, "Noun": 5}
+    verb = tree.get_word(match["Verb"])
+    print(f"Found: {verb.form} in '{tree.sentence_text}'")
 ```
 
 #### `read_trees_glob(pattern: str, parallel: bool = True) -> Iterator[Tree]`
@@ -159,16 +163,17 @@ for tree in ts.read_trees_glob("data/*.conllu"):
     pass
 ```
 
-#### `search_files(glob_pattern: str, query_pattern: Pattern, parallel: bool = True) -> Iterator[list[int]]`
+#### `search_files(glob_pattern: str, query_pattern: Pattern, parallel: bool = True) -> Iterator[tuple[Tree, dict[str, int]]]`
 
-Search multiple files matching a glob pattern.
+Search multiple files matching a glob pattern. Returns an iterator of (tree, match) tuples.
 
 ```python
-pattern = ts.parse_query("Verb [pos=\"VERB\"];")
+pattern = ts.parse_query("Verb [upos=\"VERB\"];")
 
 # Parallel search across all files
-for match in ts.search_files("data/*.conllu", pattern):
-    print(match)
+for tree, match in ts.search_files("data/*.conllu", pattern):
+    verb = tree.get_word(match["Verb"])
+    print(f"{verb.form}: {tree.sentence_text}")
 ```
 
 ### Data Classes
@@ -177,14 +182,23 @@ for match in ts.search_files("data/*.conllu", pattern):
 
 Represents a dependency tree.
 
-**Attributes:**
-- `words: list[Word]` - List of words in the tree (index 0 is ROOT)
+**Properties:**
+- `sentence_text: str | None` - Reconstructed sentence text
 - `metadata: dict[str, str]` - Tree metadata from CoNLL-U comments
+
+**Methods:**
+- `get_word(id: int) -> Word | None` - Get word by ID (1-indexed)
+- `find_path(x: Word, y: Word) -> list[Word]` - Find dependency path between two words
+- `__len__() -> int` - Number of words in tree
 
 ```python
 tree = next(ts.read_trees("corpus.conllu"))
-print(f"Sentence has {len(tree.words)} words")
-for word in tree.words:
+print(f"Sentence has {len(tree)} words")
+print(f"Text: {tree.sentence_text}")
+
+# Get specific word
+word = tree.get_word(3)
+if word:
     print(f"{word.id}: {word.form}")
 ```
 
@@ -192,35 +206,48 @@ for word in tree.words:
 
 Represents a single word/node in the tree.
 
-**Attributes:**
+**Properties:**
 - `id: int` - Word ID (1-indexed in CoNLL-U)
 - `form: str` - Word form
 - `lemma: str` - Lemma
-- `upos: str` - Universal POS tag
-- `xpos: str | None` - Language-specific POS tag
-- `feats: dict[str, str]` - Morphological features
-- `head: int` - Head word ID (0 for root)
-- `deprel: str` - Dependency relation
-- `deps: str | None` - Enhanced dependencies
-- `misc: str | None` - Miscellaneous annotations
+- `pos: str` - Universal POS tag (upos)
+- `xpos: str` - Language-specific POS tag
+- `deprel: str` - Dependency relation to parent
+- `head: int | None` - Head word ID (None for root)
+
+**Methods:**
+- `parent() -> Word | None` - Get parent word
+- `children() -> list[Word]` - Get all children
+- `children_by_deprel(deprel: str) -> list[Word]` - Get children with specific relation
 
 ```python
-word = tree.words[5]
+word = tree.get_word(5)
 print(f"Form: {word.form}")
 print(f"Lemma: {word.lemma}")
-print(f"POS: {word.upos}")
+print(f"POS: {word.pos}")
 print(f"DepRel: {word.deprel}")
-if word.xpos:
-    print(f"XPOS: {word.xpos}")
+
+# Navigate tree
+if word.parent():
+    print(f"Parent: {word.parent().form}")
+for child in word.children():
+    print(f"Child: {child.form} ({child.deprel})")
 ```
 
 #### `Pattern`
 
-Represents a parsed query pattern. Created by `parse_query()`.
+Represents a parsed query pattern. Created by `parse_query()`. Opaque object that can be reused across multiple searches.
+
+**Properties:**
+- `n_vars: int` - Number of variables in the pattern
 
 ```python
-pattern = ts.parse_query("Verb [pos=\"VERB\"];")
-# Use pattern with search functions
+pattern = ts.parse_query("Verb [upos=\"VERB\"];")
+print(f"Pattern has {pattern.n_vars} variables")
+# Reuse pattern across multiple searches
+for tree, match in ts.search_files("data/*.conllu", pattern):
+    # ...process matches...
+    pass
 ```
 
 ## Complete Example
@@ -230,8 +257,8 @@ import treesearch as ts
 
 # Find all control verbs (VERB with VERB xcomp)
 query = """
-    Main [pos="VERB"];
-    Comp [pos="VERB"];
+    Main [upos="VERB"];
+    Comp [upos="VERB"];
     Main -[xcomp]-> Comp;
 """
 
@@ -241,17 +268,18 @@ pattern = ts.parse_query(query)
 # Search trees and display results
 for tree in ts.read_trees("corpus.conllu"):
     for match in ts.search(tree, pattern):
-        main_idx, comp_idx = match
-        main = tree.words[main_idx]
-        comp = tree.words[comp_idx]
+        main = tree.get_word(match["Main"])
+        comp = tree.get_word(match["Comp"])
         print(f"  Main = {main.form} (lemma: {main.lemma})")
         print(f"  Comp = {comp.form} (lemma: {comp.lemma})")
+        print(f"  Sentence: {tree.sentence_text}")
         print()
 
 # Or search files directly (more efficient)
-for match in ts.search_file("corpus.conllu", pattern):
-    main_idx, comp_idx = match
-    print(f"Match: main={main_idx}, comp={comp_idx}")
+for tree, match in ts.search_file("corpus.conllu", pattern):
+    main = tree.get_word(match["Main"])
+    comp = tree.get_word(match["Comp"])
+    print(f"Match: {main.form} -[xcomp]-> {comp.form}")
 ```
 
 ## Error Handling
@@ -297,15 +325,17 @@ for tree in ts.read_trees_glob("data/*.conllu", parallel=True):
     pass
 
 # Parallel search across files (default)
-pattern = ts.parse_query("Verb [pos=\"VERB\"];")
-for match in ts.search_files("data/*.conllu", pattern, parallel=True):
+pattern = ts.parse_query("Verb [upos=\"VERB\"];")
+for tree, match in ts.search_files("data/*.conllu", pattern, parallel=True):
     # Searches run in parallel across files
-    pass
+    verb = tree.get_word(match["Verb"])
+    print(verb.form)
 
 # Sequential processing (if needed)
-for match in ts.search_files("data/*.conllu", pattern, parallel=False):
+for tree, match in ts.search_files("data/*.conllu", pattern, parallel=False):
     # Process files one at a time
-    pass
+    verb = tree.get_word(match["Verb"])
+    print(verb.form)
 ```
 
 ### Best Practices
@@ -324,10 +354,12 @@ for tree in ts.read_trees("corpus.conllu"):
         # Process match
 
 # ✅ GOOD: Use search_file for simple cases
-for match in ts.search_file("corpus.conllu", pattern):
+for tree, match in ts.search_file("corpus.conllu", pattern):
     # More efficient than reading trees manually
+    verb = tree.get_word(match["Verb"])
 
 # ✅ GOOD: Use parallel=True for multiple files
-for match in ts.search_files("data/*.conllu", pattern):
+for tree, match in ts.search_files("data/*.conllu", pattern):
     # Parallel processing by default
+    verb = tree.get_word(match["Verb"])
 ```
