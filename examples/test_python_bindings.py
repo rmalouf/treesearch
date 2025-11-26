@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Test script to verify Python bindings work correctly."""
 
-from treesearch import Pattern, MatchIterator
+import treesearch
+import tempfile
+import os
 
 # Create a simple CoNLL-U test string
 SAMPLE_CONLLU = """# text = He helped us to win.
@@ -18,8 +20,8 @@ SAMPLE_CONLLU = """# text = He helped us to win.
 def test_pattern_creation():
     """Test that we can create a pattern from a query."""
     print("Testing pattern creation...")
-    pattern = Pattern.from_query("""
-        V [pos="VERB"];
+    pattern = treesearch.parse_query("""
+        V [upos="VERB"];
     """)
     print(f"  Created pattern with {pattern.n_vars} variable(s)")
     assert pattern.n_vars == 1
@@ -31,23 +33,30 @@ def test_simple_search():
     print("\nTesting simple search...")
 
     # Create pattern for verb
-    pattern = Pattern.from_query('V [pos="VERB"];')
+    pattern = treesearch.parse_query('V [upos="VERB"];')
 
-    # Search using iterator
-    matches = list(MatchIterator.from_string(SAMPLE_CONLLU, pattern))
-    print(f"  Found {len(matches)} tree(s) with matches")
+    # Write sample to temp file
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.conllu', delete=False) as f:
+        f.write(SAMPLE_CONLLU)
+        temp_path = f.name
 
-    for tree, match in matches:
-        print(f"  Tree has {len(tree)} words")
-        print(f"  Match has {len(match)} word(s)")
+    try:
+        # Search using search_file
+        matches = list(treesearch.search_file(temp_path, pattern))
+        print(f"  Found {len(matches)} tree(s) with matches")
 
-        # Get the matched word
-        word_id = match[0]
-        word = tree.get_word(word_id)
-        print(f"  Matched verb: {word.form} (lemma={word.lemma}, pos={word.pos})")
+        for tree, match in matches:
+            print(f"  Tree has {len(tree)} words")
+            print(f"  Match: {match}")
 
-    assert len(matches) > 0
-    print("  ✓ Simple search works")
+            # Get the matched word
+            word = tree.get_word(match["V"])
+            print(f"  Matched verb: {word.form} (lemma={word.lemma}, pos={word.pos})")
+
+        assert len(matches) > 0
+        print("  ✓ Simple search works")
+    finally:
+        os.unlink(temp_path)
 
 
 def test_edge_constraint():
@@ -55,75 +64,98 @@ def test_edge_constraint():
     print("\nTesting edge constraint search...")
 
     # Pattern: verb with an xcomp child
-    pattern = Pattern.from_query("""
-        V1 [pos="VERB"];
-        V2 [pos="VERB"];
+    pattern = treesearch.parse_query("""
+        V1 [upos="VERB"];
+        V2 [upos="VERB"];
         V1 -[xcomp]-> V2;
     """)
 
-    matches = list(MatchIterator.from_string(SAMPLE_CONLLU, pattern))
-    print(f"  Found {len(matches)} match(es)")
+    # Write sample to temp file
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.conllu', delete=False) as f:
+        f.write(SAMPLE_CONLLU)
+        temp_path = f.name
 
-    for tree, match in matches:
-        v1_id = match[0]
-        v2_id = match[1]
-        v1 = tree.get_word(v1_id)
-        v2 = tree.get_word(v2_id)
-        print(f"  Match: {v1.form} -[xcomp]-> {v2.form}")
+    try:
+        matches = list(treesearch.search_file(temp_path, pattern))
+        print(f"  Found {len(matches)} match(es)")
 
-    assert len(matches) > 0
-    print("  ✓ Edge constraint search works")
+        for tree, match in matches:
+            v1 = tree.get_word(match["V1"])
+            v2 = tree.get_word(match["V2"])
+            print(f"  Match: {v1.form} -[xcomp]-> {v2.form}")
+
+        assert len(matches) > 0
+        print("  ✓ Edge constraint search works")
+    finally:
+        os.unlink(temp_path)
 
 
 def test_word_properties():
     """Test accessing word properties."""
     print("\nTesting word properties...")
 
-    pattern = Pattern.from_query('V [lemma="help"];')
-    matches = list(MatchIterator.from_string(SAMPLE_CONLLU, pattern))
+    pattern = treesearch.parse_query('V [lemma="help"];')
 
-    for tree, match in matches:
-        word = tree.get_word(match[0])
-        print(f"  Word ID: {word.id}")
-        print(f"  Token ID: {word.token_id}")
-        print(f"  Form: {word.form}")
-        print(f"  Lemma: {word.lemma}")
-        print(f"  POS: {word.pos}")
-        print(f"  XPOS: {word.xpos}")
-        print(f"  Deprel: {word.deprel}")
-        print(f"  Head: {word.head}")
-        print(f"  Children IDs: {word.children_ids}")
+    # Write sample to temp file
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.conllu', delete=False) as f:
+        f.write(SAMPLE_CONLLU)
+        temp_path = f.name
 
-        # Test parent/children methods
-        parent = word.parent()
-        if parent:
-            print(f"  Parent: {parent.form}")
-        else:
-            print(f"  Parent: None (root)")
+    try:
+        matches = list(treesearch.search_file(temp_path, pattern))
 
-        children = word.children()
-        print(f"  Children: {[c.form for c in children]}")
+        for tree, match in matches:
+            word = tree.get_word(match["V"])
+            print(f"  Word ID: {word.id}")
+            print(f"  Form: {word.form}")
+            print(f"  Lemma: {word.lemma}")
+            print(f"  POS: {word.pos}")
+            print(f"  XPOS: {word.xpos}")
+            print(f"  Deprel: {word.deprel}")
+            print(f"  Head: {word.head}")
 
-        # Test children_by_deprel
-        obj_children = word.children_by_deprel("obj")
-        print(f"  'obj' children: {[c.form for c in obj_children]}")
+            # Test parent/children methods
+            parent = word.parent()
+            if parent:
+                print(f"  Parent: {parent.form}")
+            else:
+                print(f"  Parent: None (root)")
 
-    print("  ✓ Word properties work")
+            children = word.children()
+            print(f"  Children: {[c.form for c in children]}")
+
+            # Test children_by_deprel
+            obj_children = word.children_by_deprel("obj")
+            print(f"  'obj' children: {[c.form for c in obj_children]}")
+
+        print("  ✓ Word properties work")
+    finally:
+        os.unlink(temp_path)
 
 
 def test_tree_properties():
     """Test accessing tree properties."""
     print("\nTesting tree properties...")
 
-    pattern = Pattern.from_query('V [pos="VERB"];')
-    matches = list(MatchIterator.from_string(SAMPLE_CONLLU, pattern))
+    pattern = treesearch.parse_query('V [upos="VERB"];')
 
-    for tree, match in matches:
-        print(f"  Tree length: {len(tree)}")
-        print(f"  Sentence text: {tree.sentence_text}")
-        print(f"  Tree repr: {repr(tree)}")
+    # Write sample to temp file
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.conllu', delete=False) as f:
+        f.write(SAMPLE_CONLLU)
+        temp_path = f.name
 
-    print("  ✓ Tree properties work")
+    try:
+        matches = list(treesearch.search_file(temp_path, pattern))
+
+        for tree, match in matches:
+            print(f"  Tree length: {len(tree)}")
+            print(f"  Sentence text: {tree.sentence_text}")
+            print(f"  Tree repr: {repr(tree)}")
+            break  # Just test first match
+
+        print("  ✓ Tree properties work")
+    finally:
+        os.unlink(temp_path)
 
 
 def main():

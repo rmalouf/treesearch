@@ -18,7 +18,13 @@ use crate::query::parse_query;
 use crate::searcher::search;
 use crate::tree::{Tree as RustTree, Word as RustWord};
 
-/// A dependency tree
+/// A dependency tree representing a parsed sentence.
+///
+/// Contains words and their dependency relationships from a CoNLL-U file.
+/// Access words using `get_word(id)`, navigate the tree structure, and
+/// retrieve sentence text and metadata.
+///
+/// See API.md for complete documentation.
 #[pyclass(name = "Tree")]
 #[derive(Clone)]
 pub struct PyTree {
@@ -27,7 +33,16 @@ pub struct PyTree {
 
 #[pymethods]
 impl PyTree {
-    /// Get a word by ID
+    /// Get a word by its ID (0-based index).
+    ///
+    /// Args:
+    ///     id: Word index (0-based, not CoNLL-U token ID)
+    ///
+    /// Returns:
+    ///     Word object if ID is valid, None otherwise
+    ///
+    /// Example:
+    ///     word = tree.get_word(3)
     fn get_word(&self, id: usize) -> Option<PyWord> {
         self.inner.words.get(id).map(|word| PyWord {
             inner: word.clone(),
@@ -35,31 +50,45 @@ impl PyTree {
         })
     }
 
-    /// Get the number of words in the tree
+    /// Get the number of words in the tree.
+    ///
+    /// Returns:
+    ///     Number of words (length of tree)
     fn __len__(&self) -> usize {
         self.inner.words.len()
     }
 
-    /// Get sentence text
+    /// Reconstructed sentence text from word forms.
+    ///
+    /// Returns:
+    ///     Sentence text if available from CoNLL-U metadata, None otherwise
     #[getter]
     fn sentence_text(&self) -> Option<String> {
         self.inner.sentence_text.clone()
     }
 
-    /// Get metadata
+    /// CoNLL-U metadata from sentence comments.
+    ///
+    /// Returns:
+    ///     Dictionary of metadata key-value pairs from # comments in CoNLL-U
     #[getter]
     fn metadata(&self) -> std::collections::HashMap<String, String> {
         self.inner.metadata.clone()
     }
 
-    /// Find dependency path from ancestor X to descendant Y
+    /// Find the dependency path between two words.
+    ///
+    /// Traces the path through parent-child relationships from word x to word y.
     ///
     /// Args:
-    ///     x: Starting word (ancestor)
-    ///     y: Target word (descendant)
+    ///     x: Starting word
+    ///     y: Target word
     ///
     /// Returns:
-    ///     List of words forming the path from X to Y, or None if no path exists
+    ///     List of words forming the path from x to y, or None if no path exists
+    ///
+    /// Example:
+    ///     path = tree.find_path(verb, noun)
     fn find_path(&self, x: &PyWord, y: &PyWord) -> Option<Vec<PyWord>> {
         self.inner
             .find_path(&x.inner, &y.inner)
@@ -80,7 +109,14 @@ impl PyTree {
     }
 }
 
-/// A word in a dependency tree
+/// A word (node) in a dependency tree.
+///
+/// Represents a single token with its linguistic properties (form, lemma, POS)
+/// and dependency relationships (parent, children). Access properties via
+/// attributes (word.form, word.lemma) and navigate the tree via methods
+/// (word.parent(), word.children()).
+///
+/// See API.md for complete documentation.
 #[pyclass(name = "Word")]
 pub struct PyWord {
     inner: RustWord,
@@ -89,37 +125,41 @@ pub struct PyWord {
 
 #[pymethods]
 impl PyWord {
-    /// Word ID (0-based index)
+    /// Word ID (0-based index in tree).
     #[getter]
     fn id(&self) -> usize {
         self.inner.id
     }
 
-    /// Token ID from CoNLL-U (1-based)
+    /// Token ID from CoNLL-U file (1-based).
     #[getter]
     fn token_id(&self) -> usize {
         self.inner.token_id
     }
 
-    /// Word form
+    /// Surface form of the word.
     #[getter]
     fn form(&self) -> String {
         String::from_utf8_lossy(&self.tree.string_pool.resolve(self.inner.form)).to_string()
     }
 
-    /// Lemma
+    /// Lemma (dictionary form) of the word.
     #[getter]
     fn lemma(&self) -> String {
         String::from_utf8_lossy(&self.tree.string_pool.resolve(self.inner.lemma)).to_string()
     }
 
-    /// Universal POS tag
+    /// Universal POS tag (UPOS field in CoNLL-U).
+    ///
+    /// Example values: "VERB", "NOUN", "ADJ", "PRON"
     #[getter]
     fn pos(&self) -> String {
         String::from_utf8_lossy(&self.tree.string_pool.resolve(self.inner.upos)).to_string()
     }
 
-    /// Language-specific POS tag
+    /// Language-specific POS tag (XPOS field in CoNLL-U).
+    ///
+    /// Returns None if XPOS is "_" (unspecified).
     #[getter]
     fn xpos(&self) -> Option<String> {
         let resolved = self.tree.string_pool.resolve(self.inner.xpos);
@@ -130,19 +170,26 @@ impl PyWord {
         }
     }
 
-    /// Dependency relation
+    /// Dependency relation to parent.
+    ///
+    /// Example values: "nsubj", "obj", "root", "xcomp"
     #[getter]
     fn deprel(&self) -> String {
         String::from_utf8_lossy(&self.tree.string_pool.resolve(self.inner.deprel)).to_string()
     }
 
-    /// Head word ID (parent)
+    /// Head word ID (0-based index of parent word).
+    ///
+    /// Returns None for root words (which have no parent).
     #[getter]
     fn head(&self) -> Option<usize> {
         self.inner.head
     }
 
-    /// Get parent word
+    /// Get the parent word in the dependency tree.
+    ///
+    /// Returns:
+    ///     Parent Word object, or None for root words
     fn parent(&self) -> Option<PyWord> {
         self.inner.parent(&self.tree).map(|word| PyWord {
             inner: word.clone(),
@@ -150,13 +197,16 @@ impl PyWord {
         })
     }
 
-    /// Get child word IDs
+    /// List of child word IDs (0-based indices).
     #[getter]
     fn children_ids(&self) -> Vec<usize> {
         self.inner.children.clone()
     }
 
-    /// Get all children words
+    /// Get all child words (dependents) of this word.
+    ///
+    /// Returns:
+    ///     List of child Word objects
     fn children(&self) -> Vec<PyWord> {
         self.inner
             .children(&self.tree)
@@ -168,13 +218,18 @@ impl PyWord {
             .collect()
     }
 
-    /// Get children with a specific dependency relation
+    /// Get children with a specific dependency relation.
+    ///
+    /// Filters this word's children to only those with the given deprel.
     ///
     /// Args:
-    ///     deprel: The dependency relation name (e.g., "nsubj", "obj", "conj")
+    ///     deprel: Dependency relation name (e.g., "nsubj", "obj", "conj")
     ///
     /// Returns:
-    ///     List of child words with the specified dependency relation
+    ///     List of child Word objects with the specified dependency relation
+    ///
+    /// Example:
+    ///     objects = verb.children_by_deprel("obj")
     fn children_by_deprel(&self, deprel: &str) -> Vec<PyWord> {
         self.inner
             .children_by_deprel(&self.tree, deprel)
@@ -199,7 +254,13 @@ impl PyWord {
     }
 }
 
-/// A compiled pattern for tree matching
+/// A compiled query pattern for tree matching.
+///
+/// Created by parse_query() and used with search functions. Patterns are
+/// reusable and should be compiled once then used across multiple searches
+/// for best performance. Contains the parsed query variables and constraints.
+///
+/// See API.md for query language syntax.
 #[pyclass(name = "Pattern")]
 #[derive(Clone)]
 pub struct PyPattern {
@@ -208,7 +269,9 @@ pub struct PyPattern {
 
 #[pymethods]
 impl PyPattern {
-    /// Number of variables in the pattern
+    /// Number of variables in the pattern.
+    ///
+    /// Each variable in the query (e.g., "V", "Noun") counts as one variable.
     #[getter]
     fn n_vars(&self) -> usize {
         self.inner.n_vars
@@ -220,13 +283,22 @@ impl PyPattern {
     }
 }
 
-/// Parse a query string into a compiled pattern
+/// Parse a query string into a compiled pattern.
+///
+/// Compiles a query into a Pattern object that can be reused for multiple
+/// searches. Parse once and search many times for best performance.
 ///
 /// Args:
-///     query: Query string (e.g., "V [pos=\"VERB\"];")
+///     query: Query string with variable declarations and constraints.
+///            Example: 'V [upos="VERB"]; N [upos="NOUN"]; V -[nsubj]-> N;'
 ///
 /// Returns:
-///     Compiled pattern
+///     Compiled Pattern object
+///
+/// Raises:
+///     ValueError: If query syntax is invalid
+///
+/// See API.md for complete query language reference.
 #[pyfunction(name = "parse_query")]
 fn py_parse_query(query: &str) -> PyResult<PyPattern> {
     parse_query(query)
@@ -234,14 +306,22 @@ fn py_parse_query(query: &str) -> PyResult<PyPattern> {
         .map_err(|e| PyValueError::new_err(format!("Query parse error: {}", e)))
 }
 
-/// Search a tree with a pattern
+/// Search a single tree for pattern matches.
+///
+/// Returns all matches found in the tree. Each match is a dictionary mapping
+/// variable names from the query to word IDs in the tree.
 ///
 /// Args:
-///     tree: The tree to search
-///     pattern: The compiled pattern
+///     tree: Tree to search
+///     pattern: Compiled pattern from parse_query()
 ///
 /// Returns:
-///     List of matches (each match is a dict mapping variable names to word IDs)
+///     List of match dictionaries. Each dict maps variable names to word IDs.
+///     Example: [{"Verb": 3, "Noun": 5}, {"Verb": 7, "Noun": 2}]
+///
+/// Example:
+///     for match in treesearch.search(tree, pattern):
+///         verb = tree.get_word(match["Verb"])
 #[pyfunction(name = "search")]
 fn py_search(tree: &PyTree, pattern: &PyPattern) -> Vec<std::collections::HashMap<String, usize>> {
     search(&tree.inner, &pattern.inner).collect()
@@ -270,13 +350,23 @@ impl TreeIterator {
     }
 }
 
-/// Read trees from a CoNLL-U file
+/// Read trees from a CoNLL-U file.
+///
+/// Opens a CoNLL-U file and returns an iterator over the trees (sentences).
+/// Automatically detects and handles gzip-compressed files (.conllu.gz).
 ///
 /// Args:
 ///     path: Path to CoNLL-U file (supports .conllu and .conllu.gz)
 ///
 /// Returns:
-///     Iterator over trees
+///     Iterator yielding Tree objects
+///
+/// Raises:
+///     ValueError: If file cannot be opened
+///
+/// Example:
+///     for tree in treesearch.read_trees("corpus.conllu"):
+///         print(tree.sentence_text)
 #[pyfunction]
 fn read_trees(path: &str) -> PyResult<TreeIterator> {
     use crate::conllu::TreeIterator as ConlluTreeIterator;
@@ -312,14 +402,25 @@ impl MatchIterator {
     }
 }
 
-/// Search a single CoNLL-U file for pattern matches
+/// Search a single CoNLL-U file for pattern matches.
+///
+/// More efficient than manually reading trees and searching, as it streams
+/// results without loading the entire file into memory.
 ///
 /// Args:
 ///     path: Path to CoNLL-U file (supports .conllu and .conllu.gz)
-///     pattern: Compiled pattern to search for
+///     pattern: Compiled pattern from parse_query()
 ///
 /// Returns:
-///     Iterator over (tree, match) tuples, where match is a dict mapping variable names to word IDs
+///     Iterator yielding (tree, match) tuples, where match is a dict
+///     mapping variable names to word IDs
+///
+/// Raises:
+///     ValueError: If file cannot be opened
+///
+/// Example:
+///     for tree, match in treesearch.search_file("corpus.conllu", pattern):
+///         verb = tree.get_word(match["Verb"])
 #[pyfunction]
 fn search_file(path: &str, pattern: &PyPattern) -> PyResult<MatchIterator> {
     RustMatchIterator::from_file(&PathBuf::from(path), pattern.inner.clone())
@@ -344,14 +445,24 @@ impl MultiFileTreeIterator {
     }
 }
 
-/// Read trees from multiple CoNLL-U files
+/// Read trees from multiple CoNLL-U files matching a glob pattern.
+///
+/// Processes multiple files, optionally in parallel for better performance
+/// on large corpora.
 ///
 /// Args:
-///     glob_pattern: Glob pattern (e.g., "data/*.conllu")
-///     parallel: Whether to process files in parallel (default: True)
+///     glob_pattern: Glob pattern to match files (e.g., "data/*.conllu")
+///     parallel: Process files in parallel (default: True)
 ///
 /// Returns:
-///     Iterator over trees
+///     Iterator yielding Tree objects from all matching files
+///
+/// Raises:
+///     ValueError: If glob pattern is invalid
+///
+/// Example:
+///     for tree in treesearch.read_trees_glob("corpus/*.conllu"):
+///         print(tree.sentence_text)
 #[pyfunction]
 #[pyo3(signature = (glob_pattern, parallel=true))]
 fn read_trees_glob(glob_pattern: &str, parallel: bool) -> PyResult<MultiFileTreeIterator> {
@@ -441,15 +552,27 @@ impl MultiFileMatchIterator {
     }
 }
 
-/// Search multiple CoNLL-U files for pattern matches
+/// Search multiple CoNLL-U files for pattern matches.
+///
+/// The most efficient way to search large corpora. Uses parallel processing
+/// by default to maximize performance across multiple files.
 ///
 /// Args:
-///     glob_pattern: Glob pattern (e.g., "data/*.conllu")
-///     pattern: Compiled pattern to search for
-///     parallel: Whether to process files in parallel (default: True)
+///     glob_pattern: Glob pattern to match files (e.g., "data/*.conllu")
+///     pattern: Compiled pattern from parse_query()
+///     parallel: Process files in parallel (default: True)
 ///
 /// Returns:
-///     Iterator over (tree, match) tuples, where match is a dict mapping variable names to word IDs
+///     Iterator yielding (tree, match) tuples, where match is a dict
+///     mapping variable names to word IDs
+///
+/// Raises:
+///     ValueError: If glob pattern is invalid
+///
+/// Example:
+///     pattern = treesearch.parse_query('V [upos="VERB"];')
+///     for tree, match in treesearch.search_files("corpus/*.conllu", pattern):
+///         verb = tree.get_word(match["V"])
 #[pyfunction]
 #[pyo3(signature = (glob_pattern, pattern, parallel=true))]
 fn search_files(

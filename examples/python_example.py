@@ -12,7 +12,7 @@ To run this example:
 2. Run: python examples/python_example.py
 """
 
-from treesearch import CoNLLUReader, search_query
+import treesearch
 
 
 def main():
@@ -23,19 +23,18 @@ def main():
     print("   Query: Verb with NOUN subject")
 
     query1 = """
-        Verb [pos="VERB"];
-        Noun [pos="NOUN"];
+        Verb [upos="VERB"];
+        Noun [upos="NOUN"];
         Verb -[nsubj]-> Noun;
     """
 
-    # Read trees from CoNLL-U file
-    reader = CoNLLUReader.from_file("examples/lw970831.conll")
-
+    pattern1 = treesearch.parse_query(query1)
     match_count = 0
-    for tree in reader:
-        for match in search_query(tree, query1):
-            verb = match.get_node("Verb")
-            noun = match.get_node("Noun")
+
+    for tree in treesearch.read_trees("examples/lw970831.conll"):
+        for match in treesearch.search(tree, pattern1):
+            verb = tree.get_word(match["Verb"])
+            noun = tree.get_word(match["Noun"])
             print(f"   Found: {verb.form} -> {noun.form}")
             match_count += 1
             if match_count >= 5:  # Limit output
@@ -50,29 +49,31 @@ def main():
     print("   Finding verbs and their objects")
 
     query2 = """
-        Verb [pos="VERB"];
+        Verb [upos="VERB"];
     """
 
-    reader = CoNLLUReader.from_file("examples/lw970831.conll")
+    pattern2 = treesearch.parse_query(query2)
+    verb_count = 0
 
-    for tree in reader:
-        for match in search_query(tree, query2):
-            verb_node = match.get_node("Verb")
+    for tree in treesearch.read_trees("examples/lw970831.conll"):
+        for match in treesearch.search(tree, pattern2):
+            verb_word = tree.get_word(match["Verb"])
 
             # Get all object dependents
-            objects = verb_node.children_by_deprel("obj")
+            objects = verb_word.children_by_deprel("obj")
             if objects:
                 obj_forms = [obj.form for obj in objects]
-                print(f"   {verb_node.form} has objects: {', '.join(obj_forms)}")
+                print(f"   {verb_word.form} has objects: {', '.join(obj_forms)}")
 
             # Get subject (usually just one)
-            subjects = verb_node.children_by_deprel("nsubj")
+            subjects = verb_word.children_by_deprel("nsubj")
             if subjects:
-                print(f"   {verb_node.form} has subject: {subjects[0].form}")
+                print(f"   {verb_word.form} has subject: {subjects[0].form}")
 
-            if match_count >= 3:
+            verb_count += 1
+            if verb_count >= 3:
                 break
-        if match_count >= 3:
+        if verb_count >= 3:
             break
 
     print()
@@ -81,24 +82,21 @@ def main():
     print("3. NODE PROPERTIES")
     print("   Showing detailed node information")
 
-    reader = CoNLLUReader.from_file("examples/lw970831.conll")
-
-    for tree in reader:
+    for tree in treesearch.read_trees("examples/lw970831.conll"):
         if len(tree) > 5:  # Get a tree with some nodes
-            node = tree.get_node(1)  # Get second node (first is usually root)
-            if node:
-                print(f"   Node {node.id}:")
-                print(f"     Form: {node.form}")
-                print(f"     Lemma: {node.lemma}")
-                print(f"     POS: {node.pos}")
-                print(f"     DepRel: {node.deprel}")
-                print(f"     Position: {node.position}")
+            word = tree.get_word(1)  # Get word at position 1
+            if word:
+                print(f"   Word {word.id}:")
+                print(f"     Form: {word.form}")
+                print(f"     Lemma: {word.lemma}")
+                print(f"     POS: {word.pos}")
+                print(f"     DepRel: {word.deprel}")
 
                 # Show parent and children
-                if node.parent():
-                    print(f"     Parent: {node.parent().form}")
+                if word.parent():
+                    print(f"     Parent: {word.parent().form}")
 
-                children = node.children()
+                children = word.children()
                 if children:
                     child_forms = [c.form for c in children]
                     print(f"     Children: {', '.join(child_forms)}")
@@ -106,8 +104,8 @@ def main():
 
     print()
 
-    # Example 4: Match bindings
-    print("4. MATCH BINDINGS")
+    # Example 4: Match dictionaries
+    print("4. MATCH DICTIONARIES")
     print("   Accessing all matched variables")
 
     query4 = """
@@ -118,22 +116,19 @@ def main():
         Head -> Dep2;
     """
 
-    reader = CoNLLUReader.from_file("examples/lw970831.conll")
+    pattern4 = treesearch.parse_query(query4)
 
-    for tree in reader:
-        matches = search_query(tree, query4)
-        if matches:
-            match = matches[0]  # Get first match
+    for tree in treesearch.read_trees("examples/lw970831.conll"):
+        for match in treesearch.search(tree, pattern4):
+            # match is a dictionary: {"Head": 3, "Dep1": 5, "Dep2": 7}
+            print(f"   Variable bindings: {match}")
 
-            # Get all bindings as a dictionary
-            bindings = match.bindings()
-            print(f"   Variable bindings: {bindings}")
-
-            # Get nodes dictionary
-            nodes_dict = match.nodes()
-            for var_name, node in nodes_dict.items():
-                print(f"   {var_name} = {node.form} ({node.pos})")
+            # Get nodes for each variable
+            for var_name, word_id in match.items():
+                word = tree.get_word(word_id)
+                print(f"   {var_name} = {word.form} ({word.pos})")
             break
+        break
 
     print("\n=== Example Complete ===")
 

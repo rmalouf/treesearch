@@ -44,16 +44,17 @@ Treesearch is designed for corpus linguistics research on large treebanks (500M+
 ```
 treesearch/
 ├── src/
-│   ├── tree.rs      # Tree data structures
-│   ├── pattern.rs   # Pattern AST representation
-│   ├── parser.rs    # Query language parser (Pest)
-│   ├── searcher.rs  # CSP solver
-│   ├── conllu.rs    # CoNLL-U file parsing
-│   └── python.rs    # Python bindings (WIP)
-├── tests/           # Integration tests
-├── benches/         # Performance benchmarks
-├── examples/        # Usage examples
-└── plans/           # Design documents
+│   ├── tree.rs       # Tree data structures
+│   ├── pattern.rs    # Pattern AST representation
+│   ├── query.rs      # Query language parser (Pest)
+│   ├── searcher.rs   # CSP solver
+│   ├── conllu.rs     # CoNLL-U file parsing
+│   ├── iterators.rs  # Iterator interfaces
+│   └── python.rs     # Python bindings
+├── tests/            # Integration tests
+├── benches/          # Performance benchmarks
+├── examples/         # Usage examples
+└── plans/            # Design documents
 ```
 
 ## Development Setup
@@ -86,38 +87,40 @@ maturin develop
 # Declare pattern variables with constraints
 Help [lemma="help"];
 To [lemma="to"];
-Verb [pos="VERB"];
+Verb [upos="VERB"];
 
 # Specify structural relationships
-Help -> To;           # Help has child To
-To -[mark]-> Verb;    # To has child Verb with deprel=mark
+Help -> To;            # Help has child To
+To -[mark]-> Verb;     # To has child Verb with deprel=mark
 ```
 
 ## Python Usage
 
 ```python
-from treesearch import Pattern, MatchIterator, MultiFileMatchIterator
+import treesearch
 
 # Parse a query into a compiled pattern
-pattern = Pattern.from_query("""
-    Verb [pos="VERB"];
-    Noun [pos="NOUN"];
+pattern = treesearch.parse_query("""
+    Verb [upos="VERB"];
+    Noun [upos="NOUN"];
     Verb -[nsubj]-> Noun;
 """)
 
 # Search a single file
-for tree, match in MatchIterator.from_file("corpus.conllu", pattern):
-    verb_id = match[0]
-    noun_id = match[1]
-    verb = tree.get_word(verb_id)
-    noun = tree.get_word(noun_id)
+for tree, match in treesearch.search_file("corpus.conllu", pattern):
+    # match is a dictionary: {"Verb": 3, "Noun": 5}
+    verb = tree.get_word(match["Verb"])
+    noun = tree.get_word(match["Noun"])
     print(f"{verb.form} has subject {noun.form}")
 
 # Search multiple files in parallel
-for tree, match in MultiFileMatchIterator.from_glob("data/*.conllu", pattern):
+for tree, match in treesearch.search_files("data/*.conllu", pattern, parallel=True):
     # Process matches from all files with automatic parallelization
-    pass
+    verb = tree.get_word(match["Verb"])
+    print(f"Found: {verb.form} in {tree.sentence_text}")
 ```
+
+See `API.md` for complete API reference and examples.
 
 ## Next Steps
 

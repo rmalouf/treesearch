@@ -34,6 +34,10 @@ dev = [
     "maturin>=1.10.1",
     "pytest>=9.0",
 ]
+docs = [
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.0.0",
+]
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
