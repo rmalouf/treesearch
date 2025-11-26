@@ -19,8 +19,17 @@ precedence_op = { "<<" | "<" }
 // Constraint list (can be empty)
 constraint_list = { (constraint ~ ("," ~ constraint)*)? }
 
-// Single constraint: key="value"
-constraint = { constraint_key ~ "=" ~ string_literal }
+// Single constraint: either feature or regular
+constraint = { feature_constraint | regular_constraint }
+
+// Feature constraint: feats.Key="Value"
+feature_constraint = { "feats" ~ "." ~ feature_key ~ "=" ~ string_literal }
+
+// Regular constraint: key="value"
+regular_constraint = { constraint_key ~ "=" ~ string_literal }
+
+// Feature key: ASCII identifier (letters, numbers, underscores)
+feature_key = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
 
 // Constraint keys
 constraint_key = { "lemma" | "upos" | "xpos" | "form" | "deprel" }

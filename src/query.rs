@@ -96,8 +96,27 @@ fn parse_constraint_list(pair: pest::iterators::Pair<Rule>) -> Result<Constraint
     }
 }
 
-/// Parse a single constraint: key="value"
+/// Parse a single constraint: either feature or regular
 fn parse_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, QueryError> {
+    let inner = pair.into_inner().next().unwrap();
+
+    match inner.as_rule() {
+        Rule::feature_constraint => parse_feature_constraint(inner),
+        Rule::regular_constraint => parse_regular_constraint(inner),
+        _ => panic!("Unexpected constraint type: {:?}", inner.as_rule()),
+    }
+}
+
+/// Parse a feature constraint: feats.Key="Value"
+fn parse_feature_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, QueryError> {
+    let mut inner = pair.into_inner();
+    let feature_key = inner.next().unwrap().as_str().to_string();
+    let value = inner.next().unwrap().into_inner().as_str().to_string();
+    Ok(Constraint::Feature(feature_key, value))
+}
+
+/// Parse a regular constraint: key="value"
+fn parse_regular_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, QueryError> {
     let mut inner = pair.into_inner();
 
     let key = inner.next().unwrap().as_str();
@@ -463,5 +482,56 @@ mod tests {
             .unwrap();
         assert_eq!(precedes.from, "B");
         assert_eq!(precedes.to, "C");
+    }
+
+    #[test]
+    fn test_parse_feature_constraint() {
+        let query = r#"V [feats.Tense="Past"];"#;
+        let pattern = parse_query(query).unwrap();
+
+        assert_eq!(pattern.var_constraints.len(), 1);
+        assert_eq!(*pattern.var_ids.get("V").unwrap(), 0);
+        match &pattern.var_constraints[0] {
+            Constraint::Feature(key, value) => {
+                assert_eq!(key, "Tense");
+                assert_eq!(value, "Past");
+            }
+            _ => panic!("Expected Feature constraint"),
+        }
+    }
+
+    #[test]
+    fn test_parse_multiple_features() {
+        let query = r#"N [feats.Number="Plur", feats.Case="Nom"];"#;
+        let pattern = parse_query(query).unwrap();
+
+        match &pattern.var_constraints[0] {
+            Constraint::And(constraints) => {
+                assert_eq!(constraints.len(), 2);
+                assert!(constraints.iter().any(|c| matches!(
+                    c, Constraint::Feature(k, v) if k == "Number" && v == "Plur"
+                )));
+                assert!(constraints.iter().any(|c| matches!(
+                    c, Constraint::Feature(k, v) if k == "Case" && v == "Nom"
+                )));
+            }
+            _ => panic!("Expected And constraint"),
+        }
+    }
+
+    #[test]
+    fn test_parse_mixed_constraints() {
+        let query = r#"V [lemma="be", feats.Tense="Past"];"#;
+        let pattern = parse_query(query).unwrap();
+
+        match &pattern.var_constraints[0] {
+            Constraint::And(constraints) => {
+                assert!(constraints.contains(&Constraint::Lemma("be".to_string())));
+                assert!(constraints.iter().any(|c| matches!(
+                    c, Constraint::Feature(k, v) if k == "Tense" && v == "Past"
+                )));
+            }
+            _ => panic!("Expected And constraint"),
+        }
     }
 }

@@ -19,6 +19,7 @@ pub enum Constraint {
     XPOS(String),
     Form(String),
     DepRel(String),
+    Feature(String, String),
     And(Vec<Constraint>),
 }
 
