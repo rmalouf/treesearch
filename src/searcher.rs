@@ -24,6 +24,12 @@ fn satisfies_var_constraint(tree: &Tree, word: &Word, constraint: &Constraint) -
         Constraint::XPOS(pos) => *tree.string_pool.resolve(word.xpos) == *pos.as_bytes(),
         Constraint::Form(form) => *tree.string_pool.resolve(word.form) == *form.as_bytes(),
         Constraint::DepRel(deprel) => *tree.string_pool.resolve(word.deprel) == *deprel.as_bytes(),
+        Constraint::Feature(key, value) => {
+            word.feats.iter().any(|(feat_key, feat_val)| {
+                *tree.string_pool.resolve(*feat_key) == *key.as_bytes()
+                    && *tree.string_pool.resolve(*feat_val) == *value.as_bytes()
+            })
+        }
         Constraint::And(constraints) => constraints
             .iter()
             .all(|constraint| satisfies_var_constraint(tree, word, constraint)),
@@ -555,5 +561,112 @@ mod tests {
 
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0], hashmap! { "A" => 0, "B" => 1, "C" => 2 });
+    }
+
+    /// Helper to build a tree with morphological features
+    fn build_feature_tree() -> Tree {
+        use crate::tree::Features;
+        let mut tree = Tree::default();
+
+        // Word 0: "was" - lemma=be, Tense=Past, Number=Sing
+        let mut feats_was = Features::new();
+        feats_was.push((
+            tree.string_pool.get_or_intern(b"Tense"),
+            tree.string_pool.get_or_intern(b"Past"),
+        ));
+        feats_was.push((
+            tree.string_pool.get_or_intern(b"Number"),
+            tree.string_pool.get_or_intern(b"Sing"),
+        ));
+        tree.add_word(0, 1, b"was", b"be", b"VERB", b"_", feats_was, None, b"root");
+
+        // Word 1: "running" - Tense=Pres, VerbForm=Part
+        let mut feats_run = Features::new();
+        feats_run.push((
+            tree.string_pool.get_or_intern(b"Tense"),
+            tree.string_pool.get_or_intern(b"Pres"),
+        ));
+        feats_run.push((
+            tree.string_pool.get_or_intern(b"VerbForm"),
+            tree.string_pool.get_or_intern(b"Part"),
+        ));
+        tree.add_word(1, 2, b"running", b"run", b"VERB", b"_", feats_run, Some(0), b"xcomp");
+
+        // Word 2: "," - no features
+        tree.add_word(2, 3, b",", b",", b"PUNCT", b"_", Features::new(), Some(0), b"punct");
+
+        tree.compile_tree();
+        tree
+    }
+
+    #[test]
+    fn test_feature_single_constraint() {
+        let tree = build_feature_tree();
+        let matches: Vec<_> = search_query(&tree, r#"V [feats.Tense="Past"];"#)
+            .unwrap()
+            .collect();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0], hashmap! { "V" => 0 }); // "was"
+    }
+
+    #[test]
+    fn test_feature_multiple_and() {
+        let tree = build_feature_tree();
+        let matches: Vec<_> = search_query(&tree, r#"V [feats.Tense="Past", feats.Number="Sing"];"#)
+            .unwrap()
+            .collect();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0], hashmap! { "V" => 0 }); // "was"
+    }
+
+    #[test]
+    fn test_feature_no_match() {
+        let tree = build_feature_tree();
+        let matches: Vec<_> = search_query(&tree, r#"V [feats.Tense="Fut"];"#)
+            .unwrap()
+            .collect();
+        assert_eq!(matches.len(), 0); // No future tense verbs
+    }
+
+    #[test]
+    fn test_feature_absent() {
+        let tree = build_feature_tree();
+        let matches: Vec<_> = search_query(&tree, r#"P [upos="PUNCT", feats.Tense="Past"];"#)
+            .unwrap()
+            .collect();
+        assert_eq!(matches.len(), 0); // PUNCT has no features
+    }
+
+    #[test]
+    fn test_feature_with_lemma() {
+        let tree = build_feature_tree();
+        let matches: Vec<_> = search_query(&tree, r#"V [lemma="be", feats.Tense="Past"];"#)
+            .unwrap()
+            .collect();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0], hashmap! { "V" => 0 });
+    }
+
+    #[test]
+    fn test_feature_case_sensitive() {
+        let tree = build_feature_tree();
+
+        // Correct case
+        let matches = search_query(&tree, r#"V [feats.Tense="Past"];"#)
+            .unwrap()
+            .collect::<Vec<_>>();
+        assert_eq!(matches.len(), 1);
+
+        // Wrong key case
+        let matches = search_query(&tree, r#"V [feats.tense="Past"];"#)
+            .unwrap()
+            .collect::<Vec<_>>();
+        assert_eq!(matches.len(), 0);
+
+        // Wrong value case
+        let matches = search_query(&tree, r#"V [feats.Tense="past"];"#)
+            .unwrap()
+            .collect::<Vec<_>>();
+        assert_eq!(matches.len(), 0);
     }
 }

@@ -94,6 +94,23 @@ Help -> To;            # Help has child To
 To -[mark]-> Verb;     # To has child Verb with deprel=mark
 ```
 
+### Feature Constraints
+
+Query morphological features using dotted notation:
+
+```
+# Find past tense verbs
+Verb [feats.Tense="Past"];
+
+# Find plural nominative nouns
+Noun [feats.Number="Plur", feats.Case="Nom"];
+
+# Combine with other constraints
+Be [lemma="be", upos="VERB", feats.Tense="Past"];
+```
+
+Feature constraints use exact string matching (case-sensitive) and return no match if the feature is not present.
+
 ## Python Usage
 
 ```python
