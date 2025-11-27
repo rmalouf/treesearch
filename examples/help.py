@@ -49,10 +49,15 @@ def check_dep(tree, node, deprel, tag=None):
 
 
 def helps():
+
     help_query = """
-    Head [upos="VERB", lemma="help", deprel!="conj"];
+    Head [upos="VERB", lemma="help"];
     XComp [upos="VERB", feats.VerbForm="Inf"];
     Head -[xcomp]-> XComp;
+    Head !-[aux:pass]-> _;
+    _ !-[conj]-> Head;
+    Head !-[conj]-> _;
+    XComp !-[conj]-> _;
     Head << XComp;
     """
 
@@ -62,12 +67,6 @@ def helps():
     for tree, match in treesearch.search_files(path, pattern):
         head = tree.get_word(match["Head"])
         xcomp = tree.get_word(match["XComp"])
-        if (
-            head.children_by_deprel("conj")
-            or head.children_by_deprel("aux:pass")
-            or xcomp.children_by_deprel("conj")
-        ):
-            continue
         data.append(
             {
                 "head_form": head.form.lower(),
