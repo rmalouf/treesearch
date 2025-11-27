@@ -22,6 +22,12 @@ pub enum Constraint {
     Feature(String, String),
     And(Vec<Constraint>),
     Not(Box<Constraint>),
+    /// Check if variable has an incoming edge (from anonymous variable)
+    /// Format: _ -[label]-> X becomes HasIncomingEdge on X
+    HasIncomingEdge(RelationType, Option<String>),
+    /// Check if variable has an outgoing edge (to anonymous variable)
+    /// Format: X -[label]-> _ becomes HasOutgoingEdge on X
+    HasOutgoingEdge(RelationType, Option<String>),
 }
 
 impl Constraint {
@@ -155,25 +161,56 @@ impl Pattern {
 
     /// Add an edge constraint between variables
     pub fn add_edge_constraint(&mut self, edge_constraint: EdgeConstraint) {
-        if let Some(label) = &edge_constraint.label {
-            self.add_var(
-                edge_constraint.to.clone(),
-                Constraint::DepRel(label.clone()),
-            );
-        } else {
-            self.add_var(edge_constraint.from.clone(), Constraint::Any);
+        let from_is_anon = edge_constraint.from == "_";
+        let to_is_anon = edge_constraint.to == "_";
+
+        match (from_is_anon, to_is_anon) {
+            (true, true) => {
+                // _ -> _: trivially satisfied, ignore
+            }
+            (true, false) => {
+                // _ -[rel]-> X: X has incoming edge
+                self.add_var(
+                    edge_constraint.to.clone(),
+                    Constraint::HasIncomingEdge(
+                        edge_constraint.relation,
+                        edge_constraint.label.clone(),
+                    ),
+                );
+            }
+            (false, true) => {
+                // X -[rel]-> _: X has outgoing edge
+                self.add_var(
+                    edge_constraint.from.clone(),
+                    Constraint::HasOutgoingEdge(
+                        edge_constraint.relation,
+                        edge_constraint.label.clone(),
+                    ),
+                );
+            }
+            (false, false) => {
+                // Normal edge between two named variables (existing logic)
+                if let Some(label) = &edge_constraint.label {
+                    self.add_var(
+                        edge_constraint.to.clone(),
+                        Constraint::DepRel(label.clone()),
+                    );
+                } else {
+                    self.add_var(edge_constraint.from.clone(), Constraint::Any);
+                }
+                self.add_var(edge_constraint.to.clone(), Constraint::Any);
+
+                let edge_id = self.edge_constraints.len();
+                let from_var_id = self.var_ids.get(&edge_constraint.from).unwrap();
+                let to_var_id = self.var_ids.get(&edge_constraint.to).unwrap();
+
+                self.out_edges[*from_var_id].push(edge_id);
+                self.in_edges[*to_var_id].push(edge_id);
+                self.incident_edges[*from_var_id].push(DirectedEdge::Out(edge_id));
+                self.incident_edges[*to_var_id].push(DirectedEdge::In(edge_id));
+                self.edge_constraints.push(edge_constraint);
+            }
         }
-        self.add_var(edge_constraint.to.clone(), Constraint::Any);
-
-        let edge_id = self.edge_constraints.len();
-        let from_var_id = self.var_ids.get(&edge_constraint.from).unwrap();
-        let to_var_id = self.var_ids.get(&edge_constraint.to).unwrap();
-
-        self.out_edges[*from_var_id].push(edge_id);
-        self.in_edges[*to_var_id].push(edge_id);
-        self.incident_edges[*from_var_id].push(DirectedEdge::Out(edge_id));
-        self.incident_edges[*to_var_id].push(DirectedEdge::In(edge_id));
-        self.edge_constraints.push(edge_constraint);
     }
 }
 

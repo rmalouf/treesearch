@@ -8,7 +8,7 @@ statement = { node_decl | edge_decl | precedence_decl }
 node_decl = { ident ~ "[" ~ constraint_list ~ "]" ~ ";" }
 
 // Edge declaration: Parent -[label]-> Child; or Parent -> Child;
-edge_decl = { ident ~ ("-[" ~ edge_label ~ "]->" | "->") ~ ident ~ ";" }
+edge_decl = { edge_ident ~ ("-[" ~ edge_label ~ "]->" | "->") ~ edge_ident ~ ";" }
 
 // Precedence declarations: Node1 ( << | <) Node2;
 precedence_decl = { ident ~ precedence_op ~ ident ~ ";" }
@@ -40,8 +40,12 @@ constraint_key = { "lemma" | "upos" | "xpos" | "form" | "deprel" }
 // Edge label (deprel name)
 edge_label = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_" | ":" | "-")* }
 
+// Identifier (node name) - includes anonymous variable "_"
+edge_ident = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* | "_" }
+
 // Identifier (node name)
 ident = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
+
 
 // String literal
 string_literal = ${ "\"" ~ string_inner ~ "\"" }

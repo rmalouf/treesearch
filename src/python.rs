@@ -90,17 +90,15 @@ impl PyTree {
     /// Example:
     ///     path = tree.find_path(verb, noun)
     fn find_path(&self, x: &PyWord, y: &PyWord) -> Option<Vec<PyWord>> {
-        self.inner
-            .find_path(&x.inner, &y.inner)
-            .map(|words| {
-                words
-                    .into_iter()
-                    .map(|word| PyWord {
-                        inner: word.clone(),
-                        tree: Arc::clone(&self.inner),
-                    })
-                    .collect()
-            })
+        self.inner.find_path(&x.inner, &y.inner).map(|words| {
+            words
+                .into_iter()
+                .map(|word| PyWord {
+                    inner: word.clone(),
+                    tree: Arc::clone(&self.inner),
+                })
+                .collect()
+        })
     }
 
     /// String representation
