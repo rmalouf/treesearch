@@ -23,22 +23,21 @@ Main -[xcomp]-> XComp;
 
 
 def xcomps():
-
     xcomp_query = """
     Head [upos="VERB"];
     XComp [upos="VERB", feats.VerbForm="Inf"];
     Head -[xcomp]-> XComp;
     """
 
-    data = [ ]
+    data = []
     path = "/Volumes/Corpora/CCOHA/conll/*.conllu.gz"
     pattern = treesearch.parse_query(xcomp_query)
     for tree, match in treesearch.search_files(path, pattern):
-        main = tree.get_word(match['Head'])
-        xcomp = tree.get_word(match['XComp'])
-        data.append({'head_lemma': main.lemma, 'xcomp_lemma': xcomp.lemma})
+        main = tree.get_word(match["Head"])
+        xcomp = tree.get_word(match["XComp"])
+        data.append({"head_lemma": main.lemma, "xcomp_lemma": xcomp.lemma})
     df = pl.DataFrame(data)
-    df.write_parquet('xcomps.parquet')
+    df.write_parquet("xcomps.parquet")
 
 
 def check_dep(tree, node, deprel, tag=None):
@@ -48,8 +47,8 @@ def check_dep(tree, node, deprel, tag=None):
             return True
     return False
 
-def helps():
 
+def helps():
     help_query = """
     Head [upos="VERB", lemma="help", deprel!="conj"];
     XComp [upos="VERB", feats.VerbForm="Inf"];
@@ -58,31 +57,36 @@ def helps():
     """
 
     path = "/Volumes/Corpora/CCOHA/conll/*.conllu.gz"
-    data = [ ]
+    data = []
     pattern = treesearch.parse_query(help_query)
     for tree, match in treesearch.search_files(path, pattern):
-        head = tree.get_word(match['Head'])
-        xcomp = tree.get_word(match['XComp'])
-        if (head.children_by_deprel('conj') or
-            head.children_by_deprel('aux:pass') or
-            xcomp.children_by_deprel('conj')):
+        head = tree.get_word(match["Head"])
+        xcomp = tree.get_word(match["XComp"])
+        if (
+            head.children_by_deprel("conj")
+            or head.children_by_deprel("aux:pass")
+            or xcomp.children_by_deprel("conj")
+        ):
             continue
-        data.append({"head_form": head.form.lower(),
-                     "transitive": check_dep(tree, head, 'obj') or check_dep(tree, xcomp, 'nsubj'),
-                     "help_to": check_dep(tree, head, "mark", tag="TO"),
-                     "xcomp_lemma": xcomp.lemma,
-                     "bare_inf": not check_dep(tree, xcomp, "mark", tag="TO"),
-                     "xcomp_transitive": check_dep(tree, xcomp, "obj") or check_dep(tree, xcomp, "ccomp"),
-                     "distance": int(xcomp.id - head.id),
-                     "doc_id": tree.metadata['doc_id'],
-                     "sent_id": tree.metadata['sent_id'],
-                     "text": tree.sentence_text
-                     })
+        data.append(
+            {
+                "head_form": head.form.lower(),
+                "transitive": check_dep(tree, head, "obj") or check_dep(tree, xcomp, "nsubj"),
+                "help_to": check_dep(tree, head, "mark", tag="TO"),
+                "xcomp_lemma": xcomp.lemma,
+                "bare_inf": not check_dep(tree, xcomp, "mark", tag="TO"),
+                "xcomp_transitive": check_dep(tree, xcomp, "obj")
+                or check_dep(tree, xcomp, "ccomp"),
+                "distance": int(xcomp.id - head.id),
+                "doc_id": tree.metadata["doc_id"],
+                "sent_id": tree.metadata["sent_id"],
+                "text": tree.sentence_text,
+            }
+        )
     df = pl.DataFrame(data)
-    df.write_parquet('help.parquet')
+    df.write_parquet("help.parquet")
+
 
 if __name__ == "__main__":
     xcomps()
     helps()
-
-

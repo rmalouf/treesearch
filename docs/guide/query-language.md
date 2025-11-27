@@ -35,6 +35,16 @@ Constrain variables by word properties:
 | `form` | Surface form | `[form="helping"]` |
 | `deprel` | Dependency relation | `[deprel="root"]` |
 
+**Negation:** Use `!=` to exclude values:
+
+```
+# Not a verb
+NotVerb [upos!="VERB"];
+
+# Not the lemma "be"
+NotBe [lemma!="be"];
+```
+
 ### Multiple Constraints
 
 Combine constraints with commas (AND logic):
@@ -95,6 +105,58 @@ V -> X;
 
 # Y has any parent
 Y <- Z;
+```
+
+### Negative Edge Constraints
+
+Negate edges to require their **absence**:
+
+```
+# V does NOT have any edge to W
+V !-> W;
+
+# V does NOT have obj edge to W (but may have other edges)
+V !-[obj]-> W;
+```
+
+**Semantics:**
+- `X !-> Y` - X has no edge of any type to Y
+- `X !-[label]-> Y` - X has no edge with the specific label to Y (but may have edges with other labels)
+
+**Examples:**
+
+```
+# Find verbs that don't have objects
+V [upos="VERB"];
+Obj [];
+V !-[obj]-> Obj;
+
+# Find words not connected to a specific word
+Help [lemma="help"];
+To [lemma="to"];
+Help !-> To;
+
+# Combine positive and negative constraints
+# V has xcomp to Y but NOT obj to W
+V [];
+Y [];
+W [];
+V -[xcomp]-> Y;
+V !-[obj]-> W;
+```
+
+### Anonymous Variables with Negation
+
+Use anonymous variable `_` with negation for common patterns:
+
+```
+# Find root words (no incoming edges)
+Root [];
+_ !-> Root;
+
+# Find words that are not anyone's object
+NotObj [];
+_ !-[obj]-> NotObj;
 ```
 
 ## Precedence Constraints

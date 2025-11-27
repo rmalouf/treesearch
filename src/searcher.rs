@@ -7,7 +7,7 @@
 //!
 
 use crate::RelationType;
-use crate::pattern::{Constraint, Pattern};
+use crate::pattern::{Constraint, EdgeConstraint, Pattern};
 use crate::query::{QueryError, parse_query};
 use crate::tree::Word;
 use crate::tree::{Tree, WordId};
@@ -78,13 +78,40 @@ fn satisfies_arc_constraint(
     tree: &Tree,
     from_word_id: WordId,
     to_word_id: WordId,
-    relation: &RelationType,
+    edge_constraint: &EdgeConstraint,
 ) -> bool {
-    match relation {
+    // First check the structural relationship
+    let satisfies_relation = match edge_constraint.relation {
         RelationType::Child => tree.check_rel(from_word_id, to_word_id),
         RelationType::Precedes => from_word_id < to_word_id,
         RelationType::ImmediatelyPrecedes => to_word_id == from_word_id + 1,
-        _ => panic!("Unsupported relation: {:?}", relation),
+        _ => panic!("Unsupported relation: {:?}", edge_constraint.relation),
+    };
+
+    // If the relation doesn't hold, positive constraint fails
+    if !satisfies_relation {
+        // For negative constraints, "relation doesn't hold" means constraint is satisfied
+        return edge_constraint.negated;
+    }
+
+    // If there's a label constraint, check it (only applicable to Child relations)
+    let satisfies_label = if let Some(expected_label) = &edge_constraint.label {
+        // For Child relations, check the deprel of the target word
+        if matches!(edge_constraint.relation, RelationType::Child) {
+            let actual_deprel = tree.get_word(to_word_id).unwrap().deprel;
+            *tree.string_pool.resolve(actual_deprel) == *expected_label.as_bytes()
+        } else {
+            true // No label check for non-Child relations
+        }
+    } else {
+        true // No label constraint
+    };
+
+    // Apply negation to the final result
+    if edge_constraint.negated {
+        !satisfies_label
+    } else {
+        satisfies_label
     }
 }
 
@@ -193,7 +220,7 @@ fn forward_check(
             continue;
         }
         new_domains[target_var_id]
-            .retain(|&w| satisfies_arc_constraint(tree, word_id, w, &edge_constraint.relation));
+            .retain(|&w| satisfies_arc_constraint(tree, word_id, w, edge_constraint));
         if new_domains[target_var_id].is_empty() {
             return false;
         }
@@ -206,7 +233,7 @@ fn forward_check(
             continue;
         }
         new_domains[source_var_id]
-            .retain(|&w| satisfies_arc_constraint(tree, w, word_id, &edge_constraint.relation));
+            .retain(|&w| satisfies_arc_constraint(tree, w, word_id, edge_constraint));
         if new_domains[source_var_id].is_empty() {
             return false;
         }
@@ -226,7 +253,7 @@ fn check_arc_consistency(
         let edge_constraint = &pattern.edge_constraints[edge_id];
         let target_var_id = pattern.var_ids[&edge_constraint.to];
         if assign[target_var_id].is_some_and(|target_word_id| {
-            !satisfies_arc_constraint(tree, word_id, target_word_id, &edge_constraint.relation)
+            !satisfies_arc_constraint(tree, word_id, target_word_id, edge_constraint)
         }) {
             return false;
         }
@@ -235,7 +262,7 @@ fn check_arc_consistency(
         let edge_constraint = &pattern.edge_constraints[edge_id];
         let source_var_id = pattern.var_ids[&edge_constraint.from];
         if assign[source_var_id].is_some_and(|source_word_id| {
-            !satisfies_arc_constraint(tree, source_word_id, word_id, &edge_constraint.relation)
+            !satisfies_arc_constraint(tree, source_word_id, word_id, edge_constraint)
         }) {
             return false;
         }
@@ -688,5 +715,112 @@ mod tests {
             .collect();
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0], hashmap! { "V" => 1 }); // "running" has Tense=Pres
+    }
+
+    #[test]
+    fn test_negative_unlabeled_edge() {
+        // Tree: "helped" (0) -> "us" (1, obj), "win" (3, xcomp) -> "to" (2, mark)
+        let tree = build_test_tree();
+
+        // Find pairs where V does NOT have an edge to T
+        // "helped" has edges to "us" and "win", but not "to"
+        let matches: Vec<_> = search_query(&tree, r#"V [upos="VERB"]; T [lemma="to"]; V !-> T;"#)
+            .unwrap()
+            .collect();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0], hashmap! { "V" => 0, "T" => 2 }); // helped !-> to
+    }
+
+    #[test]
+    fn test_negative_labeled_edge() {
+        // Tree: "helped" (0) -> "us" (1, obj), "win" (3, xcomp)
+        let tree = build_test_tree();
+
+        // Find verb V and word W where V does NOT have obj edge to W
+        // "helped" has obj to "us" (1), so pairs with W=1 should be excluded
+        // Also, AllDifferent constraint means V != W
+        let matches: Vec<_> = search_query(&tree, r#"V [lemma="help"]; W []; V !-[obj]-> W;"#)
+            .unwrap()
+            .collect();
+
+        // Should match V=0 with W=2, W=3 (not W=1 which is obj, not W=0 due to AllDifferent)
+        assert_eq!(matches.len(), 2);
+        assert!(matches.contains(&hashmap! { "V" => 0, "W" => 2 }));
+        assert!(matches.contains(&hashmap! { "V" => 0, "W" => 3 }));
+        assert!(!matches.contains(&hashmap! { "V" => 0, "W" => 1 })); // Excluded: obj edge exists
+    }
+
+    #[test]
+    fn test_mixed_positive_and_negative_edges() {
+        // Tree: "helped" (0) -> "us" (1, obj), "win" (3, xcomp)
+        let tree = build_test_tree();
+
+        // Find: V has xcomp to Y, but NOT obj to W
+        // AllDifferent means V, Y, W must all be different
+        let matches: Vec<_> =
+            search_query(&tree, r#"V []; Y []; W []; V -[xcomp]-> Y; V !-[obj]-> W;"#)
+                .unwrap()
+                .collect();
+
+        // V=0, Y=3 (helped -[xcomp]-> win)
+        // W can only be 2 (not 0=V, not 3=Y, not 1 which is obj of helped)
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0], hashmap! { "V" => 0, "Y" => 3, "W" => 2 });
+    }
+
+    #[test]
+    fn test_negative_edge_with_anonymous_var() {
+        // Tree: "helped" (0) -> "us" (1, obj), "win" (3, xcomp)
+        let tree = build_test_tree();
+
+        // Find words that do NOT have any incoming edges (i.e., root words)
+        let matches: Vec<_> = search_query(&tree, r#"W []; _ !-> W;"#).unwrap().collect();
+
+        // Only word 0 (helped) has no incoming edge (it's the root)
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0], hashmap! { "W" => 0 });
+    }
+
+    #[test]
+    fn test_negative_labeled_edge_with_anonymous_var() {
+        // Tree: "helped" (0) -> "us" (1, obj), "win" (3, xcomp) -> "to" (2, mark)
+        let tree = build_test_tree();
+
+        // Find words that are NOT anyone's obj (i.e., deprel != "obj")
+        let matches: Vec<_> = search_query(&tree, r#"W []; _ !-[obj]-> W;"#)
+            .unwrap()
+            .collect();
+
+        // Words 0 (root), 2 (mark), 3 (xcomp) are not obj of anyone
+        assert_eq!(matches.len(), 3);
+        assert!(matches.contains(&hashmap! { "W" => 0 })); // root
+        assert!(matches.contains(&hashmap! { "W" => 2 })); // mark
+        assert!(matches.contains(&hashmap! { "W" => 3 })); // xcomp
+        assert!(!matches.contains(&hashmap! { "W" => 1 })); // us is obj
+    }
+
+    #[test]
+    fn test_negative_edge_no_deprel_constraint() {
+        // Verify that negative labeled edges don't add DepRel constraint
+        let _tree = build_test_tree();
+
+        // Parse pattern with negative labeled edge
+        let pattern = parse_query(r#"V []; W []; V !-[obj]-> W;"#).unwrap();
+
+        // Check that W does not have a DepRel constraint
+        let w_id = *pattern.var_ids.get("W").unwrap();
+        match &pattern.var_constraints[w_id] {
+            Constraint::Any => { /* Expected - no constraint */ }
+            Constraint::And(constraints) => {
+                // Should not contain DepRel constraint
+                assert!(
+                    !constraints
+                        .iter()
+                        .any(|c| matches!(c, Constraint::DepRel(_))),
+                    "Negative edge should not add DepRel constraint"
+                );
+            }
+            other => panic!("Unexpected constraint on W: {:?}", other),
+        }
     }
 }

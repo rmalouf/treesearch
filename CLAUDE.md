@@ -25,12 +25,13 @@ The core pattern matching engine is fully implemented using constraint satisfact
 ### Current Status
 - ✅ Query language parser (Pest-based, `query.rs`)
 - ✅ Pattern AST representation with constraints
+- ✅ Negative edge constraints (`!->`, `!-[label]->`)
 - ✅ CoNLL-U parsing with transparent gzip support
 - ✅ Tree data structures with string interning (lasso + FxHash)
 - ✅ CSP solver with DFS + forward checking
 - ✅ Iterator-based API for trees and matches (`iterators.rs`)
 - ✅ Parallel file processing using rayon
-- ✅ 50 tests passing (3094 lines of code)
+- ✅ 89 tests passing
 - 🔄 **Python bindings** (refactored to functional API, compilation broken)
 - 🔄 **Performance benchmarks** (basic benchmarks exist, need expansion)
 
@@ -231,14 +232,15 @@ All core Rust components are implemented and working. Python bindings need compi
 Searches for structural patterns in dependency parse trees (linguistic data). Think of it as a specialized query engine for tree-structured linguistic annotations.
 
 **What's Working Now**:
-- ✅ Query language parser (can parse queries like `Help [lemma="help"]; To [lemma="to"]; Help -[xcomp]-> To;`)
+- ✅ Query language parser (supports positive/negative edges, node constraints, precedence)
 - ✅ Pattern AST representation with constraints
+- ✅ Negative edge constraints (`X !-> Y`, `X !-[label]-> Y`)
 - ✅ CoNLL-U file parsing with gzip detection
 - ✅ Tree data structures with string interning
 - ✅ CSP solver with exhaustive search (DFS + forward checking)
 - ✅ Iterator-based APIs for single and multi-file processing
 - ✅ Parallel file processing with rayon
-- ✅ 50 tests passing (3094 lines of code)
+- ✅ 89 tests passing
 
 ### What Needs Work
 - 🔄 **Python bindings** - Fix compilation errors after functional API refactor
@@ -246,7 +248,7 @@ Searches for structural patterns in dependency parse trees (linguistic data). Th
   - Old OO build still works but is stale (built before latest refactor)
 - 🔄 **Performance benchmarks** - Expand beyond basic benchmarks
 - ⏳ **Documentation** - Update API docs to reflect functional API
-- ⏳ **Extended query features** (negation, regex, more relation types)
+- ⏳ **Extended query features** (regex patterns, descendant/ancestor relations)
 
 ### Performance Goals
 - Handle 500M+ token corpora

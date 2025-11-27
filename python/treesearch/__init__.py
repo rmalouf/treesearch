@@ -48,6 +48,7 @@ try:
 except ImportError as e:
     # Provide helpful error message if native extension not built
     import sys
+
     print(
         "Failed to import treesearch native extension. "
         "Please build the package with 'maturin develop' or 'pip install -e .'",
