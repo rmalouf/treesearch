@@ -167,6 +167,47 @@ for tree, match in treesearch.search_files("*.conllu", pattern):
     print(f"  {tree.sentence_text}\n")
 ```
 
+### Intransitive Verbs
+
+Find verbs that **don't** have objects (purely intransitive):
+
+```python
+query = """
+    V [upos="VERB"];
+    Obj [];
+    V !-[obj]-> Obj;
+"""
+
+pattern = treesearch.parse_query(query)
+
+for tree, match in treesearch.search_files("*.conllu", pattern):
+    verb = tree.get_word(match["V"])
+    print(f"{verb.form} (intransitive)")
+    print(f"  {tree.sentence_text}\n")
+```
+
+### Simplified Passives
+
+Find passive verbs without agents (e.g., "was eaten" without "by X"):
+
+```python
+query = """
+    V [upos="VERB"];
+    Aux [];
+    Agent [];
+    V <-[aux:pass]- Aux;
+    V !-[obl:agent]-> Agent;
+"""
+
+pattern = treesearch.parse_query(query)
+
+for tree, match in treesearch.search_files("*.conllu", pattern):
+    verb = tree.get_word(match["V"])
+    aux = tree.get_word(match["Aux"])
+    print(f"{aux.form} {verb.form} (no agent)")
+    print(f"  {tree.sentence_text}\n")
+```
+
 ## Refining Searches
 
 ### Add More Constraints

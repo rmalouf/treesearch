@@ -28,12 +28,13 @@ Treesearch is designed for corpus linguistics research on large treebanks (500M+
 
 ✅ **Implemented:**
 - Query language parser (Pest-based)
-- Pattern AST representation
+- Pattern AST representation with negative constraints
 - CoNLL-U file parsing with transparent gzip support
 - Tree data structures with string interning
 - CSP solver with exhaustive search
 - Python bindings with parallel iterators
-- 38 tests passing
+- Negative edge constraints (`!->`, `!-[label]->`)
+- 89 tests passing
 
 ⏳ **In Progress:**
 - Performance benchmarks
@@ -92,6 +93,11 @@ Verb [upos="VERB"];
 # Specify structural relationships
 Help -> To;            # Help has child To
 To -[mark]-> Verb;     # To has child Verb with deprel=mark
+
+# Negative constraints (absence of edges)
+V [upos="VERB"];
+Obj [];
+V !-[obj]-> Obj;       # V does NOT have obj edge to Obj
 ```
 
 ### Feature Constraints

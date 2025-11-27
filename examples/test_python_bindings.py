@@ -36,7 +36,7 @@ def test_simple_search():
     pattern = treesearch.parse_query('V [upos="VERB"];')
 
     # Write sample to temp file
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.conllu', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".conllu", delete=False) as f:
         f.write(SAMPLE_CONLLU)
         temp_path = f.name
 
@@ -71,7 +71,7 @@ def test_edge_constraint():
     """)
 
     # Write sample to temp file
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.conllu', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".conllu", delete=False) as f:
         f.write(SAMPLE_CONLLU)
         temp_path = f.name
 
@@ -97,7 +97,7 @@ def test_word_properties():
     pattern = treesearch.parse_query('V [lemma="help"];')
 
     # Write sample to temp file
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.conllu', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".conllu", delete=False) as f:
         f.write(SAMPLE_CONLLU)
         temp_path = f.name
 
@@ -140,7 +140,7 @@ def test_tree_properties():
     pattern = treesearch.parse_query('V [upos="VERB"];')
 
     # Write sample to temp file
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.conllu', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".conllu", delete=False) as f:
         f.write(SAMPLE_CONLLU)
         temp_path = f.name
 
@@ -178,6 +178,7 @@ def main():
     except Exception as e:
         print(f"\n✗ Test failed with error: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 

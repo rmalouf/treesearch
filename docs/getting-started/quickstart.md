@@ -164,6 +164,27 @@ query = """
 """
 ```
 
+### Excluding Patterns with Negation
+
+Find verbs that **don't** have objects:
+
+```python
+query = """
+    V [upos="VERB"];
+    Obj [];
+    V !-[obj]-> Obj;
+"""
+```
+
+Find words that have no incoming edges (root words):
+
+```python
+query = """
+    Root [];
+    _ !-> Root;
+"""
+```
+
 ## Next Steps
 
 - **[Query Language](../guide/query-language.md)** - Complete syntax reference

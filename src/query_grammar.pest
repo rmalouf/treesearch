@@ -7,8 +7,15 @@ statement = { node_decl | edge_decl | precedence_decl }
 // Node declaration: Name [constraint, constraint];
 node_decl = { ident ~ "[" ~ constraint_list ~ "]" ~ ";" }
 
-// Edge declaration: Parent -[label]-> Child; or Parent -> Child;
-edge_decl = { edge_ident ~ ("-[" ~ edge_label ~ "]->" | "->") ~ edge_ident ~ ";" }
+// Edge declaration: Parent -[label]-> Child; or Parent -> Child; with optional negation
+edge_decl = { edge_ident ~ edge_op ~ edge_ident ~ ";" }
+
+// Edge operators (order matters - longer patterns first)
+edge_op = { neg_labeled_edge | labeled_edge | neg_unlabeled_edge | unlabeled_edge }
+neg_labeled_edge = { "!-[" ~ edge_label ~ "]->" }
+labeled_edge = { "-[" ~ edge_label ~ "]->" }
+neg_unlabeled_edge = { "!->" }
+unlabeled_edge = { "->" }
 
 // Precedence declarations: Node1 ( << | <) Node2;
 precedence_decl = { ident ~ precedence_op ~ ident ~ ";" }

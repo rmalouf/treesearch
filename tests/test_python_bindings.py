@@ -88,7 +88,7 @@ def temp_complex_file(complex_conllu, tmp_path):
 def temp_gzip_file(sample_conllu, tmp_path):
     """Create a temporary gzipped CoNLL-U file."""
     path = tmp_path / "test.conllu.gz"
-    with gzip.open(path, 'wt', encoding='utf-8') as f:
+    with gzip.open(path, "wt", encoding="utf-8") as f:
         f.write(sample_conllu)
     return str(path)
 
@@ -115,22 +115,22 @@ class TestPattern:
 
     def test_parse_multi_variable_query(self):
         """Test parsing a query with multiple variables."""
-        pattern = treesearch.parse_query('''
+        pattern = treesearch.parse_query("""
             V1 [upos="VERB"];
             V2 [upos="VERB"];
             V1 -[xcomp]-> V2;
-        ''')
+        """)
         assert pattern.n_vars == 2
 
     def test_parse_complex_query(self):
         """Test parsing a complex query with multiple constraints."""
-        pattern = treesearch.parse_query('''
+        pattern = treesearch.parse_query("""
             Verb [upos="VERB"];
             Noun [upos="NOUN"];
             Pron [upos="PRON"];
             Verb -[nsubj]-> Pron;
             Verb -[obj]-> Noun;
-        ''')
+        """)
         assert pattern.n_vars == 3
 
     def test_parse_query_with_lemma(self):
@@ -158,11 +158,11 @@ class TestPattern:
     def test_invalid_query_raises_error(self):
         """Test that invalid queries raise errors."""
         with pytest.raises(Exception):  # Should raise PyValueError
-            treesearch.parse_query('INVALID SYNTAX [[[')
+            treesearch.parse_query("INVALID SYNTAX [[[")
 
     def test_empty_query(self):
         """Test that empty queries create a pattern with 0 variables."""
-        pattern = treesearch.parse_query('')
+        pattern = treesearch.parse_query("")
         assert pattern.n_vars == 0
 
 
@@ -194,8 +194,8 @@ class TestTreeReading:
     def test_tree_iterator_is_iterator(self, temp_conllu_file):
         """Test that read_trees returns a proper iterator."""
         tree_iter = treesearch.read_trees(temp_conllu_file)
-        assert hasattr(tree_iter, '__iter__')
-        assert hasattr(tree_iter, '__next__')
+        assert hasattr(tree_iter, "__iter__")
+        assert hasattr(tree_iter, "__next__")
 
     def test_tree_properties(self, temp_conllu_file):
         """Test basic tree properties."""
@@ -361,7 +361,7 @@ class TestFindPath:
     def test_find_path_direct_child(self, complex_tree):
         """Test finding path from parent to direct child."""
         runs = complex_tree.get_word(3)  # "runs"
-        dog = complex_tree.get_word(2)   # "dog"
+        dog = complex_tree.get_word(2)  # "dog"
 
         path = complex_tree.find_path(runs, dog)
         assert path is not None
@@ -372,7 +372,7 @@ class TestFindPath:
     def test_find_path_multi_level(self, complex_tree):
         """Test finding path through multiple levels."""
         runs = complex_tree.get_word(3)  # "runs"
-        big = complex_tree.get_word(1)   # "big"
+        big = complex_tree.get_word(1)  # "big"
 
         path = complex_tree.find_path(runs, big)
         assert path is not None
@@ -394,7 +394,7 @@ class TestFindPath:
 
     def test_find_path_no_path_siblings(self, complex_tree):
         """Test that no path exists between siblings."""
-        dog = complex_tree.get_word(2)   # "dog" (child of runs)
+        dog = complex_tree.get_word(2)  # "dog" (child of runs)
         park = complex_tree.get_word(6)  # "park" (child of runs)
 
         path = complex_tree.find_path(dog, park)
@@ -402,7 +402,7 @@ class TestFindPath:
 
     def test_find_path_no_path_reverse(self, complex_tree):
         """Test that no path exists in reverse direction (child to parent)."""
-        dog = complex_tree.get_word(2)   # "dog"
+        dog = complex_tree.get_word(2)  # "dog"
         runs = complex_tree.get_word(3)  # "runs"
 
         path = complex_tree.find_path(dog, runs)
@@ -464,11 +464,11 @@ class TestSearch:
 
     def test_search_with_edge_constraint(self, sample_tree):
         """Test searching with edge constraints."""
-        pattern = treesearch.parse_query('''
+        pattern = treesearch.parse_query("""
             V1 [upos="VERB"];
             V2 [upos="VERB"];
             V1 -[xcomp]-> V2;
-        ''')
+        """)
         matches = list(treesearch.search(sample_tree, pattern))
 
         assert len(matches) == 1
@@ -484,11 +484,11 @@ class TestSearch:
 
     def test_search_multiple_edges(self, sample_tree):
         """Test searching with multiple edge constraints."""
-        pattern = treesearch.parse_query('''
+        pattern = treesearch.parse_query("""
             Verb [upos="VERB"];
             Pron [upos="PRON"];
             Verb -[nsubj]-> Pron;
-        ''')
+        """)
         matches = list(treesearch.search(sample_tree, pattern))
 
         # Should find "helped" with nsubj "He"
@@ -530,17 +530,17 @@ class TestFileSearch:
 
         # Each result should be (tree, match)
         for tree, match in results:
-            assert hasattr(tree, 'get_word')
+            assert hasattr(tree, "get_word")
             assert isinstance(match, dict)
             assert "V" in match
 
     def test_search_file_complex_pattern(self, temp_conllu_file):
         """Test searching a file with a complex pattern."""
-        pattern = treesearch.parse_query('''
+        pattern = treesearch.parse_query("""
             Verb [upos="VERB"];
             Pron [upos="PRON"];
             Verb -[nsubj]-> Pron;
-        ''')
+        """)
         results = list(treesearch.search_file(temp_conllu_file, pattern))
 
         # Should find "helped" with nsubj "He"
@@ -651,11 +651,11 @@ class TestIntegration:
     def test_full_workflow(self, temp_conllu_file):
         """Test a complete workflow from query to results."""
         # 1. Parse a query
-        query = '''
+        query = """
             Verb [upos="VERB", lemma="help"];
             Noun [upos="PRON"];
             Verb -[obj]-> Noun;
-        '''
+        """
         pattern = treesearch.parse_query(query)
         assert pattern.n_vars == 2
 
@@ -732,11 +732,11 @@ class TestIntegration:
         tmpdir, files = temp_multi_files
 
         # Parse a query
-        pattern = treesearch.parse_query('''
+        pattern = treesearch.parse_query("""
             Noun [upos="NOUN"];
             Verb [upos="VERB"];
             Verb -[nsubj]-> Noun;
-        ''')
+        """)
 
         # Search all files
         results = list(treesearch.search_files(f"{tmpdir}/*.conllu", pattern))

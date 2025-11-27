@@ -38,8 +38,9 @@ for tree, match in treesearch.search_files("corpus/*.conllu", pattern):
 Finds **all** valid matches in your corpus - no arbitrary filtering or pruning.
 
 ### Powerful Query Language
-- Node constraints: lemma, POS tags, word forms
-- Dependency edges: specify parent-child relationships
+- Node constraints: lemma, POS tags, word forms (with negation support)
+- Dependency edges: specify parent-child relationships (positive and negative)
+- Negative edge constraints: require absence of relationships
 - Precedence operators: linear word order constraints
 - See [Query Language](guide/query-language.md) for complete reference
 

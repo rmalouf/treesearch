@@ -88,6 +88,7 @@ pub struct EdgeConstraint {
     pub to: String,
     pub relation: RelationType,
     pub label: Option<String>,
+    pub negated: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -130,7 +131,7 @@ impl Pattern {
         let mut pattern = Pattern::new();
 
         for var in vars.into_values() {
-            pattern.add_var(var.var_name, var.constraint);
+            pattern.add_var(&var.var_name, var.constraint);
         }
 
         for edge_constraint in edges.into_iter() {
@@ -141,7 +142,7 @@ impl Pattern {
         pattern
     }
 
-    pub fn add_var(&mut self, var_name: String, constr: Constraint) {
+    pub fn add_var(&mut self, var_name: &str, constr: Constraint) {
         match self.var_ids.entry(var_name.to_owned()) {
             Entry::Occupied(e) => {
                 let id = *e.get();
@@ -150,7 +151,7 @@ impl Pattern {
             Entry::Vacant(e) => {
                 let var_id = self.var_constraints.len();
                 e.insert(var_id);
-                self.var_names.push(var_name);
+                self.var_names.push(var_name.to_string());
                 self.var_constraints.push(constr);
                 self.out_edges.push(Vec::new());
                 self.in_edges.push(Vec::new());
@@ -170,35 +171,44 @@ impl Pattern {
             }
             (true, false) => {
                 // _ -[rel]-> X: X has incoming edge
-                self.add_var(
-                    edge_constraint.to.clone(),
-                    Constraint::HasIncomingEdge(
-                        edge_constraint.relation,
-                        edge_constraint.label.clone(),
-                    ),
+                // _ !-[rel]-> X: X does NOT have incoming edge
+                let constraint = Constraint::HasIncomingEdge(
+                    edge_constraint.relation,
+                    edge_constraint.label.clone(),
                 );
+                let final_constraint = if edge_constraint.negated {
+                    Constraint::Not(Box::new(constraint))
+                } else {
+                    constraint
+                };
+                self.add_var(&edge_constraint.to, final_constraint);
             }
             (false, true) => {
                 // X -[rel]-> _: X has outgoing edge
-                self.add_var(
-                    edge_constraint.from.clone(),
-                    Constraint::HasOutgoingEdge(
-                        edge_constraint.relation,
-                        edge_constraint.label.clone(),
-                    ),
+                // X !-[rel]-> _: X does NOT have outgoing edge
+                let constraint = Constraint::HasOutgoingEdge(
+                    edge_constraint.relation,
+                    edge_constraint.label.clone(),
                 );
+                let final_constraint = if edge_constraint.negated {
+                    Constraint::Not(Box::new(constraint))
+                } else {
+                    constraint
+                };
+                self.add_var(&edge_constraint.from, final_constraint);
             }
             (false, false) => {
-                // Normal edge between two named variables (existing logic)
+                // Normal edge between two named variables
+                // For positive labeled edges, add DepRel constraint to target
+                // For negative labeled edges, skip DepRel (Y's deprel is unconstrained)
                 if let Some(label) = &edge_constraint.label {
-                    self.add_var(
-                        edge_constraint.to.clone(),
-                        Constraint::DepRel(label.clone()),
-                    );
+                    if !edge_constraint.negated {
+                        self.add_var(&edge_constraint.to, Constraint::DepRel(label.clone()));
+                    }
                 } else {
-                    self.add_var(edge_constraint.from.clone(), Constraint::Any);
+                    self.add_var(&edge_constraint.from, Constraint::Any);
                 }
-                self.add_var(edge_constraint.to.clone(), Constraint::Any);
+                self.add_var(&edge_constraint.to, Constraint::Any);
 
                 let edge_id = self.edge_constraints.len();
                 let from_var_id = self.var_ids.get(&edge_constraint.from).unwrap();
@@ -241,6 +251,7 @@ mod tests {
             to: "noun".to_string(),
             relation: RelationType::Child,
             label: Some("nsubj".to_string()),
+            negated: false,
         }];
 
         let pattern = Pattern::with_constraints(vars, edges);

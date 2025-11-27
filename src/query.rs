@@ -147,29 +147,39 @@ fn parse_regular_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constra
 }
 
 /// Parse edge declaration: Source -[label]-> Target; or Source -> Target;
+/// Also supports negation: Source !-[label]-> Target; or Source !-> Target;
 fn parse_edge_decl(pair: pest::iterators::Pair<Rule>) -> Result<EdgeConstraint, QueryError> {
     let mut inner = pair.into_inner();
 
     let from = inner.next().unwrap().as_str().to_string();
 
-    // The next element could be edge_label (if present) or the target variable
-    let next = inner.next().unwrap();
+    // Next element is the edge_op (which contains the actual operator rule)
+    let edge_op = inner.next().unwrap();
+    let mut op_inner = edge_op.into_inner();
+    let actual_op = op_inner.next().unwrap(); // Get the actual operator (labeled_edge, etc.)
+    let op_rule = actual_op.as_rule();
 
-    let (label, to) = if next.as_rule() == Rule::edge_label {
-        // We have a label, so get the target variable next
-        let label_str = next.as_str().to_string();
-        let to_var = inner.next().unwrap().as_str().to_string();
-        (Some(label_str), to_var)
+    let negated = matches!(op_rule, Rule::neg_labeled_edge | Rule::neg_unlabeled_edge);
+
+    // Check if there's a label inside the actual operator
+    let label = if matches!(op_rule, Rule::neg_labeled_edge | Rule::labeled_edge) {
+        // Extract the edge_label from within the labeled edge operator
+        actual_op
+            .into_inner()
+            .next()
+            .map(|p| p.as_str().to_string())
     } else {
-        // No label, this is the target variable
-        (None, next.as_str().to_string())
+        None
     };
+
+    let to = inner.next().unwrap().as_str().to_string();
 
     Ok(EdgeConstraint {
         from,
         to,
         relation: RelationType::Child,
         label,
+        negated,
     })
 }
 
@@ -196,6 +206,7 @@ fn parse_precedence_decl(pair: pest::iterators::Pair<Rule>) -> Result<EdgeConstr
         to,
         relation,
         label: None,
+        negated: false, // Negation not supported for precedence
     })
 }
 
@@ -273,6 +284,58 @@ mod tests {
         assert_eq!(edge_constraint.to, "Child");
         assert_eq!(edge_constraint.relation, RelationType::Child);
         assert_eq!(edge_constraint.label, None);
+    }
+
+    #[test]
+    fn test_parse_negative_unlabeled_edge() {
+        let query = r#"
+            Help [];
+            To [];
+            Help !-> To;
+        "#;
+        let pattern = parse_query(query).unwrap();
+
+        assert_eq!(pattern.edge_constraints.len(), 1);
+
+        let edge_constraint = &pattern.edge_constraints[0];
+        assert_eq!(edge_constraint.from, "Help");
+        assert_eq!(edge_constraint.to, "To");
+        assert_eq!(edge_constraint.relation, RelationType::Child);
+        assert_eq!(edge_constraint.label, None);
+        assert_eq!(edge_constraint.negated, true);
+    }
+
+    #[test]
+    fn test_parse_negative_labeled_edge() {
+        let query = r#"
+            Help [lemma="help"];
+            To [lemma="to"];
+            Help !-[xcomp]-> To;
+        "#;
+        let pattern = parse_query(query).unwrap();
+
+        assert_eq!(pattern.edge_constraints.len(), 1);
+
+        let edge_constraint = &pattern.edge_constraints[0];
+        assert_eq!(edge_constraint.from, "Help");
+        assert_eq!(edge_constraint.to, "To");
+        assert_eq!(edge_constraint.relation, RelationType::Child);
+        assert_eq!(edge_constraint.label, Some("xcomp".to_string()));
+        assert_eq!(edge_constraint.negated, true);
+    }
+
+    #[test]
+    fn test_parse_positive_edge_not_negated() {
+        // Verify positive edges have negated=false
+        let query = r#"
+            Help [];
+            To [];
+            Help -[xcomp]-> To;
+        "#;
+        let pattern = parse_query(query).unwrap();
+
+        let edge_constraint = &pattern.edge_constraints[0];
+        assert_eq!(edge_constraint.negated, false);
     }
 
     #[test]

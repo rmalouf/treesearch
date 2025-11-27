@@ -18,11 +18,12 @@ CONLLU_DATA = """# text = The big dog runs in the park.
 
 """
 
+
 def test_find_path():
     print("Testing find_path Python binding...")
 
     # Create temporary file with test data
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.conllu', delete=False) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".conllu", delete=False) as f:
         f.write(CONLLU_DATA)
         temp_file = f.name
 
@@ -35,7 +36,7 @@ def test_find_path():
 
         # Test 1: Direct child (runs -> dog)
         runs = tree.get_word(3)  # "runs" at position 3
-        dog = tree.get_word(2)   # "dog" at position 2
+        dog = tree.get_word(2)  # "dog" at position 2
 
         path = tree.find_path(runs, dog)
         if path:
@@ -65,7 +66,7 @@ def test_find_path():
 
         # Test 3: Different branch (runs -> park -> the)
         park = tree.get_word(6)  # "park" at position 6
-        the = tree.get_word(5)   # "the" at position 5
+        the = tree.get_word(5)  # "the" at position 5
 
         path = tree.find_path(runs, park)
         if path:
@@ -104,6 +105,7 @@ def test_find_path():
     finally:
         # Clean up
         os.unlink(temp_file)
+
 
 if __name__ == "__main__":
     test_find_path()
