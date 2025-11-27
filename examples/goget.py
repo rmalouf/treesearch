@@ -2,6 +2,7 @@
 import treesearch
 from pathlib import Path
 from tqdm import tqdm
+from collections import Counter
 
 query = """
 Go [lemma="go"];
@@ -19,20 +20,49 @@ And < V;
 #    Go -[xcomp]-> V;
 #"""
 
-
+query = """
+Help [lemma="help"];
+To [form="to"];
+V [xpos="VB"];
+Help << To;
+To << V;
+"""
 
 
 def main():
 
+    count = Counter()
+    examples = dict()
     path = "/Volumes/Corpora/COHA/conll/*.conllu.gz"
     pattern = treesearch.parse_query(query)
     #for filename in tqdm(list(Path(path).rglob("*.conllu.gz"))):
     for tree, match in treesearch.search_files(path, pattern):
-        print(tree.get_word(match['Go']).form, tree.get_word(match['V']).form)
+        dep_path1 = tree.find_path(tree.get_word(match['Help']),
+                              tree.get_word(match['V']))
+        if dep_path1:
+            dep_path2 = tree.find_path(tree.get_word(match['V']),
+                                       tree.get_word(match['To']))
+            if dep_path2:
+
+                dep_path = (tuple([w.deprel for w in dep_path1[1:]]),
+                            tuple([w.deprel for w in dep_path2[1:]]))
+                count[dep_path] += 1
+                examples[dep_path] = tree.sentence_text
+            #print(dep_path)
+            #print(tree.find_path(tree.get_word(match['Help']),
+            #                     tree.get_word(match['V'])))
+    #
+    #
+            #print(tree.sentence_text)
+            #print()
+        #print(tree.get_word(match['Go']).form, tree.get_word(match['V']).form)
         #print(tree.get_word(match['Go']))
         #print(tree.get_word(match['And']))
         #p#rint(tree.get_word(match['V']))
-        #print()
+    for k,v in count.most_common(25):
+        print(v, k)
+        print(examples[k])
+        print()
 
 
 if __name__ == "__main__":
