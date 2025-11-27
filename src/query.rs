@@ -75,7 +75,6 @@ fn parse_var_decl(pair: pest::iterators::Pair<Rule>) -> Result<PatternVar, Query
 
     let ident_pair = inner.next().unwrap();
     let var_name = ident_pair.as_str().to_string();
-
     let constraint_list = inner.next().unwrap();
     let constraints = parse_constraint_list(constraint_list)?;
 
@@ -595,6 +594,145 @@ mod tests {
                 )));
             }
             _ => panic!("Expected And constraint"),
+        }
+    }
+
+    #[test]
+    fn test_parse_anonymous_incoming_edge() {
+        // Test: _ -[obj]-> X
+        let query = r#"
+            X [upos="NOUN"];
+            _ -[obj]-> X;
+        "#;
+        let pattern = parse_query(query).unwrap();
+
+        assert_eq!(pattern.var_constraints.len(), 1);
+        assert_eq!(pattern.edge_constraints.len(), 0); // Anonymous edges don't create edge constraints
+        assert_eq!(*pattern.var_ids.get("X").unwrap(), 0);
+
+        // Check that X has HasIncomingEdge constraint
+        match &pattern.var_constraints[0] {
+            Constraint::And(constraints) => {
+                assert_eq!(constraints.len(), 2);
+                assert!(constraints.contains(&Constraint::UPOS("NOUN".to_string())));
+                assert!(constraints.iter().any(|c| matches!(
+                    c, Constraint::HasIncomingEdge(RelationType::Child, Some(label)) if label == "obj"
+                )));
+            }
+            _ => panic!("Expected And constraint"),
+        }
+    }
+
+    #[test]
+    fn test_parse_anonymous_outgoing_edge() {
+        // Test: X -[nsubj]-> _
+        let query = r#"
+            X [upos="VERB"];
+            X -[nsubj]-> _;
+        "#;
+        let pattern = parse_query(query).unwrap();
+
+        assert_eq!(pattern.var_constraints.len(), 1);
+        assert_eq!(pattern.edge_constraints.len(), 0);
+
+        // Check that X has HasOutgoingEdge constraint
+        match &pattern.var_constraints[0] {
+            Constraint::And(constraints) => {
+                assert_eq!(constraints.len(), 2);
+                assert!(constraints.contains(&Constraint::UPOS("VERB".to_string())));
+                assert!(constraints.iter().any(|c| matches!(
+                    c, Constraint::HasOutgoingEdge(RelationType::Child, Some(label)) if label == "nsubj"
+                )));
+            }
+            _ => panic!("Expected And constraint"),
+        }
+    }
+
+    #[test]
+    fn test_parse_anonymous_both_sides() {
+        // Test: _ -> _ (trivially satisfied, should be ignored)
+        let query = r#"
+            _ -> _;
+        "#;
+        let pattern = parse_query(query).unwrap();
+
+        assert_eq!(pattern.var_constraints.len(), 0);
+        assert_eq!(pattern.edge_constraints.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_anonymous_multiple() {
+        // Test: Multiple anonymous edges on same variable
+        let query = r#"
+            X [upos="NOUN"];
+            _ -[obj]-> X;
+            _ -[nsubj]-> X;
+        "#;
+        let pattern = parse_query(query).unwrap();
+
+        assert_eq!(pattern.var_constraints.len(), 1);
+
+        // Check that X has both HasIncomingEdge constraints
+        match &pattern.var_constraints[0] {
+            Constraint::And(constraints) => {
+                assert_eq!(constraints.len(), 3); // UPOS + 2 HasIncomingEdge
+                assert!(constraints.contains(&Constraint::UPOS("NOUN".to_string())));
+                assert!(
+                    constraints
+                        .iter()
+                        .filter(|c| matches!(
+                            c,
+                            Constraint::HasIncomingEdge(RelationType::Child, _)
+                        ))
+                        .count()
+                        == 2
+                );
+            }
+            _ => panic!("Expected And constraint"),
+        }
+    }
+
+    #[test]
+    fn test_parse_anonymous_no_label() {
+        // Test: _ -> X (no label specified)
+        let query = r#"
+            X [];
+            _ -> X;
+        "#;
+        let pattern = parse_query(query).unwrap();
+
+        assert_eq!(pattern.var_constraints.len(), 1);
+
+        // Check that X has HasIncomingEdge with no label
+        assert!(matches!(
+            &pattern.var_constraints[0],
+            Constraint::HasIncomingEdge(RelationType::Child, None)
+        ));
+    }
+
+    #[test]
+    fn test_parse_mixed_anonymous_and_normal() {
+        // Test: Mix of anonymous and normal edges
+        let query = r#"
+            X [upos="VERB"];
+            Y [upos="NOUN"];
+            _ -[obj]-> X;
+            X -[nsubj]-> Y;
+        "#;
+        let pattern = parse_query(query).unwrap();
+
+        assert_eq!(pattern.var_constraints.len(), 2);
+        assert_eq!(pattern.edge_constraints.len(), 1); // Only X -> Y creates edge constraint
+
+        // X should have HasIncomingEdge constraint
+        let x_constraints = &pattern.var_constraints[*pattern.var_ids.get("X").unwrap()];
+        match x_constraints {
+            Constraint::And(constraints) => {
+                assert!(constraints.iter().any(|c| matches!(
+                    c, Constraint::HasIncomingEdge(RelationType::Child, Some(label)) if label == "obj"
+                )));
+            }
+            _ => panic!("Expected And constraint for X"),
         }
     }
 }
