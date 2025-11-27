@@ -311,6 +311,7 @@ word.children_by_deprel(deprel: str) -> list[Word]
 **Returns:**
 
 - List of child Word objects with the specified deprel (may be empty)
+- Returns an empty list if the word has no children or no children matching the relation
 
 **Example:**
 
@@ -324,6 +325,10 @@ for obj in objects:
 subjects = verb.children_by_deprel("nsubj")
 if subjects:
     print(f"Subject: {subjects[0].form}")
+
+# Check for existence efficiently
+if verb.children_by_deprel("xcomp"):
+    print("Verb has an xcomp dependent")
 ```
 
 ---
