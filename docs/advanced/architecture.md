@@ -65,6 +65,19 @@ The core matching algorithm uses:
 3. Yield all valid complete assignments
 ```
 
+**Constraint Checking**:
+
+The `satisfies_var_constraint()` function evaluates node constraints efficiently:
+
+- **Attribute constraints** (lemma, upos, form, deprel): Direct string pool comparison
+- **Feature constraints**: Iterate through word features to find key-value matches
+- **HasIncomingEdge**: Check if word has parent (via `word.head`), optionally matching deprel
+- **HasOutgoingEdge**: Check if word has children matching optional deprel (uses `children_by_deprel()` helper)
+- **Negation**: Recursively negate inner constraint
+- **Conjunction**: All sub-constraints must be satisfied
+
+Anonymous variables (`_`) in queries create these `HasIncomingEdge`/`HasOutgoingEdge` constraints rather than creating actual variable bindings.
+
 ### 4. Tree Representation
 
 **File**: `src/tree.rs`
