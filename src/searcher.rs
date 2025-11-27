@@ -36,6 +36,7 @@ fn satisfies_var_constraint(tree: &Tree, word: &Word, constraint: &Constraint) -
         //        Constraint::Or(constraints) => constraints
         //            .iter()
         //            .any(|constraint| satisfies_var_constraint(tree, word, constraint)),
+        Constraint::Not(inner_constraint) => !satisfies_var_constraint(tree, word, inner_constraint),
         Constraint::Any => true, // No filtering
     }
 }
@@ -668,5 +669,31 @@ mod tests {
             .unwrap()
             .collect::<Vec<_>>();
         assert_eq!(matches.len(), 0);
+    }
+
+    #[test]
+    fn test_negative_constraint() {
+        // Tree: "helped" (0) "us" (1) "to" (2) "win" (3)
+        let tree = build_test_tree();
+
+        // Find all words that are NOT VERBs
+        let matches: Vec<_> = search_query(&tree, r#"W [upos!="VERB"];"#)
+            .unwrap()
+            .collect();
+        assert_eq!(matches.len(), 2); // us (PRON), to (PART)
+        assert!(matches.contains(&hashmap! { "W" => 1 }));
+        assert!(matches.contains(&hashmap! { "W" => 2 }));
+    }
+
+    #[test]
+    fn test_negative_feature_constraint() {
+        let tree = build_feature_tree();
+
+        // Find all verbs that are NOT past tense
+        let matches: Vec<_> = search_query(&tree, r#"V [upos="VERB", feats.Tense!="Past"];"#)
+            .unwrap()
+            .collect();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0], hashmap! { "V" => 1 }); // "running" has Tense=Pres
     }
 }

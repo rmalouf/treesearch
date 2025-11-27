@@ -107,28 +107,43 @@ fn parse_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, Que
     }
 }
 
-/// Parse a feature constraint: feats.Key="Value"
+/// Parse a feature constraint: feats.Key="Value" or feats.Key!="Value"
 fn parse_feature_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, QueryError> {
     let mut inner = pair.into_inner();
     let feature_key = inner.next().unwrap().as_str().to_string();
+    let operator = inner.next().unwrap().as_str();
     let value = inner.next().unwrap().into_inner().as_str().to_string();
-    Ok(Constraint::Feature(feature_key, value))
+
+    let constraint = Constraint::Feature(feature_key, value);
+
+    if operator == "!=" {
+        Ok(Constraint::Not(Box::new(constraint)))
+    } else {
+        Ok(constraint)
+    }
 }
 
-/// Parse a regular constraint: key="value"
+/// Parse a regular constraint: key="value" or key!="value"
 fn parse_regular_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, QueryError> {
     let mut inner = pair.into_inner();
 
     let key = inner.next().unwrap().as_str();
+    let operator = inner.next().unwrap().as_str();
     let value = inner.next().unwrap().into_inner().as_str().to_string();
 
-    match key {
-        "lemma" => Ok(Constraint::Lemma(value)),
-        "upos" => Ok(Constraint::UPOS(value)),
-        "xpos" => Ok(Constraint::XPOS(value)),
-        "form" => Ok(Constraint::Form(value)),
-        "deprel" => Ok(Constraint::DepRel(value)),
-        _ => Err(QueryError::UnknownConstraintKey(key.to_string())),
+    let constraint = match key {
+        "lemma" => Constraint::Lemma(value),
+        "upos" => Constraint::UPOS(value),
+        "xpos" => Constraint::XPOS(value),
+        "form" => Constraint::Form(value),
+        "deprel" => Constraint::DepRel(value),
+        _ => return Err(QueryError::UnknownConstraintKey(key.to_string())),
+    };
+
+    if operator == "!=" {
+        Ok(Constraint::Not(Box::new(constraint)))
+    } else {
+        Ok(constraint)
     }
 }
 
@@ -529,6 +544,54 @@ mod tests {
                 assert!(constraints.contains(&Constraint::Lemma("be".to_string())));
                 assert!(constraints.iter().any(|c| matches!(
                     c, Constraint::Feature(k, v) if k == "Tense" && v == "Past"
+                )));
+            }
+            _ => panic!("Expected And constraint"),
+        }
+    }
+
+    #[test]
+    fn test_parse_negative_constraint() {
+        let query = r#"V [lemma!="help"];"#;
+        let pattern = parse_query(query).unwrap();
+
+        match &pattern.var_constraints[0] {
+            Constraint::Not(inner) => match inner.as_ref() {
+                Constraint::Lemma(lemma) => assert_eq!(lemma, "help"),
+                _ => panic!("Expected Lemma constraint inside Not"),
+            },
+            _ => panic!("Expected Not constraint"),
+        }
+    }
+
+    #[test]
+    fn test_parse_negative_feature() {
+        let query = r#"V [feats.Tense!="Past"];"#;
+        let pattern = parse_query(query).unwrap();
+
+        match &pattern.var_constraints[0] {
+            Constraint::Not(inner) => match inner.as_ref() {
+                Constraint::Feature(key, value) => {
+                    assert_eq!(key, "Tense");
+                    assert_eq!(value, "Past");
+                }
+                _ => panic!("Expected Feature constraint inside Not"),
+            },
+            _ => panic!("Expected Not constraint"),
+        }
+    }
+
+    #[test]
+    fn test_parse_mixed_positive_negative() {
+        let query = r#"V [lemma="run", upos!="NOUN"];"#;
+        let pattern = parse_query(query).unwrap();
+
+        match &pattern.var_constraints[0] {
+            Constraint::And(constraints) => {
+                assert_eq!(constraints.len(), 2);
+                assert!(constraints.contains(&Constraint::Lemma("run".to_string())));
+                assert!(constraints.iter().any(|c| matches!(
+                    c, Constraint::Not(inner) if matches!(inner.as_ref(), Constraint::UPOS(pos) if pos == "NOUN")
                 )));
             }
             _ => panic!("Expected And constraint"),

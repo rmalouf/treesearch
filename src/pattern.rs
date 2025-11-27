@@ -21,6 +21,7 @@ pub enum Constraint {
     DepRel(String),
     Feature(String, String),
     And(Vec<Constraint>),
+    Not(Box<Constraint>),
 }
 
 impl Constraint {
