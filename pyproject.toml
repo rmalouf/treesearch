@@ -22,15 +22,6 @@ classifiers = [
 ]
 keywords = ["nlp", "linguistics", "dependency-parsing", "corpus-linguistics", "treebank"]
 dependencies = [
-    "cytoolz>=1.1.0",
-    "joblib>=1.5.2",
-    "joblib-progress>=1.0.6",
-    "nltk>=3.9.2",
-    "pandas>=2.3.3",
-    "polars>=1.35.2",
-    "pyarrow>=22.0.0",
-    "spacy>=3.8.11",
-    "tqdm>=4.67.1",
 ]
 
 [project.urls]
