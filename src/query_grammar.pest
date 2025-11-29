@@ -1,8 +1,10 @@
 // Grammar for dependency tree query language
 
-query = { SOI ~ match_block ~ EOI }
+query = { SOI ~ match_block ~ option_block* ~ EOI }
 
 match_block = { "MATCH" ~ "{" ~ statement* ~ "}" }
+
+option_block = { "OPTION" ~ "{" ~ statement* ~ "}" }
 
 statement = { node_decl | edge_decl | precedence_decl }
 
@@ -21,8 +23,6 @@ unlabeled_edge = { "->" }
 
 // Precedence declarations: Node1 ( << | <) Node2;
 precedence_decl = { ident ~ precedence_op ~ ident ~ ";" }
-
-// Precedence operators
 precedence_op = { "<<" | "<" }
 
 // Constraint list (can be empty)
