@@ -253,7 +253,7 @@ mod tests {
 
     #[test]
     fn test_match_iterator_from_string() {
-        let pattern = parse_query("V [upos=\"VERB\"];").unwrap();
+        let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
         let matches: Vec<_> = MatchIterator::from_string(THREE_VERB_CONLLU, pattern).collect();
 
         assert_eq!(matches.len(), 3);
@@ -271,7 +271,7 @@ mod tests {
                       2\tJohn\tJohn\tPROPN\tNNP\t_\t1\tobj\t_\t_\n\
                       3\trunning\trun\tVERB\tVBG\t_\t1\txcomp\t_\t_\n";
 
-        let pattern = parse_query("V [upos=\"VERB\"];").unwrap();
+        let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
         let matches: Vec<_> = MatchIterator::from_string(conllu, pattern).collect();
 
         assert_eq!(matches.len(), 2);
@@ -282,7 +282,7 @@ mod tests {
         let conllu = "1\tThe\tthe\tDET\tDT\t_\t2\tdet\t_\t_\n\
                       2\tdog\tdog\tNOUN\tNN\t_\t0\troot\t_\t_\n";
 
-        let pattern = parse_query("V [upos=\"VERB\"];").unwrap();
+        let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
         let matches: Vec<_> = MatchIterator::from_string(conllu, pattern).collect();
 
         assert_eq!(matches.len(), 0);
@@ -295,7 +295,7 @@ mod tests {
                       3\tto\tto\tPART\tTO\t_\t4\tmark\t_\t_\n\
                       4\twin\twin\tVERB\tVB\t_\t1\txcomp\t_\t_\n";
 
-        let pattern = parse_query("V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 -> V2;").unwrap();
+        let pattern = parse_query("MATCH { V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 -> V2; }").unwrap();
         let matches: Vec<_> = MatchIterator::from_string(conllu, pattern).collect();
 
         assert_eq!(matches.len(), 1);
@@ -390,7 +390,7 @@ mod tests {
                 ),
             ]);
 
-            let pattern = parse_query("V [upos=\"VERB\"];").unwrap();
+            let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
             let results: Vec<_> = MultiFileMatchIterator::from_paths(paths, pattern).collect();
 
             assert_eq!(results.len(), 2);
@@ -411,7 +411,7 @@ mod tests {
                 ),
             ]);
 
-            let pattern = parse_query("V [upos=\"VERB\"];").unwrap();
+            let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
             let glob_pattern = format!("{}/*.conllu", dir.path().display());
             let results: Vec<_> = MultiFileMatchIterator::from_glob(&glob_pattern, pattern)
                 .unwrap()
@@ -481,7 +481,7 @@ mod tests {
                 ("c.conllu", "1\twalks\twalk\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
             ]);
 
-            let pattern = parse_query("V [upos=\"VERB\"];").unwrap();
+            let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
             let results: Vec<_> = MultiFileMatchIterator::from_paths(paths, pattern)
                 .par_iter()
                 .collect();

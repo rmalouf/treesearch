@@ -85,19 +85,21 @@ maturin develop
 ## Query Language Example
 
 ```
-# Declare pattern variables with constraints
-Help [lemma="help"];
-To [lemma="to"];
-Verb [upos="VERB"];
+MATCH {
+    # Declare pattern variables with constraints
+    Help [lemma="help"];
+    To [lemma="to"];
+    Verb [upos="VERB"];
 
-# Specify structural relationships
-Help -> To;            # Help has child To
-To -[mark]-> Verb;     # To has child Verb with deprel=mark
+    # Specify structural relationships
+    Help -> To;            # Help has child To
+    To -[mark]-> Verb;     # To has child Verb with deprel=mark
 
-# Negative constraints (absence of edges)
-V [upos="VERB"];
-Obj [];
-V !-[obj]-> Obj;       # V does NOT have obj edge to Obj
+    # Negative constraints (absence of edges)
+    V [upos="VERB"];
+    Obj [];
+    V !-[obj]-> Obj;       # V does NOT have obj edge to Obj
+}
 ```
 
 ### Feature Constraints
@@ -105,14 +107,24 @@ V !-[obj]-> Obj;       # V does NOT have obj edge to Obj
 Query morphological features using dotted notation:
 
 ```
-# Find past tense verbs
-Verb [feats.Tense="Past"];
+MATCH {
+    # Find past tense verbs
+    Verb [feats.Tense="Past"];
+}
+```
 
-# Find plural nominative nouns
-Noun [feats.Number="Plur", feats.Case="Nom"];
+```
+MATCH {
+    # Find plural nominative nouns
+    Noun [feats.Number="Plur", feats.Case="Nom"];
+}
+```
 
-# Combine with other constraints
-Be [lemma="be", upos="VERB", feats.Tense="Past"];
+```
+MATCH {
+    # Combine with other constraints
+    Be [lemma="be", upos="VERB", feats.Tense="Past"];
+}
 ```
 
 Feature constraints use exact string matching (case-sensitive) and return no match if the feature is not present.
@@ -124,9 +136,11 @@ import treesearch
 
 # Parse a query into a compiled pattern
 pattern = treesearch.parse_query("""
-    Verb [upos="VERB"];
-    Noun [upos="NOUN"];
-    Verb -[nsubj]-> Noun;
+    MATCH {
+        Verb [upos="VERB"];
+        Noun [upos="NOUN"];
+        Verb -[nsubj]-> Noun;
+    }
 """)
 
 # Search a single file

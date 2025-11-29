@@ -7,7 +7,7 @@ Get representative sentences from your corpus.
 ```python
 import treesearch
 
-pattern = treesearch.parse_query('V [upos="VERB"];')
+pattern = treesearch.parse_query("MATCH { V [upos="VERB"]; }")
 
 examples = []
 for tree, match in treesearch.search_files("corpus/*.conllu", pattern):
@@ -55,7 +55,7 @@ Get one example per lemma:
 ```python
 from collections import defaultdict
 
-pattern = treesearch.parse_query('V [upos="VERB"];')
+pattern = treesearch.parse_query("MATCH { V [upos="VERB"]; }")
 examples_by_lemma = defaultdict(list)
 
 for tree, match in treesearch.search_files("corpus/*.conllu", pattern):

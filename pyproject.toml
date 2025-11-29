@@ -22,6 +22,8 @@ classifiers = [
 ]
 keywords = ["nlp", "linguistics", "dependency-parsing", "corpus-linguistics", "treebank"]
 dependencies = [
+    "marimo>=0.18.1",
+    "polars>=1.35.2",
 ]
 
 [project.urls]

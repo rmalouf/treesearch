@@ -9,7 +9,7 @@ Guide to searching trees for pattern matches.
 ```python
 import treesearch
 
-pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
+pattern = treesearch.parse_query('V [upos="VERB"];')
 
 for tree in treesearch.read_trees("corpus.conllu"):
     for match in treesearch.search(tree, pattern):
@@ -22,7 +22,7 @@ for tree in treesearch.read_trees("corpus.conllu"):
 More efficient than reading and searching separately:
 
 ```python
-pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
+pattern = treesearch.parse_query('V [upos="VERB"];')
 
 for tree, match in treesearch.search_file("corpus.conllu", pattern):
     verb = tree.get_word(match["V"])
@@ -34,7 +34,7 @@ for tree, match in treesearch.search_file("corpus.conllu", pattern):
 Best for large corpora:
 
 ```python
-pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
+pattern = treesearch.parse_query('V [upos="VERB"];')
 
 for tree, match in treesearch.search_files("data/*.conllu", pattern):
     verb = tree.get_word(match["V"])

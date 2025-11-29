@@ -1,15 +1,15 @@
-# import click
 import treesearch
 from pathlib import Path
-from tqdm import tqdm
 from collections import Counter
 import polars as pl
 
 xcomp_query = """
+MATCH {
 Main [upos="VERB"]; # [lemma="help"];
 XComp [upos="VERB", feats.VerbForm="Inf"];
 Main -[xcomp]-> XComp;
 # V -[conj]-> C;
+}
 """
 
 # query = """
@@ -24,9 +24,11 @@ Main -[xcomp]-> XComp;
 
 def xcomps():
     xcomp_query = """
+    MATCH {
     Head [upos="VERB"];
     XComp [upos="VERB", feats.VerbForm="Inf"];
     Head -[xcomp]-> XComp;
+    }
     """
 
     data = []
@@ -51,6 +53,7 @@ def check_dep(tree, node, deprel, tag=None):
 def helps():
 
     help_query = """
+    MATCH {
     Head [upos="VERB", lemma="help"];
     XComp [upos="VERB", feats.VerbForm="Inf"];
     Head -[xcomp]-> XComp;
@@ -59,6 +62,7 @@ def helps():
     Head !-[conj]-> _;
     XComp !-[conj]-> _;
     Head << XComp;
+    }
     """
 
     path = "/Volumes/Corpora/CCOHA/conll/*.conllu.gz"
@@ -71,7 +75,8 @@ def helps():
             {
                 "head_form": head.form.lower(),
                 "transitive": check_dep(tree, head, "obj") or check_dep(tree, xcomp, "nsubj"),
-                "help_to": check_dep(tree, head, "mark", tag="TO"),
+                "head_to": check_dep(tree, head, "mark", tag="TO"),
+                "head_aux": check_dep(tree, head, "aux"),
                 "xcomp_lemma": xcomp.lemma,
                 "bare_inf": not check_dep(tree, xcomp, "mark", tag="TO"),
                 "xcomp_transitive": check_dep(tree, xcomp, "obj")

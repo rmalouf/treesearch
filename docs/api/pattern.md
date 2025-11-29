@@ -130,7 +130,7 @@ with ThreadPoolExecutor() as executor:
 Patterns cannot be modified after creation:
 
 ```python
-pattern = treesearch.parse_query("V [upos='VERB'];")
+pattern = treesearch.parse_query("MATCH { V [upos='VERB']; }")
 # No way to change constraints or add variables
 # Must create new pattern instead
 ```
@@ -151,7 +151,7 @@ pattern2 = pattern1  # Shares underlying data
 ### Simple Pattern
 
 ```python
-pattern = treesearch.parse_query('V [upos="VERB"];')
+pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
 print(f"Pattern has {pattern.n_vars} variable(s)")  # 1
 ```
 
@@ -174,7 +174,7 @@ print(f"Pattern has {pattern.n_vars} variables")  # 3
 
 ```python
 try:
-    pattern = treesearch.parse_query("V [invalid]")
+    pattern = treesearch.parse_query("MATCH { V [invalid] }")
 except ValueError as e:
     print(f"Invalid query: {e}")
 ```

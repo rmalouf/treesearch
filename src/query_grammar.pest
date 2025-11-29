@@ -1,6 +1,8 @@
 // Grammar for dependency tree query language
 
-query = { SOI ~ statement* ~ EOI }
+query = { SOI ~ match_block ~ EOI }
+
+match_block = { "MATCH" ~ "{" ~ statement* ~ "}" }
 
 statement = { node_decl | edge_decl | precedence_decl }
 
