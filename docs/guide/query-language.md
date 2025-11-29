@@ -14,13 +14,17 @@ Queries consist of two parts:
 ### Basic Syntax
 
 ```
+MATCH {
 VariableName [constraint];
+}
 ```
 
 Example:
 
 ```
+MATCH {
 V [upos="VERB"];
+}
 ```
 
 ### Node Constraints
@@ -38,11 +42,13 @@ Constrain variables by word properties:
 **Negation:** Use `!=` to exclude values:
 
 ```
+MATCH {
 # Not a verb
 NotVerb [upos!="VERB"];
 
 # Not the lemma "be"
 NotBe [lemma!="be"];
+}
 ```
 
 ### Multiple Constraints
@@ -50,8 +56,10 @@ NotBe [lemma!="be"];
 Combine constraints with commas (AND logic):
 
 ```
+MATCH {
 PastVerb [upos="VERB", xpos="VBD"];
 HelpVerb [lemma="help", upos="VERB"];
+}
 ```
 
 ### Empty Constraints
@@ -59,7 +67,9 @@ HelpVerb [lemma="help", upos="VERB"];
 Match any word:
 
 ```
+MATCH {
 AnyWord [];
+}
 ```
 
 This is useful when you care about structure but not specific properties.
@@ -71,7 +81,9 @@ This is useful when you care about structure but not specific properties.
 Specify parent-child relationships:
 
 ```
+MATCH {
 Parent -[deprel]-> Child;
+}
 ```
 
 The arrow direction indicates the dependency:
@@ -82,6 +94,7 @@ The arrow direction indicates the dependency:
 ### Edge Examples
 
 ```
+MATCH {
 # Verb has object child
 V -[obj]-> N;
 
@@ -93,6 +106,7 @@ V -> Child;
 
 # Any parent relationship
 Child <- Parent;
+}
 ```
 
 ### Unlabeled Edges
@@ -100,11 +114,13 @@ Child <- Parent;
 Omit the relation to match any dependency:
 
 ```
+MATCH {
 # V has any child
 V -> X;
 
 # Y has any parent
 Y <- Z;
+}
 ```
 
 ### Negative Edge Constraints
@@ -112,11 +128,13 @@ Y <- Z;
 Negate edges to require their **absence**:
 
 ```
+MATCH {
 # V does NOT have any edge to W
 V !-> W;
 
 # V does NOT have obj edge to W (but may have other edges)
 V !-[obj]-> W;
+}
 ```
 
 **Semantics:**
@@ -126,6 +144,7 @@ V !-[obj]-> W;
 **Examples:**
 
 ```
+MATCH {
 # Find verbs that don't have objects
 V [upos="VERB"];
 Obj [];
@@ -143,6 +162,7 @@ Y [];
 W [];
 V -[xcomp]-> Y;
 V !-[obj]-> W;
+}
 ```
 
 ### Anonymous Variables with Negation
@@ -150,6 +170,7 @@ V !-[obj]-> W;
 Use anonymous variable `_` with negation for common patterns:
 
 ```
+MATCH {
 # Find root words (no incoming edges)
 Root [];
 _ !-> Root;
@@ -157,6 +178,7 @@ _ !-> Root;
 # Find words that are not anyone's object
 NotObj [];
 _ !-[obj]-> NotObj;
+}
 ```
 
 ## Precedence Constraints
@@ -171,11 +193,13 @@ Specify linear word order:
 ### Precedence Examples
 
 ```
+MATCH {
 # "to" directly precedes verb
 To < V;
 
 # Help comes before V (anywhere)
 Help << V;
+}
 ```
 
 ## Complete Examples
@@ -183,16 +207,19 @@ Help << V;
 ### Subject-Verb-Object
 
 ```
+MATCH {
 V [upos="VERB"];
 Subj [upos="NOUN"];
 Obj [upos="NOUN"];
 V -[nsubj]-> Subj;
 V -[obj]-> Obj;
+}
 ```
 
 ### help-to-infinitive Construction
 
 ```
+MATCH {
 Help [lemma="help"];
 To [lemma="to"];
 V [upos="VERB"];
@@ -200,36 +227,43 @@ Help -[xcomp]-> To;
 To -[mark]-> V;
 Help << To;
 To < V;
+}
 ```
 
 ### Passive Voice
 
 ```
+MATCH {
 Verb [upos="VERB"];
 Aux [lemma="be"];
 Subj [];
 Verb <-[aux:pass]- Aux;
 Verb -[nsubj:pass]-> Subj;
+}
 ```
 
 ### Relative Clause
 
 ```
+MATCH {
 Noun [upos="NOUN"];
 RelPron [upos="PRON"];
 Verb [upos="VERB"];
 Noun -[acl:relcl]-> Verb;
 Verb -[nsubj]-> RelPron;
+}
 ```
 
 ### Coordination
 
 ```
+MATCH {
 First [];
 Second [];
 Conj [lemma="and"];
 First -[conj]-> Second;
 Second <-[cc]- Conj;
+}
 ```
 
 ## Comments
@@ -237,10 +271,12 @@ Second <-[cc]- Conj;
 Use `//` or `#` for comments:
 
 ```
+MATCH {
 // This is a comment
 V [upos="VERB"];  # This is also a comment
 N [upos="NOUN"];
 V -[obj]-> N;
+}
 ```
 
 ## Case Sensitivity
@@ -256,6 +292,7 @@ V -[obj]-> N;
 Use descriptive names:
 
 ```
+MATCH {
 # Good
 Main [upos="VERB"];
 Auxiliary [lemma="have"];
@@ -263,6 +300,7 @@ Auxiliary [lemma="have"];
 # Less clear
 V1 [upos="VERB"];
 V2 [lemma="have"];
+}
 ```
 
 ### Start Simple
@@ -270,6 +308,7 @@ V2 [lemma="have"];
 Build complex queries incrementally:
 
 ```
+MATCH {
 # Step 1: Find verbs
 V [upos="VERB"];
 
@@ -282,6 +321,7 @@ V -[obj]-> Obj;
 V [upos="VERB", lemma="eat"];
 Obj [upos="NOUN"];
 V -[obj]-> Obj;
+}
 ```
 
 ### Test Queries

@@ -18,9 +18,11 @@ import treesearch as ts
 
 # 1. Parse your query once
 query = """
-    Verb [pos="VERB"];
-    Noun [pos="NOUN"];
-    Verb -[nsubj]-> Noun;
+    MATCH {
+        Verb [pos="VERB"];
+        Noun [pos="NOUN"];
+        Verb -[nsubj]-> Noun;
+    }
 """
 pattern = ts.parse_query(query)
 
@@ -80,22 +82,32 @@ Parent -[deprel]-> Child;
 **Example patterns:**
 
 ```
-// VERB with nominal subject
-V [upos="VERB"];
-N [upos="NOUN"];
-V -[nsubj]-> N;
+MATCH {
+    // VERB with nominal subject
+    V [upos="VERB"];
+    N [upos="NOUN"];
+    V -[nsubj]-> N;
+}
+```
 
-// Verb with xcomp (control verb)
-Main [upos="VERB"];
-Comp [upos="VERB"];
-Main -[xcomp]-> Comp;
+```
+MATCH {
+    // Verb with xcomp (control verb)
+    Main [upos="VERB"];
+    Comp [upos="VERB"];
+    Main -[xcomp]-> Comp;
+}
+```
 
-// Complex: VERB → NOUN → ADJ
-V [upos="VERB"];
-N [upos="NOUN"];
-A [upos="ADJ"];
-V -[obj]-> N;
-N -[amod]-> A;
+```
+MATCH {
+    // Complex: VERB → NOUN → ADJ
+    V [upos="VERB"];
+    N [upos="NOUN"];
+    A [upos="ADJ"];
+    V -[obj]-> N;
+    N -[amod]-> A;
+}
 ```
 
 ## Python API Reference
@@ -108,9 +120,11 @@ Parse a query string into a Pattern object.
 
 ```python
 pattern = ts.parse_query("""
-    Verb [upos="VERB"];
-    Noun [upos="NOUN"];
-    Verb -[nsubj]-> Noun;
+    MATCH {
+        Verb [upos="VERB"];
+        Noun [upos="NOUN"];
+        Verb -[nsubj]-> Noun;
+    }
 """)
 ```
 
@@ -168,7 +182,7 @@ for tree in ts.read_trees_glob("data/*.conllu"):
 Search multiple files matching a glob pattern. Returns an iterator of (tree, match) tuples.
 
 ```python
-pattern = ts.parse_query("Verb [upos=\"VERB\"];")
+pattern = ts.parse_query("MATCH { Verb [upos=\"VERB\"]; }")
 
 # Parallel search across all files
 for tree, match in ts.search_files("data/*.conllu", pattern):
@@ -242,7 +256,7 @@ Represents a parsed query pattern. Created by `parse_query()`. Opaque object tha
 - `n_vars: int` - Number of variables in the pattern
 
 ```python
-pattern = ts.parse_query("Verb [upos=\"VERB\"];")
+pattern = ts.parse_query("MATCH { Verb [upos=\"VERB\"]; }")
 print(f"Pattern has {pattern.n_vars} variables")
 # Reuse pattern across multiple searches
 for tree, match in ts.search_files("data/*.conllu", pattern):
@@ -257,9 +271,11 @@ import treesearch as ts
 
 # Find all control verbs (VERB with VERB xcomp)
 query = """
-    Main [upos="VERB"];
-    Comp [upos="VERB"];
-    Main -[xcomp]-> Comp;
+    MATCH {
+        Main [upos="VERB"];
+        Comp [upos="VERB"];
+        Main -[xcomp]-> Comp;
+    }
 """
 
 # Parse query once
@@ -325,7 +341,7 @@ for tree in ts.read_trees_glob("data/*.conllu", parallel=True):
     pass
 
 # Parallel search across files (default)
-pattern = ts.parse_query("Verb [upos=\"VERB\"];")
+pattern = ts.parse_query("MATCH { Verb [upos=\"VERB\"]; }")
 for tree, match in ts.search_files("data/*.conllu", pattern, parallel=True):
     # Searches run in parallel across files
     verb = tree.get_word(match["Verb"])

@@ -84,7 +84,7 @@ print(verb.deprel)    # Dependency relation
 Search across many files in parallel:
 
 ```python
-pattern = treesearch.parse_query('V [upos="VERB"];')
+pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
 
 for tree, match in treesearch.search_files("data/*.conllu", pattern):
     verb = tree.get_word(match["V"])

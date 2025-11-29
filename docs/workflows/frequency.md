@@ -7,7 +7,7 @@ Count construction frequencies across your corpus.
 ```python
 import treesearch
 
-pattern = treesearch.parse_query('V [upos="VERB"];')
+pattern = treesearch.parse_query("MATCH { V [upos="VERB"]; }")
 
 count = 0
 for tree, match in treesearch.search_files("corpus/*.conllu", pattern):
@@ -21,7 +21,7 @@ print(f"Total verbs: {count}")
 ```python
 from collections import Counter
 
-pattern = treesearch.parse_query('V [upos="VERB"];')
+pattern = treesearch.parse_query("MATCH { V [upos="VERB"]; }")
 verb_counts = Counter()
 
 for tree, match in treesearch.search_files("corpus/*.conllu", pattern):
@@ -67,7 +67,7 @@ Track distributions across metadata:
 ```python
 from collections import defaultdict, Counter
 
-pattern = treesearch.parse_query('V [upos="VERB"];')
+pattern = treesearch.parse_query("MATCH { V [upos="VERB"]; }")
 
 # Count by genre
 genre_counts = defaultdict(Counter)

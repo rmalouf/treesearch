@@ -223,7 +223,7 @@ treesearch.search_files(
 **Example:**
 
 ```python
-pattern = treesearch.parse_query('V [upos="VERB"];')
+pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
 
 # Search all files in parallel
 for tree, match in treesearch.search_files("data/*.conllu", pattern):
