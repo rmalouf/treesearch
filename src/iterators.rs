@@ -295,7 +295,8 @@ mod tests {
                       3\tto\tto\tPART\tTO\t_\t4\tmark\t_\t_\n\
                       4\twin\twin\tVERB\tVB\t_\t1\txcomp\t_\t_\n";
 
-        let pattern = parse_query("MATCH { V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 -> V2; }").unwrap();
+        let pattern =
+            parse_query("MATCH { V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 -> V2; }").unwrap();
         let matches: Vec<_> = MatchIterator::from_string(conllu, pattern).collect();
 
         assert_eq!(matches.len(), 1);
