@@ -31,6 +31,7 @@ pub enum QueryError {
 
 pub fn parse_query(input: &str) -> Result<Pattern, QueryError> {
     let mut match_pattern: Option<Pattern> = None;
+    let mut option_patterns: Vec<Pattern> = vec![];
 
     let mut pairs = QueryParser::parse(Rule::query, input)?;
     let query_pair = pairs.next().unwrap();
@@ -38,6 +39,7 @@ pub fn parse_query(input: &str) -> Result<Pattern, QueryError> {
     for item in query_pair.into_inner() {
         match item.as_rule() {
             Rule::match_block => match_pattern = Some(parse_query_block(item)?),
+            Rule::option_block => option_patterns.push(parse_query_block(item)?),
             Rule::EOI => {}
             _ => unreachable!(),
         }
@@ -114,7 +116,7 @@ fn parse_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, Que
     match inner.as_rule() {
         Rule::feature_constraint => parse_feature_constraint(inner),
         Rule::regular_constraint => parse_regular_constraint(inner),
-        _ => panic!("Unexpected constraint type: {:?}", inner.as_rule()),
+        _ => unreachable!(),
     }
 }
 
@@ -195,17 +197,13 @@ fn parse_precedence_decl(pair: pest::iterators::Pair<Rule>) -> Result<EdgeConstr
     let mut inner = pair.into_inner();
 
     let from = inner.next().unwrap().as_str().to_string();
-
-    // The operator is a precedence_op rule
-    let op_pair = inner.next().unwrap();
-    let operator = op_pair.as_str();
-
+    let operator = inner.next().unwrap().as_str();
     let to = inner.next().unwrap().as_str().to_string();
 
     let relation = match operator {
         "<<" => RelationType::Precedes,
         "<" => RelationType::ImmediatelyPrecedes,
-        _ => panic!("Unexpected precedence operator: {}", operator),
+        _ => unreachable!(),
     };
 
     Ok(EdgeConstraint {
