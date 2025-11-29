@@ -3,6 +3,7 @@
 //! Parses query strings into Pattern AST using pest grammar.
 
 use pest::Parser;
+use pest::iterators::Pair;
 use pest_derive::Parser;
 use std::collections::HashMap;
 use thiserror::Error;
@@ -13,7 +14,6 @@ use crate::pattern::{Constraint, EdgeConstraint, Pattern, PatternVar, RelationTy
 #[grammar = "query_grammar.pest"]
 struct QueryParser;
 
-/// Error type for query parsing failures
 #[derive(Debug, Error)]
 pub enum QueryError {
     #[error("Query error: {0}")]
@@ -24,62 +24,66 @@ pub enum QueryError {
 
     #[error("Query error: Duplicate variable: {0}")]
     DuplicateVariable(String),
+
+    #[error("Query error: No MATCH block found")]
+    NoMATCH,
 }
 
-/// Parse a query string into a Pattern
 pub fn parse_query(input: &str) -> Result<Pattern, QueryError> {
+    let mut match_pattern: Option<Pattern> = None;
+
     let mut pairs = QueryParser::parse(Rule::query, input)?;
+    let query_pair = pairs.next().unwrap();
+
+    for item in query_pair.into_inner() {
+        match item.as_rule() {
+            Rule::match_block => match_pattern = Some(parse_query_block(item)?),
+            Rule::EOI => {}
+            _ => unreachable!(),
+        }
+    }
+
+    if let Some(match_pattern) = match_pattern {
+        Ok(match_pattern)
+    } else {
+        Err(QueryError::NoMATCH)
+    }
+}
+
+pub fn parse_query_block(item: Pair<Rule>) -> Result<Pattern, QueryError> {
     let mut vars: HashMap<String, PatternVar> = HashMap::new();
     let mut edges: Vec<EdgeConstraint> = Vec::new();
 
-    // Extract the query, which contains the match_block
-    let query_pair = pairs.next().unwrap();
-
-    // Extract the match_block from the query
-    for item in query_pair.into_inner() {
-        match item.as_rule() {
-            Rule::match_block => {
-                // Process all statements in the match block
-                for statement in item.into_inner() {
-                    match statement.as_rule() {
-                        Rule::statement => {
-                            // statement contains either node_decl, edge_decl, or precedence_decl
-                            let inner = statement.into_inner().next().unwrap();
-                            match inner.as_rule() {
-                                Rule::node_decl => {
-                                    let var = parse_var_decl(inner)?;
-                                    if vars.contains_key(&var.var_name) {
-                                        return Err(QueryError::DuplicateVariable(var.var_name));
-                                    };
-                                    vars.insert(var.var_name.to_string(), var);
-                                }
-                                Rule::edge_decl => {
-                                    let edge_constraint = parse_edge_decl(inner)?;
-                                    edges.push(edge_constraint);
-                                    //                        pattern.add_edge_constraint(edge_constraint);
-                                }
-                                Rule::precedence_decl => {
-                                    let edge_constraint = parse_precedence_decl(inner)?;
-                                    edges.push(edge_constraint);
-                                }
-                                _ => {
-                                    panic!("Unexpected statement type")
-                                }
-                            }
-                        }
-                        _ => {}
+    for statement in item.into_inner() {
+        match statement.as_rule() {
+            Rule::statement => {
+                let inner = statement.into_inner().next().unwrap();
+                match inner.as_rule() {
+                    Rule::node_decl => {
+                        let var = parse_var_decl(inner)?;
+                        if vars.contains_key(&var.var_name) {
+                            return Err(QueryError::DuplicateVariable(var.var_name));
+                        };
+                        vars.insert(var.var_name.to_string(), var);
                     }
+                    Rule::edge_decl => {
+                        let edge_constraint = parse_edge_decl(inner)?;
+                        edges.push(edge_constraint);
+                    }
+                    Rule::precedence_decl => {
+                        let edge_constraint = parse_precedence_decl(inner)?;
+                        edges.push(edge_constraint);
+                    }
+                    _ => unreachable!(),
                 }
             }
-            Rule::EOI => {} // End of input
-            _ => {}
-        }
+            _ => unreachable!(),
+        };
     }
 
     Ok(Pattern::with_constraints(vars, edges))
 }
 
-/// Parse a variable declaration: Name [constraint, constraint];
 fn parse_var_decl(pair: pest::iterators::Pair<Rule>) -> Result<PatternVar, QueryError> {
     let mut inner = pair.into_inner();
 
@@ -91,7 +95,6 @@ fn parse_var_decl(pair: pest::iterators::Pair<Rule>) -> Result<PatternVar, Query
     Ok(PatternVar::new(&var_name, constraints))
 }
 
-/// Parse constraint list: may be empty or comma-separated constraints
 fn parse_constraint_list(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, QueryError> {
     let constraints: Vec<Constraint> = pair
         .into_inner()
@@ -105,7 +108,6 @@ fn parse_constraint_list(pair: pest::iterators::Pair<Rule>) -> Result<Constraint
     }
 }
 
-/// Parse a single constraint: either feature or regular
 fn parse_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, QueryError> {
     let inner = pair.into_inner().next().unwrap();
 
@@ -116,7 +118,6 @@ fn parse_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, Que
     }
 }
 
-/// Parse a feature constraint: feats.Key="Value" or feats.Key!="Value"
 fn parse_feature_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, QueryError> {
     let mut inner = pair.into_inner();
     let feature_key = inner.next().unwrap().as_str().to_string();
@@ -132,7 +133,6 @@ fn parse_feature_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constra
     }
 }
 
-/// Parse a regular constraint: key="value" or key!="value"
 fn parse_regular_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, QueryError> {
     let mut inner = pair.into_inner();
 
@@ -156,8 +156,6 @@ fn parse_regular_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constra
     }
 }
 
-/// Parse edge declaration: Source -[label]-> Target; or Source -> Target;
-/// Also supports negation: Source !-[label]-> Target; or Source !-> Target;
 fn parse_edge_decl(pair: pest::iterators::Pair<Rule>) -> Result<EdgeConstraint, QueryError> {
     let mut inner = pair.into_inner();
 
@@ -193,7 +191,6 @@ fn parse_edge_decl(pair: pest::iterators::Pair<Rule>) -> Result<EdgeConstraint, 
     })
 }
 
-/// Parse precedence declaration: First << Second; or First < Second;
 fn parse_precedence_decl(pair: pest::iterators::Pair<Rule>) -> Result<EdgeConstraint, QueryError> {
     let mut inner = pair.into_inner();
 
