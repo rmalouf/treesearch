@@ -22,9 +22,7 @@ fn main() {
     let pattern = parse_query(query).unwrap();
 
     println!("\nCounting all matches (sequential)...");
-    let count = MatchSet::from_glob(path, pattern)
-        .unwrap()
-        .into_iter()
-        .count();
+    let tree_set = TreeSet::from_glob(path).unwrap();
+    let count = MatchSet::new(&tree_set, &pattern).into_iter().count();
     println!("Total matches: {}", count);
 }

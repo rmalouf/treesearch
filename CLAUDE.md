@@ -6,21 +6,23 @@ Treesearch is a high-performance toolkit for querying linguistic dependency pars
 
 **Author**: Rob Malouf (rmalouf@sdsu.edu)
 **License**: MIT
-**Status**: Core complete (50 tests passing), Python bindings need compilation fix
-
----
-
-**CURRENT PRIORITY**: Fix Python bindings compilation error in `src/python.rs`
-- Error: `TreeIterator<R>` generic parameter removed in refactor but still referenced
-- Old build works but is stale (pre-refactor)
+**Status**: Core complete (89 tests passing), Python bindings working
 
 ---
 
 ## Current Development Phase
 
-**Core Complete, Python Bindings Refactored** (Nov 2025)
+**Core Complete, Python Bindings Working** (Nov 2025)
 
-The core pattern matching engine is fully implemented using constraint satisfaction with parallel file processing. Python bindings have been refactored from OO to functional API but currently have compilation errors that need fixing.
+The core pattern matching engine is fully implemented using constraint satisfaction with parallel file processing. Python bindings provide a functional API and are fully working.
+
+### Recent Changes (Nov 2025)
+- Refactored `iterators.rs` to use composition instead of duplication
+  - `MatchSet::new()` now takes `&TreeSet` and `&Pattern` by reference
+  - Added `.iter()` and `.par_iter()` methods alongside `.into_iter()` and `.into_par_iter()`
+  - Removed duplicate constructor methods from `MatchSet`
+- Updated Python bindings to use new Rust API
+- All 89 tests passing
 
 ### Current Status
 - ✅ Query language parser (Pest-based, `query.rs`)
@@ -32,7 +34,7 @@ The core pattern matching engine is fully implemented using constraint satisfact
 - ✅ Iterator-based API for trees and matches (`iterators.rs`)
 - ✅ Parallel file processing using rayon
 - ✅ 89 tests passing
-- 🔄 **Python bindings** (refactored to functional API, compilation broken)
+- ✅ **Python bindings** (functional API, fully working)
 - 🔄 **Performance benchmarks** (basic benchmarks exist, need expansion)
 
 ## Architecture
@@ -150,7 +152,7 @@ cargo build --release
 # Run benchmarks
 cargo bench
 
-# Build Python package (currently has compilation errors)
+# Build Python package
 maturin develop
 ```
 
@@ -243,11 +245,7 @@ Searches for structural patterns in dependency parse trees (linguistic data). Th
 - ✅ 89 tests passing
 
 ### What Needs Work
-- 🔄 **Python bindings** - Fix compilation errors after functional API refactor
-  - Current issue: Generic parameter mismatch in `TreeIterator<R>`
-  - Old OO build still works but is stale (built before latest refactor)
 - 🔄 **Performance benchmarks** - Expand beyond basic benchmarks
-- ⏳ **Documentation** - Update API docs to reflect functional API
 - ⏳ **Extended query features** (regex patterns, descendant/ancestor relations)
 
 ### Performance Goals
