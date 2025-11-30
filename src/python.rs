@@ -418,7 +418,8 @@ impl MatchIterator {
 ///         verb = tree.get_word(match["Verb"])
 #[pyfunction]
 fn search_file(path: &str, pattern: &PyPattern) -> PyResult<MatchIterator> {
-    let match_set = MatchSet::from_file(&PathBuf::from(path), pattern.inner.clone());
+    let tree_set = TreeSet::from_file(&PathBuf::from(path));
+    let match_set = MatchSet::new(&tree_set, &pattern.inner);
     Ok(MatchIterator {
         inner: Some(match_set.into_iter()),
     })
@@ -551,8 +552,9 @@ fn search_files(
     pattern: &PyPattern,
     parallel: bool,
 ) -> PyResult<MultiFileMatchIterator> {
-    let match_set = MatchSet::from_glob(glob_pattern, pattern.inner.clone())
+    let tree_set = TreeSet::from_glob(glob_pattern)
         .map_err(|e| PyValueError::new_err(format!("Glob pattern error: {}", e)))?;
+    let match_set = MatchSet::new(&tree_set, &pattern.inner);
 
     if parallel {
         Ok(create_parallel_match_iterator(match_set))

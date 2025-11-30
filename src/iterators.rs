@@ -80,6 +80,28 @@ impl TreeSet {
             source: TreeSource::Files(file_paths),
         }
     }
+
+    /// Borrow and iterate over trees
+    ///
+    /// Clones the internal source and creates a new iterator.
+    /// For consuming iteration, use `.into_iter()`.
+    pub fn iter(&self) -> Box<dyn Iterator<Item = Tree>> {
+        let cloned = Self {
+            source: self.source.clone(),
+        };
+        cloned.into_iter()
+    }
+
+    /// Borrow and iterate over trees in parallel
+    ///
+    /// Clones the internal source and creates a new parallel iterator.
+    /// For consuming iteration, use `.into_par_iter()`.
+    pub fn par_iter(&self) -> <Self as IntoParallelIterator>::Iter {
+        let cloned = Self {
+            source: self.source.clone(),
+        };
+        cloned.into_par_iter()
+    }
 }
 
 impl IntoIterator for TreeSet {
@@ -126,7 +148,7 @@ impl IntoParallelIterator for TreeSet {
     }
 }
 
-/// Collection of matches from a string, file, or glob pattern
+/// Collection of matches from a TreeSet and pattern
 ///
 /// Applies a pattern to trees and yields all matches found.
 /// Provides both sequential and parallel iteration.
@@ -135,61 +157,73 @@ impl IntoParallelIterator for TreeSet {
 /// # Examples
 ///
 /// ```no_run
-/// use treesearch::{MatchSet, parse_query};
+/// use treesearch::{TreeSet, MatchSet, parse_query};
 /// use rayon::prelude::*;
 ///
 /// let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
+/// let tree_set = TreeSet::from_file("data.conllu");
 ///
 /// // Sequential iteration
-/// let matches = MatchSet::from_file("data.conllu", pattern.clone());
+/// let matches = MatchSet::new(&tree_set, &pattern);
 /// for (tree, m) in matches {
 ///     println!("Found match in tree");
 /// }
 ///
-/// // Parallel iteration
-/// let count = MatchSet::from_glob("data/*.conllu", pattern)
-///     .unwrap()
+/// // Parallel iteration with glob
+/// let tree_set = TreeSet::from_glob("data/*.conllu").unwrap();
+/// let count = MatchSet::new(&tree_set, &pattern)
 ///     .into_par_iter()
 ///     .count();
 /// ```
 pub struct MatchSet {
-    tree_source: TreeSource,
+    tree_set: TreeSet,
     pattern: Pattern,
 }
 
 impl MatchSet {
-    /// Create from an in-memory CoNLL-U string and pattern
-    pub fn from_string(text: &str, pattern: Pattern) -> Self {
+    /// Create from a TreeSet and pattern
+    pub fn new(tree_set: &TreeSet, pattern: &Pattern) -> Self {
         Self {
-            tree_source: TreeSource::String(text.to_string()),
-            pattern,
+            tree_set: TreeSet {
+                source: tree_set.source.clone(),
+            },
+            pattern: pattern.clone(),
         }
     }
 
-    /// Create from a single file path and pattern
-    pub fn from_file(path: impl AsRef<Path>, pattern: Pattern) -> Self {
-        Self {
-            tree_source: TreeSource::File(path.as_ref().to_path_buf()),
-            pattern,
-        }
-    }
-
-    /// Create from a glob pattern and search pattern
+    /// Borrow and iterate over matches
     ///
-    /// Files are processed in sorted order for deterministic results.
-    pub fn from_glob(glob_pattern: &str, pattern: Pattern) -> Result<Self, glob::PatternError> {
-        let mut file_paths: Vec<PathBuf> =
-            glob::glob(glob_pattern)?.filter_map(Result::ok).collect();
-        file_paths.sort();
-        Ok(Self::from_paths(file_paths, pattern))
+    /// Clones the internal tree set source and pattern, then creates a new iterator.
+    /// For consuming iteration, use `.into_iter()`.
+    pub fn iter(&self) -> Box<dyn Iterator<Item = (Tree, Match)>> {
+        let tree_set = TreeSet {
+            source: self.tree_set.source.clone(),
+        };
+        let pattern = self.pattern.clone();
+        let iter = tree_set.into_iter().flat_map(move |tree| {
+            let matches: Vec<Match> = search(&tree, &pattern).collect();
+            matches.into_iter().map(move |m| (tree.clone(), m))
+        });
+        Box::new(iter)
     }
 
-    /// Create from explicit file paths and pattern
-    pub fn from_paths(file_paths: Vec<PathBuf>, pattern: Pattern) -> Self {
-        Self {
-            tree_source: TreeSource::Files(file_paths),
-            pattern,
-        }
+    /// Borrow and iterate over matches in parallel
+    ///
+    /// Clones the internal tree set source and pattern, then creates a new parallel iterator.
+    /// For consuming iteration, use `.into_par_iter()`.
+    pub fn par_iter(&self) -> <Self as IntoParallelIterator>::Iter {
+        let tree_set = TreeSet {
+            source: self.tree_set.source.clone(),
+        };
+        let pattern = self.pattern.clone();
+        let matches: Vec<_> = tree_set
+            .into_iter()
+            .flat_map(move |tree| {
+                let matches: Vec<Match> = search(&tree, &pattern).collect();
+                matches.into_iter().map(move |m| (tree.clone(), m))
+            })
+            .collect();
+        matches.into_par_iter()
     }
 }
 
@@ -198,62 +232,24 @@ impl IntoIterator for MatchSet {
     type IntoIter = Box<dyn Iterator<Item = (Tree, Match)>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        match self.tree_source {
-            TreeSource::String(text) => {
-                let pattern = self.pattern;
-                let iter = TreeIterator::from_string(&text)
-                    .filter_map(Result::ok)
-                    .flat_map(move |tree| {
-                        let matches: Vec<Match> = search(&tree, &pattern).collect();
-                        matches.into_iter().map(move |m| (tree.clone(), m))
-                    });
-                Box::new(iter)
-            }
-            TreeSource::File(path) => Box::new(open_file_matches(path, self.pattern)),
-            TreeSource::Files(paths) => {
-                let pattern = self.pattern;
-                let iter = paths
-                    .into_iter()
-                    .flat_map(move |path| open_file_matches(path, pattern.clone()));
-                Box::new(iter)
-            }
-        }
+        let pattern = self.pattern;
+        let iter = self.tree_set.into_iter().flat_map(move |tree| {
+            let matches: Vec<Match> = search(&tree, &pattern).collect();
+            matches.into_iter().map(move |m| (tree.clone(), m))
+        });
+        Box::new(iter)
     }
 }
 
 impl IntoParallelIterator for MatchSet {
     type Item = (Tree, Match);
-    type Iter = rayon::iter::Either<
-        rayon::iter::FlatMapIter<
-            rayon::vec::IntoIter<(PathBuf, Pattern)>,
-            fn((PathBuf, Pattern)) -> Box<dyn Iterator<Item = (Tree, Match)>>,
-        >,
-        rayon::vec::IntoIter<(Tree, Match)>,
-    >;
+    type Iter = rayon::vec::IntoIter<(Tree, Match)>;
 
     fn into_par_iter(self) -> Self::Iter {
-        match self.tree_source {
-            TreeSource::Files(paths) => {
-                // File-level parallelism (optimal for multi-file)
-                // Pair each path with a clone of the pattern
-                let pattern = self.pattern;
-                let path_pattern_pairs: Vec<_> = paths
-                    .into_iter()
-                    .map(|path| (path, pattern.clone()))
-                    .collect();
-
-                rayon::iter::Either::Left(
-                    path_pattern_pairs
-                        .into_par_iter()
-                        .flat_map_iter(|(path, pattern)| open_file_matches(path, pattern)),
-                )
-            }
-            _ => {
-                // Collect then parallelize (for single file or string)
-                let matches: Vec<_> = self.into_iter().collect();
-                rayon::iter::Either::Right(matches.into_par_iter())
-            }
-        }
+        // Collect all matches first, then parallelize
+        // This ensures we can return a concrete rayon::vec::IntoIter type
+        let matches: Vec<_> = self.into_iter().collect();
+        matches.into_par_iter()
     }
 }
 
@@ -264,26 +260,6 @@ impl IntoParallelIterator for MatchSet {
 fn open_file_trees(path: PathBuf) -> Box<dyn Iterator<Item = Tree>> {
     match TreeIterator::from_file(&path) {
         Ok(reader) => Box::new(reader.filter_map(Result::ok)),
-        Err(e) => {
-            eprintln!("Warning: Failed to open {:?}: {}", path, e);
-            Box::new(std::iter::empty())
-        }
-    }
-}
-
-/// Helper: Open a file and return an iterator over matches
-///
-/// Logs file open errors to stderr and returns empty iterator on error.
-/// Filters out parse errors (logs to stderr via filter_map).
-fn open_file_matches(path: PathBuf, pattern: Pattern) -> Box<dyn Iterator<Item = (Tree, Match)>> {
-    match TreeIterator::from_file(&path) {
-        Ok(reader) => {
-            let iter = reader.filter_map(Result::ok).flat_map(move |tree| {
-                let matches: Vec<Match> = search(&tree, &pattern).collect();
-                matches.into_iter().map(move |m| (tree.clone(), m))
-            });
-            Box::new(iter)
-        }
         Err(e) => {
             eprintln!("Warning: Failed to open {:?}: {}", path, e);
             Box::new(std::iter::empty())
@@ -329,9 +305,8 @@ mod tests {
     #[test]
     fn test_match_set_from_string() {
         let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
-        let matches: Vec<_> = MatchSet::from_string(THREE_VERB_CONLLU, pattern)
-            .into_iter()
-            .collect();
+        let tree_set = TreeSet::from_string(THREE_VERB_CONLLU);
+        let matches: Vec<_> = MatchSet::new(&tree_set, &pattern).into_iter().collect();
 
         assert_eq!(matches.len(), 3);
     }
@@ -343,7 +318,8 @@ mod tests {
                       3\trunning\trun\tVERB\tVBG\t_\t1\txcomp\t_\t_\n";
 
         let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
-        let matches: Vec<_> = MatchSet::from_string(conllu, pattern).into_iter().collect();
+        let tree_set = TreeSet::from_string(conllu);
+        let matches: Vec<_> = MatchSet::new(&tree_set, &pattern).into_iter().collect();
 
         assert_eq!(matches.len(), 2);
     }
@@ -354,7 +330,8 @@ mod tests {
                       2\tdog\tdog\tNOUN\tNN\t_\t0\troot\t_\t_\n";
 
         let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
-        let matches: Vec<_> = MatchSet::from_string(conllu, pattern).into_iter().collect();
+        let tree_set = TreeSet::from_string(conllu);
+        let matches: Vec<_> = MatchSet::new(&tree_set, &pattern).into_iter().collect();
 
         assert_eq!(matches.len(), 0);
     }
@@ -368,7 +345,8 @@ mod tests {
 
         let pattern =
             parse_query("MATCH { V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 -> V2; }").unwrap();
-        let matches: Vec<_> = MatchSet::from_string(conllu, pattern).into_iter().collect();
+        let tree_set = TreeSet::from_string(conllu);
+        let matches: Vec<_> = MatchSet::new(&tree_set, &pattern).into_iter().collect();
 
         assert_eq!(matches.len(), 1);
     }
@@ -450,7 +428,8 @@ mod tests {
             ]);
 
             let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
-            let results: Vec<_> = MatchSet::from_paths(paths, pattern).into_iter().collect();
+            let tree_set = TreeSet::from_paths(paths);
+            let results: Vec<_> = MatchSet::new(&tree_set, &pattern).into_iter().collect();
 
             assert_eq!(results.len(), 2);
         }
@@ -467,10 +446,8 @@ mod tests {
 
             let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
             let glob_pattern = format!("{}/*.conllu", dir.path().display());
-            let results: Vec<_> = MatchSet::from_glob(&glob_pattern, pattern)
-                .unwrap()
-                .into_iter()
-                .collect();
+            let tree_set = TreeSet::from_glob(&glob_pattern).unwrap();
+            let results: Vec<_> = MatchSet::new(&tree_set, &pattern).into_iter().collect();
 
             assert_eq!(results.len(), 2);
         }
@@ -528,9 +505,8 @@ mod tests {
             ]);
 
             let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
-            let results: Vec<_> = MatchSet::from_paths(paths, pattern)
-                .into_par_iter()
-                .collect();
+            let tree_set = TreeSet::from_paths(paths);
+            let results: Vec<_> = MatchSet::new(&tree_set, &pattern).into_par_iter().collect();
 
             assert_eq!(results.len(), 3);
         }
