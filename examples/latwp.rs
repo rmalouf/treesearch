@@ -2,7 +2,7 @@
 //!
 //! Run with: cargo run --example latwp --release
 
-use treesearch::{MultiFileMatchIterator, parse_query};
+use treesearch::{MatchSet, parse_query};
 
 fn main() {
     let query = r#"
@@ -15,8 +15,9 @@ fn main() {
 
     let path = "/Volumes/Corpora/COHA/conll/*.conllu.gz";
     let pattern = parse_query(query).unwrap();
-    let count = MultiFileMatchIterator::from_glob(path, pattern)
+    let count = MatchSet::from_glob(path, pattern)
         .unwrap()
+        .into_iter()
         .count();
 
     println!("{}", count);

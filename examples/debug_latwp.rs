@@ -2,16 +2,16 @@
 //!
 //! Run with: cargo run --example debug_latwp
 
-use treesearch::{MultiFileMatchIterator, MultiFileTreeIterator, parse_query};
+use treesearch::{MatchSet, TreeSet, parse_query};
 
 fn main() {
     let path = "/Volumes/Corpora/Corpora/parsed/NA_NEWS/latwp/1994/**/*.conll.gz";
 
     println!("Testing glob pattern...");
-    let tree_count = MultiFileTreeIterator::from_glob(path)
+    let tree_count = TreeSet::from_glob(path)
         .unwrap()
+        .into_iter()
         .take(5) // Just take first 5 to see if it works
-        .filter_map(Result::ok)
         .count();
     println!(
         "Successfully read {} trees from first few files",
@@ -22,8 +22,9 @@ fn main() {
     let pattern = parse_query(query).unwrap();
 
     println!("\nCounting all matches (sequential)...");
-    let count = MultiFileMatchIterator::from_glob(path, pattern)
+    let count = MatchSet::from_glob(path, pattern)
         .unwrap()
+        .into_iter()
         .count();
     println!("Total matches: {}", count);
 }
