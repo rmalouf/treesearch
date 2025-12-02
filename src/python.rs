@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, channel};
 use std::thread;
 
-use crate::iterators::{MatchSet, TreeSet};
+use crate::iterators::{MatchSet, Treebank};
 use crate::pattern::Pattern as RustPattern;
 use crate::query::parse_query;
 use crate::searcher::search;
@@ -374,7 +374,7 @@ fn read_trees(path: &str) -> PyResult<TreeIterator> {
 /// Iterator over matches from a single file
 #[pyclass(unsendable)]
 struct MatchIterator {
-    inner: Option<Box<dyn Iterator<Item = (crate::tree::Tree, crate::searcher::Match)>>>,
+    inner: Option<Box<dyn Iterator<Item = (Arc<crate::tree::Tree>, crate::searcher::Match)>>>,
 }
 
 #[pymethods]
@@ -384,16 +384,9 @@ impl MatchIterator {
     }
 
     fn __next__(&mut self) -> Option<(PyTree, std::collections::HashMap<String, usize>)> {
-        self.inner.as_mut().and_then(|iter| {
-            iter.next().map(|(tree, m)| {
-                (
-                    PyTree {
-                        inner: Arc::new(tree),
-                    },
-                    m,
-                )
-            })
-        })
+        self.inner
+            .as_mut()
+            .and_then(|iter| iter.next().map(|(tree, m)| (PyTree { inner: tree }, m)))
     }
 }
 
@@ -418,7 +411,7 @@ impl MatchIterator {
 ///         verb = tree.get_word(match["Verb"])
 #[pyfunction]
 fn search_file(path: &str, pattern: &PyPattern) -> PyResult<MatchIterator> {
-    let tree_set = TreeSet::from_file(&PathBuf::from(path));
+    let tree_set = Treebank::from_file(&PathBuf::from(path));
     let match_set = MatchSet::new(&tree_set, &pattern.inner);
     Ok(MatchIterator {
         inner: Some(match_set.into_iter()),
@@ -463,7 +456,7 @@ impl MultiFileTreeIterator {
 #[pyfunction]
 #[pyo3(signature = (glob_pattern, parallel=true))]
 fn read_trees_glob(glob_pattern: &str, parallel: bool) -> PyResult<MultiFileTreeIterator> {
-    let tree_set = TreeSet::from_glob(glob_pattern)
+    let tree_set = Treebank::from_glob(glob_pattern)
         .map_err(|e| PyValueError::new_err(format!("Glob pattern error: {}", e)))?;
 
     if parallel {
@@ -473,16 +466,14 @@ fn read_trees_glob(glob_pattern: &str, parallel: bool) -> PyResult<MultiFileTree
     }
 }
 
-fn create_parallel_tree_iterator(tree_set: TreeSet) -> MultiFileTreeIterator {
+fn create_parallel_tree_iterator(tree_set: Treebank) -> MultiFileTreeIterator {
     use rayon::prelude::*;
 
     let (sender, receiver) = channel();
 
     thread::spawn(move || {
         tree_set.into_par_iter().for_each(|tree| {
-            let py_tree = PyTree {
-                inner: Arc::new(tree),
-            };
+            let py_tree = PyTree { inner: tree };
             let _ = sender.send(py_tree);
         });
     });
@@ -490,14 +481,12 @@ fn create_parallel_tree_iterator(tree_set: TreeSet) -> MultiFileTreeIterator {
     MultiFileTreeIterator { receiver }
 }
 
-fn create_sequential_tree_iterator(tree_set: TreeSet) -> MultiFileTreeIterator {
+fn create_sequential_tree_iterator(tree_set: Treebank) -> MultiFileTreeIterator {
     let (sender, receiver) = channel();
 
     thread::spawn(move || {
         for tree in tree_set {
-            let py_tree = PyTree {
-                inner: Arc::new(tree),
-            };
+            let py_tree = PyTree { inner: tree };
             if sender.send(py_tree).is_err() {
                 return;
             }
@@ -552,7 +541,7 @@ fn search_files(
     pattern: &PyPattern,
     parallel: bool,
 ) -> PyResult<MultiFileMatchIterator> {
-    let tree_set = TreeSet::from_glob(glob_pattern)
+    let tree_set = Treebank::from_glob(glob_pattern)
         .map_err(|e| PyValueError::new_err(format!("Glob pattern error: {}", e)))?;
     let match_set = MatchSet::new(&tree_set, &pattern.inner);
 
@@ -570,12 +559,8 @@ fn create_parallel_match_iterator(match_set: MatchSet) -> MultiFileMatchIterator
 
     thread::spawn(move || {
         match_set.into_par_iter().for_each(|(tree, m)| {
-            let result: (PyTree, std::collections::HashMap<String, usize>) = (
-                PyTree {
-                    inner: Arc::new(tree),
-                },
-                m,
-            );
+            let result: (PyTree, std::collections::HashMap<String, usize>) =
+                (PyTree { inner: tree }, m);
             let _ = sender.send(result);
         });
     });
@@ -588,12 +573,8 @@ fn create_sequential_match_iterator(match_set: MatchSet) -> MultiFileMatchIterat
 
     thread::spawn(move || {
         for (tree, m) in match_set {
-            let result: (PyTree, std::collections::HashMap<String, usize>) = (
-                PyTree {
-                    inner: Arc::new(tree),
-                },
-                m,
-            );
+            let result: (PyTree, std::collections::HashMap<String, usize>) =
+                (PyTree { inner: tree }, m);
             if sender.send(result).is_err() {
                 return;
             }
