@@ -22,7 +22,6 @@ classifiers = [
 ]
 keywords = ["nlp", "linguistics", "dependency-parsing", "corpus-linguistics", "treebank"]
 dependencies = [
-    "marimo>=0.18.1",
     "polars>=1.35.2",
 ]
 
@@ -32,6 +31,7 @@ Repository = "https://github.com/rmalouf/treesearch"
 
 [dependency-groups]
 dev = [
+    "marimo>=0.18.1",
     "maturin>=1.10.1",
     "pytest>=9.0",
 ]
