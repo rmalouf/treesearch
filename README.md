@@ -155,6 +155,8 @@ See [API.md](API.md) for complete Python API documentation, including:
 
 Treesearch reads dependency trees in [CoNLL-U format](https://universaldependencies.org/format.html), the standard format for Universal Dependencies treebanks. Files can be plain text (`.conllu`) or gzip-compressed (`.conllu.gz`).
 
+**Tip**: Use gzipped files (`.conllu.gz`) to reduce I/O time and save disk space. Decompression is automatic and transparent—no code changes needed.
+
 ## Contributing & Feedback
 
 This project is in early development and we welcome feedback! If you:
