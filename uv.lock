@@ -779,12 +779,12 @@ name = "treesearch"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "marimo" },
     { name = "polars" },
 ]
 
 [package.dev-dependencies]
 dev = [
+    { name = "marimo" },
     { name = "maturin" },
     { name = "pytest" },
 ]
@@ -794,13 +794,11 @@ docs = [
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "marimo", specifier = ">=0.18.1" },
-    { name = "polars", specifier = ">=1.35.2" },
-]
+requires-dist = [{ name = "polars", specifier = ">=1.35.2" }]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "marimo", specifier = ">=0.18.1" },
     { name = "maturin", specifier = ">=1.10.1" },
     { name = "pytest", specifier = ">=9.0" },
 ]
