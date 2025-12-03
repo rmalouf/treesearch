@@ -32,9 +32,11 @@ pattern.n_vars -> int
 
 ```python
 pattern = treesearch.parse_query("""
+MATCH {
     V [upos="VERB"];
     N [upos="NOUN"];
     V -[obj]-> N;
+}
 """)
 
 print(pattern.n_vars)  # 2
@@ -159,11 +161,13 @@ print(f"Pattern has {pattern.n_vars} variable(s)")  # 1
 
 ```python
 query = """
+MATCH {
     Main [upos="VERB"];
     Aux [lemma="have"];
     Comp [upos="VERB"];
     Main <-[aux]- Aux;
     Main -[xcomp]-> Comp;
+}
 """
 
 pattern = treesearch.parse_query(query)

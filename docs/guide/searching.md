@@ -62,12 +62,15 @@ Treesearch finds **all** valid matches:
 
 ```python
 query = """
+MATCH {
     X [];
     Y [];
     X -> Y;
+}
 """
 
 # This will find ALL parent-child pairs in every tree
+pattern = treesearch.parse_query(query)
 for tree, match in treesearch.search_file("corpus.conllu", pattern):
     # Many matches per tree
     pass

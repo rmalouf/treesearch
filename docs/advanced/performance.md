@@ -26,13 +26,13 @@ More specific queries run faster:
 
 ```python
 # Slower: matches many words
-query = "V [];"
+query = "MATCH { V []; }"
 
 # Faster: specific constraint
-query = 'V [upos="VERB"];'
+query = 'MATCH { V [upos="VERB"]; }'
 
 # Fastest: multiple constraints
-query = 'V [upos="VERB", lemma="run"];'
+query = 'MATCH { V [upos="VERB", lemma="run"]; }'
 ```
 
 ## File Processing
@@ -113,16 +113,20 @@ Begin with the most constrained variables:
 ```python
 # Better: start with specific verb
 query = """
+MATCH {
     V [lemma="help"];  # Very specific
     N [upos="NOUN"];   # Less specific
     V -> N;
+}
 """
 
 # Worse: start with unconstrained
 query = """
+MATCH {
     N [];              # Matches everything!
     V [lemma="help"];
     V -> N;
+}
 """
 ```
 
@@ -133,17 +137,21 @@ Only declare variables you need:
 ```python
 # Good: minimal variables
 query = """
+MATCH {
     V [upos="VERB"];
     N [upos="NOUN"];
     V -[obj]-> N;
+}
 """
 
 # Wasteful: extra variable not used in results
 query = """
+MATCH {
     V [upos="VERB"];
     N [upos="NOUN"];
     X [];  # Not used!
     V -[obj]-> N;
+}
 """
 ```
 
@@ -171,9 +179,9 @@ print(f"Rate: {count/elapsed:.0f} matches/sec")
 import time
 
 queries = {
-    "broad": 'V [];',
-    "medium": 'V [upos="VERB"];',
-    "narrow": 'V [upos="VERB", lemma="run"];'
+    "broad": 'MATCH { V []; }',
+    "medium": 'MATCH { V [upos="VERB"]; }',
+    "narrow": 'MATCH { V [upos="VERB", lemma="run"]; }'
 }
 
 for name, query in queries.items():

@@ -26,9 +26,11 @@ Get specific types of examples:
 
 ```python
 pattern = treesearch.parse_query("""
+MATCH {
     V [upos="VERB"];
     N [upos="NOUN"];
     V -[obj]-> N;
+}
 """)
 
 examples = []

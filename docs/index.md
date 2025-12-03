@@ -18,11 +18,13 @@ import treesearch
 
 # Find help-to-infinitive constructions
 query = """
+MATCH {
     Help [lemma="help"];
     To [lemma="to"];
     V [upos="VERB"];
     Help -[xcomp]-> To;
     To < V;
+}
 """
 
 pattern = treesearch.parse_query(query)
