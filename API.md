@@ -349,6 +349,7 @@ except Exception as e:
 - **Exhaustive search**: Finds ALL matches, not just first/leftmost
 - **Parallel processing**: Use `parallel=True` (default) for multi-file operations
 - **Memory efficient**: Iterator-based API streams results without loading entire corpus
+- **Use gzipped files**: Store CoNLL-U files as `.conllu.gz` to reduce I/O time and disk usage (decompression is automatic)
 
 ### Parallel Processing
 
