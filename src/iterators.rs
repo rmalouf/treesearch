@@ -213,10 +213,37 @@ impl IntoParallelIterator for MatchSet {
     type Item = (Arc<Tree>, Match);
 
     fn into_par_iter(self) -> Self::Iter {
-        // Collect all matches first, then parallelize
-        // This ensures we can return a concrete rayon::vec::IntoIter type
-        let matches: Vec<_> = self.into_iter().collect();
-        matches.into_par_iter()
+        let pattern = self.pattern;
+
+        match self.tree_bank.source {
+            TreeSource::Files(paths) => {
+                // File-level parallelism: process each file in parallel,
+                // then search each tree sequentially within each parallel task
+                paths
+                    .into_par_iter()
+                    .flat_map_iter(move |path| {
+                        let pattern = pattern.clone();
+                        open_file_trees(path).flat_map(move |tree| {
+                            let matches: Vec<Match> = search(&tree, &pattern).collect();
+                            matches.into_iter().map(move |m| (tree.clone(), m))
+                        })
+                    })
+                    .collect::<Vec<_>>()
+                    .into_par_iter()
+            }
+            _ => {
+                // For single file or string, collect trees then parallelize at tree level
+                let trees: Vec<_> = self.tree_bank.into_iter().collect();
+                trees
+                    .into_par_iter()
+                    .flat_map_iter(move |tree| {
+                        let matches: Vec<Match> = search(&tree, &pattern).collect();
+                        matches.into_iter().map(move |m| (tree.clone(), m))
+                    })
+                    .collect::<Vec<_>>()
+                    .into_par_iter()
+            }
+        }
     }
 }
 
