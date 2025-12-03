@@ -16,7 +16,9 @@ Let's find all verbs in our corpus:
 
 ```python
 query = """
+MATCH {
     V [upos="VERB"];
+}
 """
 ```
 
@@ -43,9 +45,11 @@ import treesearch
 
 # Define the pattern: verb with nominal object
 query = """
+MATCH {
     V [upos="VERB"];
     N [upos="NOUN"];
     V -[obj]-> N;
+}
 """
 
 # Compile pattern
@@ -93,19 +97,27 @@ for tree, match in treesearch.search_files("data/*.conllu", pattern):
 
 ## Basic Query Syntax
 
+All queries must be wrapped in a `MATCH { }` block. Below are examples of syntax elements shown within complete queries:
+
 ### Node Constraints
 
 Specify properties words must have:
 
 ```python
 # Match any verb
-V [upos="VERB"];
+MATCH {
+    V [upos="VERB"];
+}
 
 # Match specific lemma
-Help [lemma="help"];
+MATCH {
+    Help [lemma="help"];
+}
 
 # Multiple constraints (AND)
-Past [upos="VERB", xpos="VBD"];
+MATCH {
+    Past [upos="VERB", xpos="VBD"];
+}
 ```
 
 ### Edge Constraints
@@ -114,13 +126,25 @@ Specify dependency relationships:
 
 ```python
 # V has child N with deprel "obj"
-V -[obj]-> N;
+MATCH {
+    V [];
+    N [];
+    V -[obj]-> N;
+}
 
 # V has any child To
-V -> To;
+MATCH {
+    V [];
+    To [];
+    V -> To;
+}
 
 # V is parent of N (equivalent to above)
-N <-[obj]- V;
+MATCH {
+    V [];
+    N [];
+    N <-[obj]- V;
+}
 ```
 
 ### Empty Constraints
@@ -129,7 +153,9 @@ Match any word:
 
 ```python
 # Any word
-X [];
+MATCH {
+    X [];
+}
 ```
 
 ## Common Patterns
@@ -138,9 +164,11 @@ X [];
 
 ```python
 query = """
+MATCH {
     V [upos="VERB"];
     Subj [upos="NOUN"];
     V -[nsubj]-> Subj;
+}
 """
 ```
 
@@ -148,9 +176,11 @@ query = """
 
 ```python
 query = """
+MATCH {
     Main [upos="VERB"];
     Aux [lemma="have"];
     Main <-[aux]- Aux;
+}
 """
 ```
 
@@ -158,9 +188,11 @@ query = """
 
 ```python
 query = """
+MATCH {
     Main [upos="VERB"];
     Comp [upos="VERB"];
     Main -[xcomp]-> Comp;
+}
 """
 ```
 
@@ -170,9 +202,11 @@ Find verbs that **don't** have objects:
 
 ```python
 query = """
+MATCH {
     V [upos="VERB"];
     Obj [];
     V !-[obj]-> Obj;
+}
 """
 ```
 
@@ -180,8 +214,10 @@ Find words that have no incoming edges (root words):
 
 ```python
 query = """
+MATCH {
     Root [];
     _ !-> Root;
+}
 """
 ```
 

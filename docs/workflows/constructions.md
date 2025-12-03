@@ -33,11 +33,13 @@ In dependency parses, this construction typically has:
 import treesearch
 
 query = """
+MATCH {
     Help [lemma="help"];
     To [lemma="to"];
     V [upos="VERB"];
     Help -[xcomp]-> To;
     To < V;
+}
 """
 
 pattern = treesearch.parse_query(query)
@@ -100,11 +102,13 @@ Find verbs with two objects (e.g., "give him a book"):
 
 ```python
 query = """
+MATCH {
     V [upos="VERB"];
     Obj1 [];
     Obj2 [];
     V -[iobj]-> Obj1;
     V -[obj]-> Obj2;
+}
 """
 
 pattern = treesearch.parse_query(query)
@@ -124,11 +128,13 @@ Find relative clauses:
 
 ```python
 query = """
+MATCH {
     Noun [upos="NOUN"];
     RelPron [upos="PRON"];
     Verb [upos="VERB"];
     Noun -[acl:relcl]-> Verb;
     Verb -[nsubj]-> RelPron;
+}
 """
 
 pattern = treesearch.parse_query(query)
@@ -148,6 +154,7 @@ Find causative uses of *get* (e.g., "get him to do it"):
 
 ```python
 query = """
+MATCH {
     Get [lemma="get"];
     Obj [];
     To [lemma="to"];
@@ -155,6 +162,7 @@ query = """
     Get -[obj]-> Obj;
     Get -[xcomp]-> To;
     To -[mark]-> V;
+}
 """
 
 pattern = treesearch.parse_query(query)
@@ -173,9 +181,11 @@ Find verbs that **don't** have objects (purely intransitive):
 
 ```python
 query = """
+MATCH {
     V [upos="VERB"];
     Obj [];
     V !-[obj]-> Obj;
+}
 """
 
 pattern = treesearch.parse_query(query)
@@ -192,11 +202,13 @@ Find passive verbs without agents (e.g., "was eaten" without "by X"):
 
 ```python
 query = """
+MATCH {
     V [upos="VERB"];
     Aux [];
     Agent [];
     V <-[aux:pass]- Aux;
     V !-[obl:agent]-> Agent;
+}
 """
 
 pattern = treesearch.parse_query(query)
@@ -217,23 +229,29 @@ Start broad, then narrow:
 ```python
 # Broad: any verb-object
 query = """
+MATCH {
     V [upos="VERB"];
     N [];
     V -[obj]-> N;
+}
 """
 
 # Narrower: specific verb
 query = """
+MATCH {
     V [lemma="eat"];
     N [];
     V -[obj]-> N;
+}
 """
 
 # Even narrower: specific verb and object type
 query = """
+MATCH {
     V [lemma="eat"];
     N [upos="NOUN"];
     V -[obj]-> N;
+}
 """
 ```
 
@@ -244,18 +262,22 @@ Add word order constraints:
 ```python
 # Verb before object (standard order)
 query = """
+MATCH {
     V [upos="VERB"];
     N [upos="NOUN"];
     V -[obj]-> N;
     V < N;
+}
 """
 
 # Object before verb (topicalization)
 query = """
+MATCH {
     V [upos="VERB"];
     N [upos="NOUN"];
     V -[obj]-> N;
     N < V;
+}
 """
 ```
 
