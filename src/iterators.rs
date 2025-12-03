@@ -129,11 +129,11 @@ impl IntoParallelIterator for Treebank {
     fn into_par_iter(self) -> Self::Iter {
         match self.source {
             TreeSource::Files(paths) => {
-                // File-level parallelism (optimal for multi-file)
+                // File-level parallelism: each file parsed by one thread
                 rayon::iter::Either::Left(paths.into_par_iter().flat_map_iter(open_file_trees))
             }
             _ => {
-                // Collect then parallelize (for single file or string)
+                // String/single file: parse sequentially, then parallelize over trees
                 let trees: Vec<_> = self.into_iter().collect();
                 rayon::iter::Either::Right(trees.into_par_iter())
             }
@@ -214,36 +214,14 @@ impl IntoParallelIterator for MatchSet {
 
     fn into_par_iter(self) -> Self::Iter {
         let pattern = self.pattern;
-
-        match self.tree_bank.source {
-            TreeSource::Files(paths) => {
-                // File-level parallelism: process each file in parallel,
-                // then search each tree sequentially within each parallel task
-                paths
-                    .into_par_iter()
-                    .flat_map_iter(move |path| {
-                        let pattern = pattern.clone();
-                        open_file_trees(path).flat_map(move |tree| {
-                            let matches: Vec<Match> = search(&tree, &pattern).collect();
-                            matches.into_iter().map(move |m| (tree.clone(), m))
-                        })
-                    })
-                    .collect::<Vec<_>>()
-                    .into_par_iter()
-            }
-            _ => {
-                // For single file or string, collect trees then parallelize at tree level
-                let trees: Vec<_> = self.tree_bank.into_iter().collect();
-                trees
-                    .into_par_iter()
-                    .flat_map_iter(move |tree| {
-                        let matches: Vec<Match> = search(&tree, &pattern).collect();
-                        matches.into_iter().map(move |m| (tree.clone(), m))
-                    })
-                    .collect::<Vec<_>>()
-                    .into_par_iter()
-            }
-        }
+        self.tree_bank
+            .into_par_iter()
+            .flat_map_iter(move |tree| {
+                let matches: Vec<Match> = search(&tree, &pattern).collect();
+                matches.into_iter().map(move |m| (tree.clone(), m))
+            })
+            .collect::<Vec<_>>()
+            .into_par_iter()
     }
 }
 
