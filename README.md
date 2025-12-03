@@ -2,103 +2,116 @@
 
 A high-performance toolkit for querying linguistic dependency parses at scale.
 
-## Project Status
-
-**Current Phase**: Core Complete, Python Bindings Ready
-
-The core pattern matching engine is implemented using constraint satisfaction (CSP) with exhaustive search. Python bindings are now functional with parallel processing support. Benchmarking remains to be completed.
+> **⚠️ Early Stage**: This project is under active development. The API and query language **will** change as we refine the design. Feedback and contributions are welcome!
 
 ## Overview
 
-Treesearch is designed for corpus linguistics research on large treebanks (500M+ tokens). It provides:
+Treesearch enables structural pattern matching over dependency parse trees, designed for corpus linguistics research on large treebanks. Key features:
 
-- Fast structural pattern matching over dependency trees
-- Rust core for performance with Python bindings for ease of use
-- Exhaustive match semantics (finds ALL valid matches)
-- CSP-based solver with forward checking for efficiency
+- **Declarative query language** for specifying tree patterns
+- **Exhaustive search** - finds ALL matching structures
+- **Parallel processing** - efficiently handles multiple files
+- **CoNLL-U format** with transparent gzip support
+- **Python API** for research workflows
 
-## Architecture
+## Installation
 
-- **Core implementation**: Rust
-- **Python bindings**: PyO3 + maturin
-- **Pattern matching**: Constraint satisfaction with DFS + forward checking
-- **Parallelization**: rayon for file-level parallelism
+### From Source
 
-## Current Status
-
-✅ **Implemented:**
-- Query language parser (Pest-based)
-- Pattern AST representation with negative constraints
-- CoNLL-U file parsing with transparent gzip support
-- Tree data structures with string interning
-- CSP solver with exhaustive search
-- Python bindings with parallel iterators
-- Negative edge constraints (`!->`, `!-[label]->`)
-- 89 tests passing
-
-⏳ **In Progress:**
-- Performance benchmarks
-- Extended documentation
-
-## Project Structure
-
-```
-treesearch/
-├── src/
-│   ├── tree.rs       # Tree data structures
-│   ├── pattern.rs    # Pattern AST representation
-│   ├── query.rs      # Query language parser (Pest)
-│   ├── searcher.rs   # CSP solver
-│   ├── conllu.rs     # CoNLL-U file parsing
-│   ├── iterators.rs  # Iterator interfaces
-│   └── python.rs     # Python bindings
-├── tests/            # Integration tests
-├── benches/          # Performance benchmarks
-├── examples/         # Usage examples
-└── plans/            # Design documents
-```
-
-## Development Setup
-
-### Requirements
-
-- Rust (latest stable)
-- Python 3.12+ (for bindings)
-- maturin (for building Python package)
-
-### Building
+Requires Python 3.12+ and [Rust toolchain](https://www.rust-lang.org/tools/install).
 
 ```bash
-# Check Rust code
-cargo check
+# Clone repository
+git clone https://github.com/rmalouf/treesearch
+cd treesearch
 
-# Run tests
-cargo test
+# Install with uv (recommended)
+uv pip install -e .
 
-# Run benchmarks
-cargo bench
-
-# Build Python package
+# Or with pip
+pip install maturin
 maturin develop
 ```
 
-## Query Language Example
+## Quick Start
+
+```python
+import treesearch
+
+# Define a pattern
+pattern = treesearch.parse_query("""
+    MATCH {
+        Verb [upos="VERB"];
+        Noun [upos="NOUN"];
+        Verb -[nsubj]-> Noun;
+    }
+""")
+
+# Search a single file
+for tree, match in treesearch.search_file("corpus.conllu", pattern):
+    verb = tree.get_word(match["Verb"])
+    noun = tree.get_word(match["Noun"])
+    print(f"{verb.form} has subject {noun.form}")
+
+# Search multiple files in parallel
+for tree, match in treesearch.search_files("data/*.conllu", pattern):
+    verb = tree.get_word(match["Verb"])
+    print(f"Found: {verb.form}")
+```
+
+## Query Language
+
+### Node Constraints
+
+Declare pattern variables with constraints on word properties:
 
 ```
 MATCH {
-    # Declare pattern variables with constraints
-    Help [lemma="help"];
-    To [lemma="to"];
+    Verb [upos="VERB", lemma="be"];
+    Noun [upos="NOUN"];
+    Adj [upos="ADJ"];
+}
+```
+
+**Available constraints:**
+- `upos="VERB"` - Universal POS tag
+- `xpos="VBD"` - Language-specific POS tag
+- `lemma="run"` - Lemma
+- `form="running"` - Surface form
+- `deprel="nsubj"` - Dependency relation
+- `feats.Tense="Past"` - Morphological features
+
+### Edge Constraints
+
+Specify structural relationships between nodes:
+
+```
+MATCH {
     Verb [upos="VERB"];
+    Noun [upos="NOUN"];
 
-    # Specify structural relationships
-    Help -> To;            # Help has child To
-    To -[mark]-> Verb;     # To has child Verb with deprel=mark
+    # Verb has child Noun with nsubj relation
+    Verb -[nsubj]-> Noun;
 
-    # Negative constraints (absence of edges)
+    # Any child relationship
+    Verb -> Noun;
+}
+```
+
+### Negative Constraints
+
+Specify edges that must NOT exist:
+
+```
+MATCH {
     V [upos="VERB"];
     Obj [];
-    V !-[obj]-> Obj;       # V does NOT have obj edge to Obj
+
+    # V does NOT have an obj edge to Obj
+    V !-[obj]-> Obj;
+
+    # V does NOT have any child
+    V !-> Obj;
 }
 ```
 
@@ -108,14 +121,14 @@ Query morphological features using dotted notation:
 
 ```
 MATCH {
-    # Find past tense verbs
+    # Past tense verb
     Verb [feats.Tense="Past"];
 }
 ```
 
 ```
 MATCH {
-    # Find plural nominative nouns
+    # Plural nominative noun
     Noun [feats.Number="Plur", feats.Case="Nom"];
 }
 ```
@@ -129,45 +142,43 @@ MATCH {
 
 Feature constraints use exact string matching (case-sensitive) and return no match if the feature is not present.
 
-## Python Usage
+## API Reference
 
-```python
-import treesearch
+See [API.md](API.md) for complete Python API documentation, including:
+- Function reference
+- Iterator interfaces
+- Tree and Word objects
+- Error handling
+- Performance tips
 
-# Parse a query into a compiled pattern
-pattern = treesearch.parse_query("""
-    MATCH {
-        Verb [upos="VERB"];
-        Noun [upos="NOUN"];
-        Verb -[nsubj]-> Noun;
-    }
-""")
+## Data Format
 
-# Search a single file
-for tree, match in treesearch.search_file("corpus.conllu", pattern):
-    # match is a dictionary: {"Verb": 3, "Noun": 5}
-    verb = tree.get_word(match["Verb"])
-    noun = tree.get_word(match["Noun"])
-    print(f"{verb.form} has subject {noun.form}")
+Treesearch reads dependency trees in [CoNLL-U format](https://universaldependencies.org/format.html), the standard format for Universal Dependencies treebanks. Files can be plain text (`.conllu`) or gzip-compressed (`.conllu.gz`).
 
-# Search multiple files in parallel
-for tree, match in treesearch.search_files("data/*.conllu", pattern, parallel=True):
-    # Process matches from all files with automatic parallelization
-    verb = tree.get_word(match["Verb"])
-    print(f"Found: {verb.form} in {tree.sentence_text}")
-```
+## Contributing & Feedback
 
-See `API.md` for complete API reference and examples.
+This project is in early development and we welcome feedback! If you:
 
-## Next Steps
+- Find a bug or unexpected behavior
+- Have suggestions for the query language
+- Want to request a feature
+- Have questions about usage
 
-1. Add comprehensive benchmarks
-2. Further optimize for large corpora
-3. Extend query features (negation, regex, precedence operators)
-4. Publish to PyPI
-
-See `CLAUDE.md` and `plans/` for detailed design documentation.
+Please [open an issue](https://github.com/rmalouf/treesearch/issues) on GitHub.
 
 ## License
 
 MIT
+
+## Citation
+
+If you use Treesearch in your research, please cite:
+
+```bibtex
+@software{treesearch,
+  author = {Malouf, Robert},
+  title = {Treesearch: Pattern matching for dependency treebanks},
+  year = {2025},
+  url = {https://github.com/rmalouf/treesearch}
+}
+```

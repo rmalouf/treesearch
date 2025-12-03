@@ -19,8 +19,8 @@ import treesearch as ts
 # 1. Parse your query once
 query = """
     MATCH {
-        Verb [pos="VERB"];
-        Noun [pos="NOUN"];
+        Verb [upos="VERB"];
+        Noun [upos="NOUN"];
         Verb -[nsubj]-> Noun;
     }
 """
@@ -56,6 +56,7 @@ VariableName [constraint];
 - `lemma="run"` - Lemma
 - `form="running"` - Word form
 - `deprel="nsubj"` - Dependency relation (to parent)
+- `feats.Tense="Past"` - Morphological feature (dotted notation)
 
 **Multiple constraints** (AND):
 ```
@@ -65,6 +66,19 @@ V [upos="VERB", lemma="be"];
 **Empty constraint** (matches any node):
 ```
 AnyNode [];
+```
+
+**Feature constraints**:
+```
+MATCH {
+    # Past tense verb
+    Verb [feats.Tense="Past"];
+}
+
+MATCH {
+    # Plural nominative noun
+    Noun [feats.Number="Plur", feats.Case="Nom"];
+}
 ```
 
 ### Pattern Edges
@@ -78,12 +92,14 @@ Parent -[deprel]-> Child;
 **Dependency types:**
 - `-[nsubj]->` - Specific dependency relation
 - `->` - Any child (no relation specified)
+- `!-[obj]->` - Negative constraint (does NOT have this edge)
+- `!->` - Does NOT have any child
 
 **Example patterns:**
 
 ```
 MATCH {
-    // VERB with nominal subject
+    # VERB with nominal subject
     V [upos="VERB"];
     N [upos="NOUN"];
     V -[nsubj]-> N;
@@ -92,7 +108,7 @@ MATCH {
 
 ```
 MATCH {
-    // Verb with xcomp (control verb)
+    # Verb with xcomp (control verb)
     Main [upos="VERB"];
     Comp [upos="VERB"];
     Main -[xcomp]-> Comp;
@@ -101,7 +117,7 @@ MATCH {
 
 ```
 MATCH {
-    // Complex: VERB → NOUN → ADJ
+    # Complex: VERB → NOUN → ADJ
     V [upos="VERB"];
     N [upos="NOUN"];
     A [upos="ADJ"];
@@ -221,13 +237,15 @@ if word:
 Represents a single word/node in the tree.
 
 **Properties:**
-- `id: int` - Word ID (1-indexed in CoNLL-U)
+- `id: int` - Word ID (0-based index in tree)
+- `token_id: int` - Token ID from CoNLL-U (1-based)
 - `form: str` - Word form
 - `lemma: str` - Lemma
-- `pos: str` - Universal POS tag (upos)
+- `upos: str` - Universal POS tag
 - `xpos: str` - Language-specific POS tag
 - `deprel: str` - Dependency relation to parent
-- `head: int | None` - Head word ID (None for root)
+- `head: int | None` - Head word ID (0-based index, None for root)
+- `feats: list[tuple[str, str]]` - Morphological features
 
 **Methods:**
 - `parent() -> Word | None` - Get parent word
@@ -238,8 +256,9 @@ Represents a single word/node in the tree.
 word = tree.get_word(5)
 print(f"Form: {word.form}")
 print(f"Lemma: {word.lemma}")
-print(f"POS: {word.pos}")
+print(f"POS: {word.upos}")
 print(f"DepRel: {word.deprel}")
+print(f"Features: {word.feats}")
 
 # Navigate tree
 if word.parent():
@@ -271,11 +290,11 @@ import treesearch as ts
 
 # Find all control verbs (VERB with VERB xcomp)
 query = """
-    MATCH {
-        Main [upos="VERB"];
-        Comp [upos="VERB"];
-        Main -[xcomp]-> Comp;
-    }
+MATCH {
+    Main [upos="VERB"];
+    Comp [upos="VERB"];
+    Main -[xcomp]-> Comp;
+}
 """
 
 # Parse query once
@@ -324,13 +343,12 @@ except Exception as e:
     print(f"Parse error: {e}")
 ```
 
-## Performance Notes
+## Performance Tips
 
 - **Parse queries once**: `Pattern` objects are reusable across searches
 - **Exhaustive search**: Finds ALL matches, not just first/leftmost
-- **CSP-based matching**: Forward checking prevents exponential blowup
 - **Parallel processing**: Use `parallel=True` (default) for multi-file operations
-- **Memory efficient**: Iterator-based API streams results
+- **Memory efficient**: Iterator-based API streams results without loading entire corpus
 
 ### Parallel Processing
 

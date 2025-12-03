@@ -105,8 +105,8 @@ The core pattern matching engine is fully implemented using constraint satisfact
 #### Examples and Documentation
 - `examples/` - Rust examples (`latwp.rs`, `latwp_par.rs`) and Python examples
 - `benches/` - Performance benchmarks (`coha.rs`, `conllu.rs`)
-- `API.md` - API reference (may not reflect current functional API)
-- `README.md` - User-facing documentation
+- `README.md` - User-facing documentation (installation, quick start, query language)
+- `API.md` - User-facing API reference (Python API only, no internal details)
 
 ## Directory Structure
 
@@ -207,14 +207,25 @@ Query String  →  Parser  →  Pattern AST  →  CSP Solver  →  Iterators  �
 
 All core Rust components are implemented and working. Python bindings need compilation fixes.
 
+### Documentation Organization
+
+**User-Facing Documentation** (no internal details):
+- `README.md` - Installation, quick start, query language overview
+- `API.md` - Python API reference with examples
+
+**Developer Documentation** (internal details):
+- `CLAUDE.md` - This file - comprehensive development guide
+- `plans/STATUS.md` - Implementation status, architecture details, roadmap
+- `plans/PROJECT_SUMMARY.md` - Architectural overview
+- `plans/PARSING_OPTIMIZATION_PLAN.md` - Performance optimization details
+
+**Important**: Keep README.md and API.md focused on user needs. Move implementation details, test counts, algorithm specifics, and development roadmaps to planning docs.
+
 ### When Adding Features
-1. **Python bindings** - Fix the compilation error first
-   - Error: `TreeIterator` in `python.rs` uses generic parameter `<R>` but this was removed in refactor
-   - Need to update all `TreeIterator<R>` references to match current API
-2. **Benchmarks** - Expand beyond basic benchmarks to cover real-world queries
-3. Add tests as you implement
-4. Update CLAUDE.md when major changes are made
-5. Planning docs in `plans/` may be outdated and should be updated if consulted
+1. Add tests as you implement
+2. Update user-facing docs (README.md/API.md) if user-visible changes
+3. Update developer docs (CLAUDE.md/STATUS.md) for internal changes
+4. Expand benchmarks to cover new features
 
 ### Code Style
 - Rust: Standard rustfmt style
