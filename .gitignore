@@ -42,5 +42,7 @@ docs/_build/
 
 # Data files
 # Large corpus files should not be committed
-examples/*.conll
 *.conllu
+*.conllu.gz
+*.parquet
+
