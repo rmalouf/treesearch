@@ -4,10 +4,9 @@
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pariter::IteratorExt as _;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::mpsc::{Receiver, channel};
-use std::thread;
 
 use crate::iterators::{MatchSet, Treebank};
 use crate::pattern::Pattern as RustPattern;
@@ -421,7 +420,7 @@ fn search_file(path: &str, pattern: &PyPattern) -> PyResult<MatchIterator> {
 /// Iterator over trees from multiple files (with optional parallel processing)
 #[pyclass(unsendable)]
 struct MultiFileTreeIterator {
-    receiver: Receiver<PyTree>,
+    inner: Box<dyn Iterator<Item = Arc<RustTree>> + Send>,
 }
 
 #[pymethods]
@@ -431,7 +430,7 @@ impl MultiFileTreeIterator {
     }
 
     fn __next__(&mut self) -> Option<PyTree> {
-        self.receiver.recv().ok()
+        self.inner.next().map(|tree| PyTree { inner: tree })
     }
 }
 
@@ -459,47 +458,19 @@ fn read_trees_glob(glob_pattern: &str, parallel: bool) -> PyResult<MultiFileTree
     let tree_set = Treebank::from_glob(glob_pattern)
         .map_err(|e| PyValueError::new_err(format!("Glob pattern error: {}", e)))?;
 
-    if parallel {
-        Ok(create_parallel_tree_iterator(tree_set))
+    let inner: Box<dyn Iterator<Item = Arc<RustTree>> + Send> = if parallel {
+        Box::new(tree_set.into_iter().parallel_map(|tree| tree))
     } else {
-        Ok(create_sequential_tree_iterator(tree_set))
-    }
-}
+        Box::new(tree_set.into_iter())
+    };
 
-fn create_parallel_tree_iterator(tree_set: Treebank) -> MultiFileTreeIterator {
-    use rayon::prelude::*;
-
-    let (sender, receiver) = channel();
-
-    thread::spawn(move || {
-        tree_set.into_par_iter().for_each(|tree| {
-            let py_tree = PyTree { inner: tree };
-            let _ = sender.send(py_tree);
-        });
-    });
-
-    MultiFileTreeIterator { receiver }
-}
-
-fn create_sequential_tree_iterator(tree_set: Treebank) -> MultiFileTreeIterator {
-    let (sender, receiver) = channel();
-
-    thread::spawn(move || {
-        for tree in tree_set {
-            let py_tree = PyTree { inner: tree };
-            if sender.send(py_tree).is_err() {
-                return;
-            }
-        }
-    });
-
-    MultiFileTreeIterator { receiver }
+    Ok(MultiFileTreeIterator { inner })
 }
 
 /// Iterator over matches from multiple files (with optional parallel processing)
 #[pyclass(unsendable)]
 struct MultiFileMatchIterator {
-    receiver: Receiver<(PyTree, std::collections::HashMap<String, usize>)>,
+    inner: Box<dyn Iterator<Item = (Arc<RustTree>, std::collections::HashMap<String, usize>)> + Send>,
 }
 
 #[pymethods]
@@ -509,7 +480,7 @@ impl MultiFileMatchIterator {
     }
 
     fn __next__(&mut self) -> Option<(PyTree, std::collections::HashMap<String, usize>)> {
-        self.receiver.recv().ok()
+        self.inner.next().map(|(tree, m)| (PyTree { inner: tree }, m))
     }
 }
 
@@ -545,43 +516,13 @@ fn search_files(
         .map_err(|e| PyValueError::new_err(format!("Glob pattern error: {}", e)))?;
     let match_set = MatchSet::new(&tree_set, &pattern.inner);
 
-    if parallel {
-        Ok(create_parallel_match_iterator(match_set))
+    let inner: Box<dyn Iterator<Item = (Arc<RustTree>, std::collections::HashMap<String, usize>)> + Send> = if parallel {
+        Box::new(match_set.into_iter().parallel_map(|m| m))
     } else {
-        Ok(create_sequential_match_iterator(match_set))
-    }
-}
+        Box::new(match_set.into_iter())
+    };
 
-fn create_parallel_match_iterator(match_set: MatchSet) -> MultiFileMatchIterator {
-    use rayon::prelude::*;
-
-    let (sender, receiver) = channel();
-
-    thread::spawn(move || {
-        match_set.into_par_iter().for_each(|(tree, m)| {
-            let result: (PyTree, std::collections::HashMap<String, usize>) =
-                (PyTree { inner: tree }, m);
-            let _ = sender.send(result);
-        });
-    });
-
-    MultiFileMatchIterator { receiver }
-}
-
-fn create_sequential_match_iterator(match_set: MatchSet) -> MultiFileMatchIterator {
-    let (sender, receiver) = channel();
-
-    thread::spawn(move || {
-        for (tree, m) in match_set {
-            let result: (PyTree, std::collections::HashMap<String, usize>) =
-                (PyTree { inner: tree }, m);
-            if sender.send(result).is_err() {
-                return;
-            }
-        }
-    });
-
-    MultiFileMatchIterator { receiver }
+    Ok(MultiFileMatchIterator { inner })
 }
 
 /// Python module initialization
