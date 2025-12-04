@@ -9,7 +9,7 @@ use crate::conllu::TreeIterator;
 use crate::pattern::Pattern;
 use crate::searcher::{Match, search};
 use crate::tree::Tree;
-use rayon::prelude::*;
+use pariter::IteratorExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -26,14 +26,14 @@ enum TreeSource {
 
 /// Collection of trees from a string, file, or glob pattern
 ///
-/// Provides both sequential and parallel iteration over trees.
+/// Provides iterator-based access to trees with optional parallel processing.
 /// Errors (file open, parse errors) are logged to stderr and skipped.
 ///
 /// # Examples
 ///
 /// ```no_run
 /// use treesearch::Treebank;
-/// use rayon::prelude::*;
+/// use pariter::IteratorExt as _;
 ///
 /// // Sequential iteration
 /// let trees = Treebank::from_file("data.conllu");
@@ -44,7 +44,8 @@ enum TreeSource {
 /// // Parallel iteration
 /// let count = Treebank::from_glob("data/*.conllu")
 ///     .unwrap()
-///     .into_par_iter()
+///     .into_iter()
+///     .parallel_map(|tree| tree)
 ///     .count();
 /// ```
 #[derive(Clone)]
@@ -86,10 +87,6 @@ impl Treebank {
     pub fn iter(&self) -> Box<dyn Iterator<Item = Arc<Tree>>> {
         self.clone().into_iter()
     }
-
-    pub fn par_iter(&self) -> <Self as IntoParallelIterator>::Iter {
-        self.clone().into_par_iter()
-    }
 }
 
 impl IntoIterator for Treebank {
@@ -116,42 +113,19 @@ impl IntoIterator for Treebank {
     }
 }
 
-impl IntoParallelIterator for Treebank {
-    type Iter = rayon::iter::Either<
-        rayon::iter::FlatMapIter<
-            rayon::vec::IntoIter<PathBuf>,
-            fn(PathBuf) -> Box<dyn Iterator<Item = Arc<Tree>>>,
-        >,
-        rayon::vec::IntoIter<Arc<Tree>>,
-    >;
-    type Item = Arc<Tree>;
-
-    fn into_par_iter(self) -> Self::Iter {
-        match self.source {
-            TreeSource::Files(paths) => {
-                // File-level parallelism: each file parsed by one thread
-                rayon::iter::Either::Left(paths.into_par_iter().flat_map_iter(open_file_trees))
-            }
-            _ => {
-                // String/single file: parse sequentially, then parallelize over trees
-                let trees: Vec<_> = self.into_iter().collect();
-                rayon::iter::Either::Right(trees.into_par_iter())
-            }
-        }
-    }
-}
+// Parallel iteration support removed - use .into_iter().parallel_map() instead
 
 /// Collection of matches from a TreeSet and pattern
 ///
 /// Applies a pattern to trees and yields all matches found.
-/// Provides both sequential and parallel iteration.
+/// Provides iterator-based access with optional parallel processing.
 /// Errors (file open, parse errors) are logged to stderr and skipped.
 ///
 /// # Examples
 ///
 /// ```no_run
 /// use treesearch::{Treebank, MatchSet, parse_query};
-/// use rayon::prelude::*;
+/// use pariter::IteratorExt as _;
 ///
 /// let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
 /// let tree_set = Treebank::from_file("data.conllu");
@@ -165,7 +139,8 @@ impl IntoParallelIterator for Treebank {
 /// // Parallel iteration with glob
 /// let tree_set = Treebank::from_glob("data/*.conllu").unwrap();
 /// let count = MatchSet::new(&tree_set, &pattern)
-///     .into_par_iter()
+///     .into_iter()
+///     .parallel_map(|m| m)
 ///     .count();
 /// ```
 #[derive(Clone)]
@@ -188,10 +163,6 @@ impl MatchSet {
     pub fn iter(&self) -> Box<dyn Iterator<Item = (Arc<Tree>, Match)>> {
         self.clone().into_iter()
     }
-
-    pub fn par_iter(&self) -> <Self as IntoParallelIterator>::Iter {
-        self.clone().into_par_iter()
-    }
 }
 
 impl IntoIterator for MatchSet {
@@ -208,22 +179,7 @@ impl IntoIterator for MatchSet {
     }
 }
 
-impl IntoParallelIterator for MatchSet {
-    type Iter = rayon::vec::IntoIter<(Arc<Tree>, Match)>;
-    type Item = (Arc<Tree>, Match);
-
-    fn into_par_iter(self) -> Self::Iter {
-        let pattern = self.pattern;
-        self.tree_bank
-            .into_par_iter()
-            .flat_map_iter(move |tree| {
-                let matches: Vec<Match> = search(&tree, &pattern).collect();
-                matches.into_iter().map(move |m| (tree.clone(), m))
-            })
-            .collect::<Vec<_>>()
-            .into_par_iter()
-    }
-}
+// Parallel iteration support removed - use .into_iter().parallel_map() instead
 
 /// Helper: Open a file and return an iterator over trees
 ///
@@ -457,7 +413,10 @@ mod tests {
                 ),
             ]);
 
-            let results: Vec<_> = Treebank::from_paths(paths).into_par_iter().collect();
+            let results: Vec<_> = Treebank::from_paths(paths)
+                .into_iter()
+                .parallel_map(|tree| tree)
+                .collect();
 
             assert_eq!(results.len(), 3);
             assert_eq!(results[0].words.len(), 2);
@@ -478,7 +437,10 @@ mod tests {
 
             let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
             let tree_set = Treebank::from_paths(paths);
-            let results: Vec<_> = MatchSet::new(&tree_set, &pattern).into_par_iter().collect();
+            let results: Vec<_> = MatchSet::new(&tree_set, &pattern)
+                .into_iter()
+                .parallel_map(|m| m)
+                .collect();
 
             assert_eq!(results.len(), 3);
         }

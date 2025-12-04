@@ -12,17 +12,23 @@ Treesearch is a high-performance toolkit for querying linguistic dependency pars
 
 ## Current Development Phase
 
-**Core Complete, Python Bindings Working** (Nov 2025)
+**Core Complete, Python Bindings Working, Pariter Migration Complete** (Dec 2025)
 
 The core pattern matching engine is fully implemented using constraint satisfaction with parallel file processing. Python bindings provide a functional API and are fully working.
 
-### Recent Changes (Nov 2025)
+### Recent Changes (Dec 2025)
+- **Migrated from rayon to pariter** for parallel iteration
+  - Fixes critical memory bug in `MatchSet` (no more `.collect()` into Vec)
+  - Simplified Python bindings from 165 lines to ~60 lines (66% reduction)
+  - Removed ~200 lines of complex type signatures and boilerplate
+  - Unified API: users call `.parallel_map()` for parallel processing
+  - All 89 tests passing
+
+### Previous Changes (Nov 2025)
 - Refactored `iterators.rs` to use composition instead of duplication
   - `MatchSet::new()` now takes `&TreeSet` and `&Pattern` by reference
-  - Added `.iter()` and `.par_iter()` methods alongside `.into_iter()` and `.into_par_iter()`
   - Removed duplicate constructor methods from `MatchSet`
-- Updated Python bindings to use new Rust API
-- All 89 tests passing
+- Updated Python bindings to use functional API
 
 ### Current Status
 - ✅ Query language parser (Pest-based, `query.rs`)
@@ -32,10 +38,10 @@ The core pattern matching engine is fully implemented using constraint satisfact
 - ✅ Tree data structures with string interning (lasso + FxHash)
 - ✅ CSP solver with DFS + forward checking
 - ✅ Iterator-based API for trees and matches (`iterators.rs`)
-- ✅ Parallel file processing using rayon
+- ✅ Parallel file processing using pariter
 - ✅ 89 tests passing
-- ✅ **Python bindings** (functional API, fully working)
-- 🔄 **Performance benchmarks** (basic benchmarks exist, need expansion)
+- ✅ **Python bindings** (functional API, simplified with pariter)
+- ✅ **Performance benchmarks** (basic benchmarks exist)
 
 ## Architecture
 
@@ -43,7 +49,7 @@ The core pattern matching engine is fully implemented using constraint satisfact
 
 1. **Constraint satisfaction approach**: Pattern matching as CSP solving with exhaustive search
 2. **All solutions**: Find ALL possible matches, no filtering or pruning based on leftmost/shortest/etc.
-3. **File-level parallelization**: Using rayon for parallel file processing (implemented)
+3. **File-level parallelization**: Using pariter for parallel file processing (implemented)
 4. **Functional over OO**: Prefer functional APIs over object-oriented ones. Use objects/structs for data storage, not for organizing namespaces.
    - Recent refactor (commit 137499c): Python bindings changed from OO to functional API
 5. **Iterator-based design**: Use iterators for memory efficiency and composability
@@ -77,11 +83,11 @@ The core pattern matching engine is fully implemented using constraint satisfact
   - AllDifferent constraint
   - Arc consistency checking
 - `iterators.rs` - Iterator interfaces for trees and matches
-  - `MatchIterator` - Search patterns across trees
-  - `MultiFileMatchIterator` - Search across multiple files with glob patterns
-  - `MultiFileTreeIterator` - Iterate trees from multiple files
+  - `Treebank` - Collection of trees from files/strings
+  - `MatchSet` - Collection of matches from pattern + treebank
+  - Parallel processing via pariter's `.parallel_map()`
 - `bytes.rs` - Byte handling utilities
-- `python.rs` - Python bindings via PyO3 (functional API, compilation currently broken)
+- `python.rs` - Python bindings via PyO3 (functional API, simplified with pariter)
 
 #### Python Bindings (`python/`)
 - PyO3-based bindings in `src/python.rs` (functional API)
@@ -160,11 +166,11 @@ maturin develop
 
 **Rust (Cargo.toml)**:
 - `pyo3` (0.27) - Python bindings
-- `rayon` (1.11) - Data parallelism
+- `pariter` (0.5) - Parallel iterator processing
 - `pest` (2.7) - Parser generator
 - `lasso` (0.7) - String interning
 - `flate2` (1.0) - Gzip support
-- `criterion` (0.7, dev) - Benchmarking
+- `divan` (0.1, dev) - Benchmarking
 
 **Python (pyproject.toml)**:
 - Requires Python 3.12+
@@ -189,9 +195,10 @@ The CSP solver finds ALL possible matches. No pruning strategies like "leftmost"
 Designed to handle very large corpora (500M+ tokens) with:
 - String interning to reduce memory overhead
 - Efficient tree representations
-- File-level parallelization using rayon (implemented)
+- File-level parallelization using pariter (implemented)
 - Transparent gzip support
 - Iterator-based APIs to avoid loading entire corpus into memory
+- Lazy evaluation throughout (no forced collections)
 
 ## Working with This Codebase
 
@@ -252,12 +259,12 @@ Searches for structural patterns in dependency parse trees (linguistic data). Th
 - ✅ Tree data structures with string interning
 - ✅ CSP solver with exhaustive search (DFS + forward checking)
 - ✅ Iterator-based APIs for single and multi-file processing
-- ✅ Parallel file processing with rayon
+- ✅ Parallel file processing with pariter
 - ✅ 89 tests passing
 
 ### What Needs Work
-- 🔄 **Performance benchmarks** - Expand beyond basic benchmarks
 - ⏳ **Extended query features** (regex patterns, descendant/ancestor relations)
+- ⏳ **Additional benchmarks** for parallel vs sequential performance
 
 ### Performance Goals
 - Handle 500M+ token corpora

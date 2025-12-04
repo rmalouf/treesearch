@@ -1,18 +1,17 @@
-//! Example demonstrating query parsing and pattern matching on CoNLL-U files
-//!
-//! Run with: cargo run --example latwp_par --release
-
 use pariter::IteratorExt as _;
 use treesearch::{MatchSet, Treebank, parse_query};
 
 fn main() {
-    let query = r#"
-            N1 [pos="NOUN"];
-            Of [form="of"];
-            N2 [pos="NOUN"];
-            N1 -> Of;
-            Of -> N2;
-        "#;
+    let query = r#"MATCH {
+    Head [upos="VERB", lemma="help"];
+    XComp [upos="VERB", feats.VerbForm="Inf"];
+    Head -[xcomp]-> XComp;
+    Head !-[aux:pass]-> _;
+    _ !-[conj]-> Head;
+    Head !-[conj]-> _;
+    XComp !-[conj]-> _;
+    Head << XComp; }
+    "#;
 
     let path = "/Volumes/Corpora/COHA/conll/*.conllu.gz";
     let pattern = parse_query(query).unwrap();
