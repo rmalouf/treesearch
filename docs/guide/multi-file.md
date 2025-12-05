@@ -24,28 +24,26 @@ for pattern in patterns:
         print(tree.sentence_text)
 ```
 
-## Parallel Processing
+## Automatic Parallel Processing
 
-By default, files are processed in parallel:
+Multi-file operations automatically process files in parallel for better performance:
 
 ```python
-# Parallel (default) - faster
+# Automatic parallel processing
 for tree, match in treesearch.search_files("*.conllu", pattern):
-    process(tree, match)
-
-# Sequential - preserves file order
-for tree, match in treesearch.search_files("*.conllu", pattern, parallel=False):
     process(tree, match)
 ```
 
+**Note:** Results may not be in deterministic file order due to parallel processing.
+
 ## Performance Tips
 
-1. **Use parallel mode** for large corpora
+1. **Automatic parallelization** - Multi-file operations use all available cores
 2. **Parse queries once** before searching
 3. **Use search_files()** instead of read + search
 
 ```python
-# Best: direct search with parallelization
+# Best: direct search with automatic parallelization
 pattern = treesearch.parse_query(query)
 for tree, match in treesearch.search_files("*.conllu", pattern):
     process(tree, match)

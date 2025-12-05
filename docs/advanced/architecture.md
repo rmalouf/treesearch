@@ -108,15 +108,17 @@ Features:
 
 **File**: `src/iterators.rs`
 
-Uses rayon for file-level parallelism:
+Uses rayon + channels for automatic file-level parallelism:
 
 ```
-Files → rayon::par_iter → Process in parallel → Channel → Python iterator
+Files → Chunks (8 files) → rayon::par_iter → Process in parallel → Bounded channel (8) → Iterator
 ```
 
-- Each file processed by separate thread
-- Results sent through channel to Python
-- No guaranteed ordering in parallel mode
+- Files processed in chunks of 8
+- Each chunk uses rayon for parallel processing
+- Bounded channels provide backpressure
+- Results automatically streamed through channels
+- No guaranteed ordering due to parallelization
 
 ### 7. Python Bindings
 

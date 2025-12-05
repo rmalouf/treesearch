@@ -158,15 +158,13 @@ Read trees from multiple CoNLL-U files.
 
 ```python
 treesearch.read_trees_glob(
-    glob_pattern: str,
-    parallel: bool = True
+    glob_pattern: str
 ) -> Iterator[Tree]
 ```
 
 **Parameters:**
 
 - `glob_pattern` (str): Glob pattern to match files (e.g., `"data/*.conllu"`)
-- `parallel` (bool): Process files in parallel (default: True)
 
 **Returns:**
 
@@ -179,19 +177,15 @@ treesearch.read_trees_glob(
 **Example:**
 
 ```python
-# Parallel processing (default)
+# Automatic parallel processing
 for tree in treesearch.read_trees_glob("corpus/*.conllu"):
-    print(tree.sentence_text)
-
-# Sequential processing
-for tree in treesearch.read_trees_glob("corpus/*.conllu", parallel=False):
     print(tree.sentence_text)
 ```
 
 **Notes:**
 
-- Parallel mode uses multiple CPU cores for faster processing
-- Order of results is not deterministic in parallel mode
+- Automatically uses parallel processing for better performance
+- Order of results is not deterministic due to parallel processing
 - Failed files print warnings but don't stop iteration
 
 ---
@@ -203,8 +197,7 @@ Search multiple CoNLL-U files for pattern matches.
 ```python
 treesearch.search_files(
     glob_pattern: str,
-    pattern: Pattern,
-    parallel: bool = True
+    pattern: Pattern
 ) -> Iterator[tuple[Tree, dict[str, int]]]
 ```
 
@@ -212,7 +205,6 @@ treesearch.search_files(
 
 - `glob_pattern` (str): Glob pattern to match files
 - `pattern` (Pattern): Compiled pattern
-- `parallel` (bool): Process files in parallel (default: True)
 
 **Returns:**
 
@@ -227,7 +219,7 @@ treesearch.search_files(
 ```python
 pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
 
-# Search all files in parallel
+# Automatic parallel search
 for tree, match in treesearch.search_files("data/*.conllu", pattern):
     verb = tree.get_word(match["V"])
     print(f"{verb.form}: {tree.sentence_text}")
@@ -236,7 +228,7 @@ for tree, match in treesearch.search_files("data/*.conllu", pattern):
 **Notes:**
 
 - **Most efficient** way to search large corpora
-- Uses parallel processing by default
+- Automatically uses parallel processing for better performance
 - Handles both `.conllu` and `.conllu.gz` files
 - Failed files print warnings but don't stop iteration
 
@@ -271,7 +263,7 @@ for tree, match in treesearch.search_files("*.conllu", treesearch.parse_query(qu
 ### Use search_files() for Large Corpora
 
 ```python
-# Best: Direct search with parallelization
+# Best: Direct search with automatic parallelization
 for tree, match in treesearch.search_files("data/*.conllu", pattern):
     process(tree, match)
 
@@ -281,13 +273,7 @@ for tree in treesearch.read_trees_glob("data/*.conllu"):
         process(tree, match)
 ```
 
-### Disable Parallel for Deterministic Order
-
-```python
-# Results in file order
-for tree, match in treesearch.search_files("*.conllu", pattern, parallel=False):
-    process(tree, match)
-```
+**Note:** Multi-file operations use automatic parallel processing. Results may not be in deterministic file order due to parallelization.
 
 ## Error Handling
 
