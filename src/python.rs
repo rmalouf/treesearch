@@ -2,13 +2,12 @@
 //!
 //! This module provides PyO3-based Python bindings for the Rust core.
 
-use pariter::IteratorExt as _;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::iterators::{MatchSet, Treebank};
+use crate::iterators::Treebank;
 use crate::pattern::Pattern as RustPattern;
 use crate::query::parse_query;
 use crate::searcher::search;
@@ -318,13 +317,16 @@ fn py_parse_query(query: &str) -> PyResult<PyPattern> {
 ///         verb = tree.get_word(match["Verb"])
 #[pyfunction(name = "search")]
 fn py_search(tree: &PyTree, pattern: &PyPattern) -> Vec<std::collections::HashMap<String, usize>> {
-    search(&tree.inner, &pattern.inner).collect()
+    search((*tree.inner).clone(), &pattern.inner)
+        .into_iter()
+        .map(|m| m.bindings)
+        .collect()
 }
 
 /// Iterator over trees from a single file
 #[pyclass(unsendable)]
 struct TreeIterator {
-    inner: Option<crate::conllu::TreeIterator<std::io::BufReader<Box<dyn std::io::Read>>>>,
+    inner: Option<crate::conllu::TreeIterator<std::io::BufReader<Box<dyn std::io::Read + Send>>>>,
 }
 
 #[pymethods]
@@ -373,7 +375,7 @@ fn read_trees(path: &str) -> PyResult<TreeIterator> {
 /// Iterator over matches from a single file
 #[pyclass(unsendable)]
 struct MatchIterator {
-    inner: Option<Box<dyn Iterator<Item = (Arc<crate::tree::Tree>, crate::searcher::Match)>>>,
+    inner: Option<Box<dyn Iterator<Item = crate::searcher::Match>>>,
 }
 
 #[pymethods]
@@ -383,9 +385,16 @@ impl MatchIterator {
     }
 
     fn __next__(&mut self) -> Option<(PyTree, std::collections::HashMap<String, usize>)> {
-        self.inner
-            .as_mut()
-            .and_then(|iter| iter.next().map(|(tree, m)| (PyTree { inner: tree }, m)))
+        self.inner.as_mut().and_then(|iter| {
+            iter.next().map(|m| {
+                (
+                    PyTree {
+                        inner: m.tree.clone(),
+                    },
+                    m.bindings,
+                )
+            })
+        })
     }
 }
 
@@ -410,10 +419,10 @@ impl MatchIterator {
 ///         verb = tree.get_word(match["Verb"])
 #[pyfunction]
 fn search_file(path: &str, pattern: &PyPattern) -> PyResult<MatchIterator> {
-    let tree_set = Treebank::from_file(&PathBuf::from(path));
-    let match_set = MatchSet::new(&tree_set, &pattern.inner);
+    let treebank = Treebank::from_file(&PathBuf::from(path));
+    let iter = treebank.match_iter(pattern.inner.clone());
     Ok(MatchIterator {
-        inner: Some(match_set.into_iter()),
+        inner: Some(Box::new(iter)),
     })
 }
 
@@ -436,12 +445,11 @@ impl MultiFileTreeIterator {
 
 /// Read trees from multiple CoNLL-U files matching a glob pattern.
 ///
-/// Processes multiple files, optionally in parallel for better performance
-/// on large corpora.
+/// Processes multiple files with automatic parallel processing for better
+/// performance on large corpora.
 ///
 /// Args:
 ///     glob_pattern: Glob pattern to match files (e.g., "data/*.conllu")
-///     parallel: Process files in parallel (default: True)
 ///
 /// Returns:
 ///     Iterator yielding Tree objects from all matching files
@@ -453,21 +461,17 @@ impl MultiFileTreeIterator {
 ///     for tree in treesearch.read_trees_glob("corpus/*.conllu"):
 ///         print(tree.sentence_text)
 #[pyfunction]
-#[pyo3(signature = (glob_pattern, parallel=true))]
-fn read_trees_glob(glob_pattern: &str, parallel: bool) -> PyResult<MultiFileTreeIterator> {
-    let tree_set = Treebank::from_glob(glob_pattern)
+fn read_trees_glob(glob_pattern: &str) -> PyResult<MultiFileTreeIterator> {
+    let treebank = Treebank::from_glob(glob_pattern)
         .map_err(|e| PyValueError::new_err(format!("Glob pattern error: {}", e)))?;
 
-    let inner: Box<dyn Iterator<Item = Arc<RustTree>> + Send> = if parallel {
-        Box::new(tree_set.into_iter().parallel_map(|tree| tree))
-    } else {
-        Box::new(tree_set.into_iter())
-    };
+    let inner: Box<dyn Iterator<Item = Arc<RustTree>> + Send> =
+        Box::new(treebank.tree_iter().map(Arc::new));
 
     Ok(MultiFileTreeIterator { inner })
 }
 
-/// Iterator over matches from multiple files (with optional parallel processing)
+/// Iterator over matches from multiple files (with automatic parallel processing)
 #[pyclass(unsendable)]
 struct MultiFileMatchIterator {
     inner:
@@ -489,13 +493,12 @@ impl MultiFileMatchIterator {
 
 /// Search multiple CoNLL-U files for pattern matches.
 ///
-/// The most efficient way to search large corpora. Uses parallel processing
-/// by default to maximize performance across multiple files.
+/// The most efficient way to search large corpora. Uses automatic parallel
+/// processing to maximize performance across multiple files.
 ///
 /// Args:
 ///     glob_pattern: Glob pattern to match files (e.g., "data/*.conllu")
 ///     pattern: Compiled pattern from parse_query()
-///     parallel: Process files in parallel (default: True)
 ///
 /// Returns:
 ///     Iterator yielding (tree, match) tuples, where match is a dict
@@ -509,23 +512,17 @@ impl MultiFileMatchIterator {
 ///     for tree, match in treesearch.search_files("corpus/*.conllu", pattern):
 ///         verb = tree.get_word(match["V"])
 #[pyfunction]
-#[pyo3(signature = (glob_pattern, pattern, parallel=true))]
-fn search_files(
-    glob_pattern: &str,
-    pattern: &PyPattern,
-    parallel: bool,
-) -> PyResult<MultiFileMatchIterator> {
-    let tree_set = Treebank::from_glob(glob_pattern)
+fn search_files(glob_pattern: &str, pattern: &PyPattern) -> PyResult<MultiFileMatchIterator> {
+    let treebank = Treebank::from_glob(glob_pattern)
         .map_err(|e| PyValueError::new_err(format!("Glob pattern error: {}", e)))?;
-    let match_set = MatchSet::new(&tree_set, &pattern.inner);
 
     let inner: Box<
         dyn Iterator<Item = (Arc<RustTree>, std::collections::HashMap<String, usize>)> + Send,
-    > = if parallel {
-        Box::new(match_set.into_iter().parallel_map(|m| m))
-    } else {
-        Box::new(match_set.into_iter())
-    };
+    > = Box::new(
+        treebank
+            .match_iter(pattern.inner.clone())
+            .map(|m| (m.tree.clone(), m.bindings)),
+    );
 
     Ok(MultiFileMatchIterator { inner })
 }

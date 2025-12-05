@@ -17,8 +17,8 @@ use std::sync::Arc;
 pub type Bindings = HashMap<String, WordId>;
 #[derive(Debug)]
 pub struct Match {
-    tree: Arc<Tree>,
-    bindings: Bindings,
+    pub tree: Arc<Tree>,
+    pub bindings: Bindings,
 }
 
 /// Check if a tree word satisfies a pattern variable's constraint
