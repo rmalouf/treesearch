@@ -2,9 +2,9 @@
 //!
 //! This module provides PyO3-based Python bindings for the Rust core.
 
+use pariter::IteratorExt as _;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pariter::IteratorExt as _;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -470,7 +470,8 @@ fn read_trees_glob(glob_pattern: &str, parallel: bool) -> PyResult<MultiFileTree
 /// Iterator over matches from multiple files (with optional parallel processing)
 #[pyclass(unsendable)]
 struct MultiFileMatchIterator {
-    inner: Box<dyn Iterator<Item = (Arc<RustTree>, std::collections::HashMap<String, usize>)> + Send>,
+    inner:
+        Box<dyn Iterator<Item = (Arc<RustTree>, std::collections::HashMap<String, usize>)> + Send>,
 }
 
 #[pymethods]
@@ -480,7 +481,9 @@ impl MultiFileMatchIterator {
     }
 
     fn __next__(&mut self) -> Option<(PyTree, std::collections::HashMap<String, usize>)> {
-        self.inner.next().map(|(tree, m)| (PyTree { inner: tree }, m))
+        self.inner
+            .next()
+            .map(|(tree, m)| (PyTree { inner: tree }, m))
     }
 }
 
@@ -516,7 +519,9 @@ fn search_files(
         .map_err(|e| PyValueError::new_err(format!("Glob pattern error: {}", e)))?;
     let match_set = MatchSet::new(&tree_set, &pattern.inner);
 
-    let inner: Box<dyn Iterator<Item = (Arc<RustTree>, std::collections::HashMap<String, usize>)> + Send> = if parallel {
+    let inner: Box<
+        dyn Iterator<Item = (Arc<RustTree>, std::collections::HashMap<String, usize>)> + Send,
+    > = if parallel {
         Box::new(match_set.into_iter().parallel_map(|m| m))
     } else {
         Box::new(match_set.into_iter())

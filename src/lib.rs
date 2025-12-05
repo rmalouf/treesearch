@@ -20,7 +20,7 @@ pub mod python;
 
 // Re-exports for convenience
 pub use conllu::TreeIterator;
-pub use iterators::{MatchSet, Treebank};
+pub use iterators::Treebank;
 pub use pattern::{Constraint, EdgeConstraint, Pattern, PatternVar, RelationType, VarId};
 pub use query::parse_query;
 pub use searcher::{Match, search, search_query};
