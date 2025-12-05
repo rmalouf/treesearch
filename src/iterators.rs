@@ -11,8 +11,7 @@ use crate::searcher::{Match, search};
 use crate::tree::Tree;
 use rayon::prelude::*;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::mpsc::{Receiver, channel, sync_channel};
+use std::sync::mpsc::sync_channel;
 use std::thread;
 
 /// Source of trees for a collection
@@ -25,26 +24,24 @@ enum TreeSource {
 }
 
 ///
-/// Provides iterator-based access to trees with optional parallel processing.
+/// Provides iterator-based access to trees with parallel processing.
 /// Errors (file open, parse errors) are logged to stderr and skipped.
 ///
 /// # Examples
 ///
 /// ```no_run
 /// use treesearch::Treebank;
-/// use pariter::IteratorExt as _;
 ///
-/// // Sequential iteration
+/// // Iterate over trees from a file
 /// let trees = Treebank::from_file("data.conllu");
-/// for tree in trees {
+/// for tree in trees.tree_iter() {
 ///     println!("Tree with {} words", tree.words.len());
 /// }
 ///
-/// // Parallel iteration
+/// // Count trees from multiple files (parallel processing handled internally)
 /// let count = Treebank::from_glob("data/*.conllu")
 ///     .unwrap()
-///     .into_iter()
-///     .parallel_map(|tree| tree)
+///     .tree_iter()
 ///     .count();
 /// ```
 #[derive(Clone)]
@@ -83,7 +80,7 @@ impl Treebank {
     }
 
     pub fn tree_iter(self) -> impl Iterator<Item = Tree> {
-        let (tx, rx) = sync_channel(4); // bounded for backpressure
+        let (tx, rx) = sync_channel(8); // bounded for backpressure
 
         thread::spawn(move || match self.source {
             TreeSource::String(text) => {
@@ -94,7 +91,7 @@ impl Treebank {
                 }
             }
             TreeSource::Files(paths) => {
-                for chunk in paths.chunks(4) {
+                for chunk in paths.chunks(8) {
                     let results: Vec<_> = chunk
                         .par_iter()
                         .flat_map_iter(|path| {
@@ -103,13 +100,13 @@ impl Treebank {
                                     eprintln!("Error: {:?}", e);
                                 })
                                 .ok()
+                                .into_iter()
+                                .flatten()
                         })
                         .collect();
-                    for iter in results {
-                        for item in iter {
-                            if tx.send(item.unwrap()).is_err() {
-                                return;
-                            }
+                    for item in results {
+                        if tx.send(item.unwrap()).is_err() {
+                            return;
                         }
                     }
                 }
@@ -121,20 +118,6 @@ impl Treebank {
     pub fn match_iter(self, pattern: Pattern) -> impl Iterator<Item = Match> {
         self.tree_iter()
             .flat_map(move |tree| search(tree, &pattern))
-    }
-}
-
-/// Helper: Open a file and return an iterator over trees
-/// Logs file open errors to stderr and returns empty iterator.
-/// Filters out parse errors
-/// TODO: log parse errors to stderr.
-fn get_trees_from_file(path: &PathBuf) -> Box<dyn Iterator<Item = Tree>> {
-    match TreeIterator::from_file(path) {
-        Ok(reader) => Box::new(reader.filter_map(Result::ok)),
-        Err(e) => {
-            eprintln!("Warning: Failed to open {:?}: {}", path, e);
-            Box::new(std::iter::empty())
-        }
     }
 }
 

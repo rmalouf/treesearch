@@ -1,9 +1,9 @@
 //! Example demonstrating query parsing and pattern matching on CoNLL-U files
+//! (parallel processing is now handled internally)
 //!
 //! Run with: cargo run --example latwp_par --release
 
-use pariter::IteratorExt as _;
-use treesearch::{MatchSet, Treebank, parse_query};
+use treesearch::{Treebank, parse_query};
 
 fn main() {
     let query = r#"
@@ -16,11 +16,9 @@ fn main() {
 
     let path = "/Volumes/Corpora/COHA/conll/*.conllu.gz";
     let pattern = parse_query(query).unwrap();
-    let tree_set = Treebank::from_glob(path).unwrap();
-    let count = MatchSet::new(&tree_set, &pattern)
-        .into_iter()
-        .parallel_map(|m| m)
-        .count();
+    let treebank = Treebank::from_glob(path).unwrap();
+    // Note: parallel processing is now handled internally by match_iter()
+    let count = treebank.match_iter(pattern).count();
 
     println!("{}", count);
 }

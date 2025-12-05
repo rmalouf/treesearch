@@ -2,7 +2,7 @@
 //!
 //! Run with: cargo run --example latwp --release
 
-use treesearch::{MatchSet, Treebank, parse_query};
+use treesearch::{Treebank, parse_query};
 
 fn main() {
     let query = r#"
@@ -15,8 +15,8 @@ fn main() {
 
     let path = "/Volumes/Corpora/COHA/conll/*.conllu.gz";
     let pattern = parse_query(query).unwrap();
-    let tree_set = Treebank::from_glob(path).unwrap();
-    let count = MatchSet::new(&tree_set, &pattern).into_iter().count();
+    let treebank = Treebank::from_glob(path).unwrap();
+    let count = treebank.match_iter(pattern).count();
 
     println!("{}", count);
 }
