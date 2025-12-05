@@ -17,16 +17,18 @@ This document tracks the internal development status of Treesearch. For user-fac
 - CoNLL-U file parsing with transparent gzip support
 - Tree data structures with string interning (rustc-hash FxHash + hashbrown)
 - Iterator-based API for trees and matches (`iterators.rs`)
-- Parallel file processing using rayon
+- Automatic parallel file processing using rayon + channels
 - Negative edge constraints (`!->`, `!-[label]->`)
-- 89 tests passing, 4378 lines of code
+- Match struct with Arc<Tree> sharing
+- 87 tests passing
 
 **Python Bindings**:
 - PyO3 wrapper code in `src/python.rs`
 - Functional API (refactored from OO in commit 137499c)
-- Full test suite passing (pytest)
+- Full integration with Rust core
 - Functions: `parse_query`, `search`, `read_trees`, `search_file`, `read_trees_glob`, `search_files`
 - Data classes: `Tree`, `Word`, `Pattern`
+- Automatic parallel processing for multi-file operations
 
 ### 🔄 In Progress
 
@@ -80,7 +82,10 @@ The pattern matching engine uses **constraint satisfaction programming (CSP)**:
 ### Key Implementation Details
 
 - **String interning**: lasso + FxHash for memory efficiency
-- **File-level parallelization**: rayon for parallel processing across files
+- **File-level parallelization**: rayon + channels for automatic parallel processing
+  - Bounded channels (size 8) for backpressure
+  - Chunk-based processing (8 files per chunk)
+  - Thread-safe tree sharing via Arc
 - **Transparent compression**: Automatic gzip detection and decompression
 - **Iterator-based design**: Memory-efficient streaming without loading entire corpus
 - **Error handling**: User errors → Result::Err, internal bugs → panic with context

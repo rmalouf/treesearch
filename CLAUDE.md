@@ -6,29 +6,33 @@ Treesearch is a high-performance toolkit for querying linguistic dependency pars
 
 **Author**: Rob Malouf (rmalouf@sdsu.edu)
 **License**: MIT
-**Status**: Core complete (89 tests passing), Python bindings working
+**Status**: Core complete (87 tests passing), Python bindings fully working
 
 ---
 
 ## Current Development Phase
 
-**Core Complete, Python Bindings Working, Pariter Migration Complete** (Dec 2025)
+**Core Complete, Python Bindings Working, Channel-Based Iteration** (Dec 2025)
 
-The core pattern matching engine is fully implemented using constraint satisfaction with parallel file processing. Python bindings provide a functional API and are fully working.
+The core pattern matching engine is fully implemented using constraint satisfaction with automatic parallel file processing. Python bindings provide a functional API and are fully working.
 
 ### Recent Changes (Dec 2025)
-- **Migrated from rayon to pariter** for parallel iteration
-  - Fixes critical memory bug in `MatchSet` (no more `.collect()` into Vec)
-  - Simplified Python bindings from 165 lines to ~60 lines (66% reduction)
-  - Removed ~200 lines of complex type signatures and boilerplate
-  - Unified API: users call `.parallel_map()` for parallel processing
-  - All 89 tests passing
+- **Completed Python bindings migration** to new iteration API
+  - Removed `MatchSet` abstraction for simpler API
+  - Automatic parallel processing via channel-based iteration
+  - Match struct now contains `Arc<Tree>` and bindings
+  - Removed explicit `parallel` parameter (now automatic)
+  - All 87 tests passing
+- **Channel-based parallel iteration** using rayon + channels
+  - File-level parallelism with bounded channels for backpressure
+  - Chunk-based processing (8 files per chunk)
+  - Simplified iteration: `tree_iter()` and `match_iter()` methods
+  - Removed ~200 lines of complex iterator types
 
 ### Previous Changes (Nov 2025)
 - Refactored `iterators.rs` to use composition instead of duplication
-  - `MatchSet::new()` now takes `&TreeSet` and `&Pattern` by reference
-  - Removed duplicate constructor methods from `MatchSet`
 - Updated Python bindings to use functional API
+- Added negative edge constraints and morphological features
 
 ### Current Status
 - ✅ Query language parser (Pest-based, `query.rs`)
@@ -38,9 +42,9 @@ The core pattern matching engine is fully implemented using constraint satisfact
 - ✅ Tree data structures with string interning (lasso + FxHash)
 - ✅ CSP solver with DFS + forward checking
 - ✅ Iterator-based API for trees and matches (`iterators.rs`)
-- ✅ Parallel file processing using pariter
-- ✅ 89 tests passing
-- ✅ **Python bindings** (functional API, simplified with pariter)
+- ✅ Automatic parallel file processing (rayon + channels)
+- ✅ 87 tests passing
+- ✅ **Python bindings** (functional API, fully working)
 - ✅ **Performance benchmarks** (basic benchmarks exist)
 
 ## Architecture
@@ -49,7 +53,7 @@ The core pattern matching engine is fully implemented using constraint satisfact
 
 1. **Constraint satisfaction approach**: Pattern matching as CSP solving with exhaustive search
 2. **All solutions**: Find ALL possible matches, no filtering or pruning based on leftmost/shortest/etc.
-3. **File-level parallelization**: Using pariter for parallel file processing (implemented)
+3. **Automatic parallel processing**: Channel-based file-level parallelism with rayon (implemented)
 4. **Functional over OO**: Prefer functional APIs over object-oriented ones. Use objects/structs for data storage, not for organizing namespaces.
    - Recent refactor (commit 137499c): Python bindings changed from OO to functional API
 5. **Iterator-based design**: Use iterators for memory efficiency and composability
@@ -82,25 +86,27 @@ The core pattern matching engine is fully implemented using constraint satisfact
   - MRV (Minimum Remaining Values) variable ordering
   - AllDifferent constraint
   - Arc consistency checking
+  - Match struct contains `Arc<Tree>` and bindings
 - `iterators.rs` - Iterator interfaces for trees and matches
   - `Treebank` - Collection of trees from files/strings
-  - `MatchSet` - Collection of matches from pattern + treebank
-  - Parallel processing via pariter's `.parallel_map()`
+  - `tree_iter()` method for iterating over trees
+  - `match_iter()` method for searching across trees
+  - Channel-based parallel processing (rayon + bounded channels)
 - `bytes.rs` - Byte handling utilities
-- `python.rs` - Python bindings via PyO3 (functional API, simplified with pariter)
+- `python.rs` - Python bindings via PyO3 (functional API, fully working)
 
 #### Python Bindings (`python/`)
 - PyO3-based bindings in `src/python.rs` (functional API)
 - Package structure in `python/treesearch/`
 - Functional API design:
   - `parse_query(query: str) -> Pattern` - Parse query strings
-  - `search(tree, pattern) -> [[int]]` - Search single tree
-  - `read_trees(path) -> TreeIterator` - Read from CoNLL-U file
-  - `search_file(path, pattern) -> MatchIterator` - Search single file
-  - `read_trees_glob(pattern, parallel=True) -> MultiFileTreeIterator` - Read multiple files
-  - `search_files(pattern, pattern, parallel=True) -> MultiFileMatchIterator` - Search multiple files
+  - `search(tree, pattern) -> list[dict]` - Search single tree
+  - `read_trees(path) -> Iterator[Tree]` - Read from CoNLL-U file
+  - `search_file(path, pattern) -> Iterator[tuple[Tree, dict]]` - Search single file
+  - `read_trees_glob(pattern) -> Iterator[Tree]` - Read multiple files (automatic parallelism)
+  - `search_files(pattern, pattern) -> Iterator[tuple[Tree, dict]]` - Search multiple files (automatic parallelism)
 - Data classes: `Tree`, `Word`, `Pattern` (for data storage, not namespace organization)
-- **Note**: Currently has compilation errors after refactor, needs fixing
+- All functions working, automatic parallel processing for multi-file operations
 
 #### Planning Documents (`plans/`)
 - `PROJECT_SUMMARY.md` - Overall project roadmap and design (may be outdated)
@@ -259,12 +265,13 @@ Searches for structural patterns in dependency parse trees (linguistic data). Th
 - ✅ Tree data structures with string interning
 - ✅ CSP solver with exhaustive search (DFS + forward checking)
 - ✅ Iterator-based APIs for single and multi-file processing
-- ✅ Parallel file processing with pariter
-- ✅ 89 tests passing
+- ✅ Automatic parallel file processing (rayon + channels)
+- ✅ Python bindings fully working
+- ✅ 87 tests passing
 
 ### What Needs Work
 - ⏳ **Extended query features** (regex patterns, descendant/ancestor relations)
-- ⏳ **Additional benchmarks** for parallel vs sequential performance
+- ⏳ **Additional benchmarks** for performance profiling
 
 ### Performance Goals
 - Handle 500M+ token corpora

@@ -177,25 +177,20 @@ for tree, match in ts.search_file("corpus.conllu", pattern):
     print(f"Found: {verb.form} in '{tree.sentence_text}'")
 ```
 
-#### `read_trees_glob(pattern: str, parallel: bool = True) -> Iterator[Tree]`
+#### `read_trees_glob(pattern: str) -> Iterator[Tree]`
 
-Read trees from multiple files matching a glob pattern.
+Read trees from multiple files matching a glob pattern. Automatically processes files in parallel for better performance.
 
 ```python
-# Sequential
-for tree in ts.read_trees_glob("data/*.conllu", parallel=False):
-    # Process tree...
-    pass
-
-# Parallel (default)
+# Automatic parallel processing
 for tree in ts.read_trees_glob("data/*.conllu"):
-    # Trees from multiple files processed in parallel
+    # Trees from multiple files processed in parallel automatically
     pass
 ```
 
-#### `search_files(glob_pattern: str, query_pattern: Pattern, parallel: bool = True) -> Iterator[tuple[Tree, dict[str, int]]]`
+#### `search_files(glob_pattern: str, query_pattern: Pattern) -> Iterator[tuple[Tree, dict[str, int]]]`
 
-Search multiple files matching a glob pattern. Returns an iterator of (tree, match) tuples.
+Search multiple files matching a glob pattern. Returns an iterator of (tree, match) tuples. Automatically processes files in parallel for better performance.
 
 ```python
 pattern = ts.parse_query("MATCH { Verb [upos=\"VERB\"]; }")
@@ -347,28 +342,24 @@ except Exception as e:
 
 - **Parse queries once**: `Pattern` objects are reusable across searches
 - **Exhaustive search**: Finds ALL matches, not just first/leftmost
-- **Parallel processing**: Use `parallel=True` (default) for multi-file operations
+- **Automatic parallel processing**: Multi-file operations automatically process files in parallel for better performance
 - **Memory efficient**: Iterator-based API streams results without loading entire corpus
 - **Use gzipped files**: Store CoNLL-U files as `.conllu.gz` to reduce I/O time and disk usage (decompression is automatic)
 
 ### Parallel Processing
 
+Multi-file operations (`read_trees_glob` and `search_files`) automatically process files in parallel using bounded channels and rayon for optimal throughput.
+
 ```python
-# Parallel file reading (default)
-for tree in ts.read_trees_glob("data/*.conllu", parallel=True):
-    # Trees from different files processed in parallel
+# Automatic parallel file reading
+for tree in ts.read_trees_glob("data/*.conllu"):
+    # Trees from different files processed in parallel automatically
     pass
 
-# Parallel search across files (default)
+# Automatic parallel search across files
 pattern = ts.parse_query("MATCH { Verb [upos=\"VERB\"]; }")
-for tree, match in ts.search_files("data/*.conllu", pattern, parallel=True):
-    # Searches run in parallel across files
-    verb = tree.get_word(match["Verb"])
-    print(verb.form)
-
-# Sequential processing (if needed)
-for tree, match in ts.search_files("data/*.conllu", pattern, parallel=False):
-    # Process files one at a time
+for tree, match in ts.search_files("data/*.conllu", pattern):
+    # Searches run in parallel across files automatically
     verb = tree.get_word(match["Verb"])
     print(verb.form)
 ```
@@ -393,8 +384,8 @@ for tree, match in ts.search_file("corpus.conllu", pattern):
     # More efficient than reading trees manually
     verb = tree.get_word(match["Verb"])
 
-# ✅ GOOD: Use parallel=True for multiple files
+# ✅ GOOD: Multi-file operations use automatic parallel processing
 for tree, match in ts.search_files("data/*.conllu", pattern):
-    # Parallel processing by default
+    # Parallel processing happens automatically
     verb = tree.get_word(match["Verb"])
 ```

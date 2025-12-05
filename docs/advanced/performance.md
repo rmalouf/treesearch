@@ -42,7 +42,7 @@ query = 'MATCH { V [upos="VERB", lemma="run"]; }'
 Direct searching is more efficient:
 
 ```python
-# Best: direct search with parallelization
+# Best: direct search with automatic parallelization
 for tree, match in treesearch.search_files("*.conllu", pattern):
     process(match)
 
@@ -52,15 +52,13 @@ for tree in treesearch.read_trees_glob("*.conllu"):
         process(match)
 ```
 
-### Enable Parallel Processing
+### Automatic Parallel Processing
+
+Multi-file operations automatically use parallel processing for optimal performance:
 
 ```python
-# Fast: parallel (default)
+# Automatic parallel processing
 for tree, match in treesearch.search_files("*.conllu", pattern):
-    process(match)
-
-# Slower: sequential
-for tree, match in treesearch.search_files("*.conllu", pattern, parallel=False):
     process(match)
 ```
 
@@ -207,7 +205,7 @@ Factors affecting speed:
 - Query specificity (more constraints = faster)
 - Number of variables (fewer = faster)
 - File format (gzip is often faster due to less I/O)
-- Number of CPU cores (more = faster with parallel=True)
+- Number of CPU cores (more = faster with automatic parallelization)
 
 ## Next Steps
 
