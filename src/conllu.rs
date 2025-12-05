@@ -183,7 +183,7 @@ impl<R: BufRead> TreeIterator<R> {
 }
 
 /// Open a file and detect if it's gzipped based on magic bytes
-fn open_file(path: &Path) -> std::io::Result<Box<dyn Read>> {
+fn open_file(path: &Path) -> std::io::Result<Box<dyn Read + Send>> {
     let file = File::open(path)?;
     let mut buffered = BufReader::new(file);
     let buf = buffered.fill_buf()?;
@@ -196,7 +196,7 @@ fn open_file(path: &Path) -> std::io::Result<Box<dyn Read>> {
     }
 }
 
-impl TreeIterator<BufReader<Box<dyn Read>>> {
+impl TreeIterator<BufReader<Box<dyn Read + Send>>> {
     /// Create a reader from a file path (transparently handles gzip compression)
     pub fn from_file(path: &Path) -> std::io::Result<Self> {
         let file = open_file(path)?;
