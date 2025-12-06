@@ -8,12 +8,6 @@ A high-performance toolkit for querying linguistic dependency parses at scale.
 
 Treesearch enables structural pattern matching over dependency parse trees, designed for corpus linguistics research on large treebanks. Key features:
 
-- **Declarative query language** for specifying tree patterns
-- **Exhaustive search** - finds ALL matching structures
-- **Parallel processing** - efficiently handles multiple files
-- **CoNLL-U format** with transparent gzip support
-- **Python API** for research workflows
-
 ## Installation
 
 ### From Source
