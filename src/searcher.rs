@@ -120,7 +120,6 @@ fn satisfies_arc_constraint(
     }
 }
 
-/// Enumerate all matches
 pub fn find_all_matches(tree: Tree, pattern: &Pattern) -> Vec<Match> {
     // Initial candidate domains (node consistency)
     let mut domains: Vec<Vec<WordId>> = vec![Vec::new(); pattern.n_vars];
@@ -135,14 +134,12 @@ pub fn find_all_matches(tree: Tree, pattern: &Pattern) -> Vec<Match> {
         }
     }
 
-    // DFS with forward-checking
+    let tree = Arc::new(tree);
     let assign: Vec<Option<WordId>> = vec![None; pattern.n_vars];
-    let bindings = dfs(&tree, pattern, &assign, &domains);
-    let arc_tree = Arc::new(tree);
-    bindings
+    dfs(&tree, pattern, &assign, &domains)
         .into_iter()
         .map(|bindings| Match {
-            tree: arc_tree.clone(),
+            tree: Arc::clone(&tree),
             bindings,
         })
         .collect()
@@ -167,12 +164,12 @@ fn dfs(
     let next_var = (0..pattern.n_vars)
         .filter(|&var_id| assign[var_id].is_none())
         .min_by_key(|&var_id| domains[var_id].len())
-        .expect("No MRV var found");
+        .unwrap();
 
     let mut solutions: Vec<Bindings> = Vec::new();
 
     // Try each candidate word for this variable
-    'candidates: for &word_id in &domains[next_var] {
+    for &word_id in &domains[next_var] {
         // AllDifferent: Check if word_id is already assigned to another variable
         if assign.contains(&Some(word_id)) {
             continue;
@@ -190,28 +187,28 @@ fn dfs(
         new_assign[next_var] = Some(word_id);
 
         // AllDifferent: Remove word_id from all other unassigned variable domains
-        for var_id in 0..pattern.n_vars {
-            if var_id != next_var && new_assign[var_id].is_none() {
-                new_domains[var_id].retain(|&w| w != word_id);
-                if new_domains[var_id].is_empty() {
-                    continue 'candidates;
-                }
-            }
-        }
+        // for domain in &mut new_domains {
+        //     domain.retain(|&w| w != word_id);
+        // }
+        // if !(0..pattern.n_vars)
+        //     .all(|var_id| new_assign[var_id].is_some() || !new_domains[var_id].is_empty())
+        // {
+        //     continue;
+        // }
 
         // Forward-check: Propagate along edge constraints touching next_var
-        if !forward_check(
-            tree,
-            pattern,
-            next_var,
-            word_id,
-            &mut new_assign,
-            &mut new_domains,
-        ) {
-            continue;
-        }
+        // if !forward_check(
+        //     tree,
+        //     pattern,
+        //     next_var,
+        //     word_id,
+        //     &mut new_assign,
+        //     &mut new_domains,
+        // ) {
+        //     continue;
+        // }
 
-        // Recurse
+        // Recurse - go on to next variable
         solutions.extend(dfs(tree, pattern, &new_assign, &new_domains));
     }
     solutions
