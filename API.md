@@ -4,19 +4,21 @@
 
 ## Overview
 
-Treesearch provides a functional API for searching linguistic dependency trees using a pattern-matching query language. The typical workflow is:
+Treesearch provides both an object-oriented and functional API for searching linguistic dependency trees using a pattern-matching query language. The typical workflow is:
 
-1. Parse query string to `Pattern` with `parse_query()`
-2. Search files with `search_file()` or `search_files()`
-3. Or read trees with `read_trees()` and search with `search()`
-4. Access matched nodes by index
+1. Open a treebank with `open()` or create with `Treebank.from_*()`
+2. Parse query string to `Pattern` with `parse_query()`
+3. Search with `treebank.matches(pattern)` or iterate with `treebank.trees()`
+4. Access matched nodes via the `Tree` and `Word` objects
 
 ## Basic Usage (Python)
+
+### Object-Oriented API (Recommended)
 
 ```python
 import treesearch as ts
 
-# 1. Parse your query once
+# Parse your query once
 query = """
     MATCH {
         Verb [upos="VERB"];
@@ -26,17 +28,43 @@ query = """
 """
 pattern = ts.parse_query(query)
 
-# 2. Search a single file
+# Open a treebank (single file or glob pattern)
+treebank = ts.open("corpus.conllu")
+
+# Search for matches
+for tree, match in treebank.matches(pattern):
+    verb = tree.get_word(match["Verb"])
+    noun = tree.get_word(match["Noun"])
+    print(f"Match: {verb.form} ← {noun.form}")
+
+# Multiple files with automatic parallel processing
+treebank = ts.open("data/*.conllu")
+for tree, match in treebank.matches(pattern):
+    verb = tree.get_word(match["Verb"])
+    print(f"Found: {verb.form}")
+
+# Iterate over trees without searching
+for tree in treebank.trees():
+    print(f"Tree has {len(tree)} words")
+```
+
+### Functional API (Alternative)
+
+```python
+import treesearch as ts
+
+pattern = ts.parse_query(query)
+
+# Search a single file
 for tree, match in ts.search_file("corpus.conllu", pattern):
     verb = tree.get_word(match["Verb"])
     noun = tree.get_word(match["Noun"])
     print(f"Match: {verb.form} ← {noun.form}")
 
-# 3. Or work with individual trees
+# Or work with individual trees
 for tree in ts.read_trees("corpus.conllu"):
     for match in ts.search(tree, pattern):
         verb = tree.get_word(match["Verb"])
-        noun = tree.get_word(match["Noun"])
         print(f"{verb.form} ← {noun.form}")
 ```
 
@@ -127,6 +155,94 @@ MATCH {
 ```
 
 ## Python API Reference
+
+### Treebank Class
+
+#### `Treebank`
+
+Represents a collection of dependency trees from one or more files. Supports multiple iterations and automatic parallel processing for multi-file treebanks.
+
+**Class Methods:**
+
+##### `Treebank.from_file(path: str) -> Treebank`
+
+Create a treebank from a single CoNLL-U file (supports gzip).
+
+```python
+treebank = ts.Treebank.from_file("corpus.conllu")
+```
+
+##### `Treebank.from_glob(pattern: str) -> Treebank`
+
+Create a treebank from multiple files matching a glob pattern. Files are processed in sorted order for deterministic results.
+
+```python
+treebank = ts.Treebank.from_glob("data/*.conllu")
+```
+
+##### `Treebank.from_string(text: str) -> Treebank`
+
+Create a treebank from a CoNLL-U string.
+
+```python
+conllu_text = """# text = Hello world.
+1	Hello	hello	INTJ	_	_	0	root	_	_
+2	world	world	NOUN	_	_	1	vocative	_	_
+"""
+treebank = ts.Treebank.from_string(conllu_text)
+```
+
+**Instance Methods:**
+
+##### `trees() -> Iterator[Tree]`
+
+Iterate over all trees in the treebank. Can be called multiple times. Uses automatic parallel processing for multi-file treebanks.
+
+```python
+for tree in treebank.trees():
+    print(f"Tree has {len(tree)} words")
+    print(f"Sentence: {tree.sentence_text}")
+```
+
+##### `matches(pattern: Pattern) -> Iterator[tuple[Tree, dict[str, int]]]`
+
+Search for pattern matches across all trees. Returns an iterator of (tree, match) tuples. Can be called multiple times. Uses automatic parallel processing for multi-file treebanks.
+
+```python
+pattern = ts.parse_query("MATCH { Verb [upos=\"VERB\"]; }")
+for tree, match in treebank.matches(pattern):
+    verb = tree.get_word(match["Verb"])
+    print(f"Found: {verb.form}")
+```
+
+### Convenience Functions
+
+#### `open(path: str) -> Treebank`
+
+Smart function that automatically detects whether the path is a file or glob pattern and creates the appropriate Treebank.
+
+```python
+# Single file
+tb = ts.open("corpus.conllu")
+
+# Multiple files (automatically detected by * or ?)
+tb = ts.open("data/*.conllu")
+
+# Then use the treebank
+for tree in tb.trees():
+    print(tree.sentence_text)
+```
+
+#### `from_string(text: str) -> Treebank`
+
+Convenience function for creating a treebank from a CoNLL-U string. Equivalent to `Treebank.from_string()`.
+
+```python
+conllu = """# text = Hello.
+1	Hello	hello	INTJ	_	_	0	root	_	_
+"""
+tb = ts.from_string(conllu)
+```
 
 ### Core Functions
 
@@ -295,21 +411,28 @@ MATCH {
 # Parse query once
 pattern = ts.parse_query(query)
 
-# Search trees and display results
-for tree in ts.read_trees("corpus.conllu"):
-    for match in ts.search(tree, pattern):
-        main = tree.get_word(match["Main"])
-        comp = tree.get_word(match["Comp"])
-        print(f"  Main = {main.form} (lemma: {main.lemma})")
-        print(f"  Comp = {comp.form} (lemma: {comp.lemma})")
-        print(f"  Sentence: {tree.sentence_text}")
-        print()
+# Open treebank and search for matches
+treebank = ts.open("corpus.conllu")
+for tree, match in treebank.matches(pattern):
+    main = tree.get_word(match["Main"])
+    comp = tree.get_word(match["Comp"])
+    print(f"  Main = {main.form} (lemma: {main.lemma})")
+    print(f"  Comp = {comp.form} (lemma: {comp.lemma})")
+    print(f"  Sentence: {tree.sentence_text}")
+    print()
 
-# Or search files directly (more efficient)
+# Or use functional API
 for tree, match in ts.search_file("corpus.conllu", pattern):
     main = tree.get_word(match["Main"])
     comp = tree.get_word(match["Comp"])
     print(f"Match: {main.form} -[xcomp]-> {comp.form}")
+
+# Or iterate trees manually
+for tree in treebank.trees():
+    for match in ts.search(tree, pattern):
+        main = tree.get_word(match["Main"])
+        comp = tree.get_word(match["Comp"])
+        print(f"{main.form} → {comp.form}")
 ```
 
 ## Error Handling

@@ -1,40 +1,22 @@
 import treesearch
-from pathlib import Path
-from collections import Counter
 import polars as pl
-
-xcomp_query = """
-MATCH {
-Main [upos="VERB"]; # [lemma="help"];
-XComp [upos="VERB", feats.VerbForm="Inf"];
-Main -[xcomp]-> XComp;
-# V -[conj]-> C;
-}
-"""
-
-# query = """
-# Help [lemma="help"];
-# V [upos="VERB"];
-# Aux [feats.VerbForm="Inf"];
-# Help -[xcomp]-> V;
-# V -[aux:pass]-> Aux;
-# """
-#
 
 
 def xcomps():
     xcomp_query = """
     MATCH {
-    Head [upos="VERB"];
-    XComp [upos="VERB", feats.VerbForm="Inf"];
-    Head -[xcomp]-> XComp;
+        Head [upos="VERB"];
+        XComp [upos="VERB", feats.VerbForm="Inf"];
+        Head -[xcomp]-> XComp;
     }
     """
 
     data = []
     path = "/Volumes/Corpora/CCOHA/conll/*.conllu.gz"
     pattern = treesearch.parse_query(xcomp_query)
-    for tree, match in treesearch.search_files(path, pattern):
+
+    treebank = treesearch.open(path)
+    for tree, match in treebank.matches(pattern):
         main = tree.get_word(match["Head"])
         xcomp = tree.get_word(match["XComp"])
         data.append({"head_lemma": main.lemma, "xcomp_lemma": xcomp.lemma})
@@ -51,24 +33,25 @@ def check_dep(tree, node, deprel, tag=None):
 
 
 def helps():
-
     help_query = """
     MATCH {
-    Head [upos="VERB", lemma="help"];
-    XComp [upos="VERB", feats.VerbForm="Inf"];
-    Head -[xcomp]-> XComp;
-    Head !-[aux:pass]-> _;
-    _ !-[conj]-> Head;
-    Head !-[conj]-> _;
-    XComp !-[conj]-> _;
-    Head << XComp;
+        Head [upos="VERB", lemma="help"];
+        XComp [upos="VERB", feats.VerbForm="Inf"];
+        Head -[xcomp]-> XComp;
+        Head !-[aux:pass]-> _;
+        _ !-[conj]-> Head;
+        Head !-[conj]-> _;
+        XComp !-[conj]-> _;
+        Head << XComp;
     }
     """
 
     path = "/Volumes/Corpora/CCOHA/conll/*.conllu.gz"
     data = []
     pattern = treesearch.parse_query(help_query)
-    for tree, match in treesearch.search_files(path, pattern):
+
+    treebank = treesearch.open(path)
+    for tree, match in treebank.matches(pattern):
         head = tree.get_word(match["Head"])
         xcomp = tree.get_word(match["XComp"])
         data.append(
@@ -92,5 +75,5 @@ def helps():
 
 
 if __name__ == "__main__":
-    xcomps()
+    # xcomps()
     helps()

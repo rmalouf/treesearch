@@ -1,7 +1,6 @@
 import treesearch
-from pathlib import Path
-from collections import Counter
 import polars as pl
+
 
 def xcomps():
     xcomp_query = """
@@ -30,7 +29,6 @@ def check_dep(tree, node, deprel, tag=None):
 
 
 def helps():
-
     help_query = """
     Head [upos="VERB", lemma="help"];
     XComp [upos="VERB", feats.VerbForm="Inf"];

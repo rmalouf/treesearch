@@ -40,7 +40,7 @@ def test_find_path():
 
         path = tree.find_path(runs, dog)
         if path:
-            print(f"\n✓ Test 1 - Direct child: runs -> dog")
+            print("\n✓ Test 1 - Direct child: runs -> dog")
             print(f"  Path length: {len(path)}")
             print(f"  Path: {' -> '.join(w.form for w in path)}")
             assert len(path) == 2
@@ -54,7 +54,7 @@ def test_find_path():
 
         path = tree.find_path(runs, big)
         if path:
-            print(f"\n✓ Test 2 - Multi-level: runs -> dog -> big")
+            print("\n✓ Test 2 - Multi-level: runs -> dog -> big")
             print(f"  Path length: {len(path)}")
             print(f"  Path: {' -> '.join(w.form for w in path)}")
             assert len(path) == 3
@@ -70,7 +70,7 @@ def test_find_path():
 
         path = tree.find_path(runs, park)
         if path:
-            print(f"\n✓ Test 3 - Different branch: runs -> park")
+            print("\n✓ Test 3 - Different branch: runs -> park")
             print(f"  Path length: {len(path)}")
             print(f"  Path: {' -> '.join(w.form for w in path)}")
             assert len(path) == 2
@@ -82,23 +82,23 @@ def test_find_path():
         # Test 4: No path (siblings)
         path = tree.find_path(dog, park)
         if path is None:
-            print(f"\n✓ Test 4 - No path between siblings: dog and park")
+            print("\n✓ Test 4 - No path between siblings: dog and park")
         else:
-            print(f"✗ Test 4 failed: Found path when none should exist")
+            print("✗ Test 4 failed: Found path when none should exist")
 
         # Test 5: No path (reverse direction)
         path = tree.find_path(dog, runs)
         if path is None:
-            print(f"\n✓ Test 5 - No path in reverse direction: dog -> runs")
+            print("\n✓ Test 5 - No path in reverse direction: dog -> runs")
         else:
-            print(f"✗ Test 5 failed: Found path when none should exist")
+            print("✗ Test 5 failed: Found path when none should exist")
 
         # Test 6: Same node
         path = tree.find_path(runs, runs)
         if path is None:
-            print(f"\n✓ Test 6 - No path for same node: runs -> runs")
+            print("\n✓ Test 6 - No path for same node: runs -> runs")
         else:
-            print(f"✗ Test 6 failed: Found path for same node")
+            print("✗ Test 6 failed: Found path for same node")
 
         print("\n✓ All tests passed!")
 
