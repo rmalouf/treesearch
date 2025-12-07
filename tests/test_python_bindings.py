@@ -10,8 +10,6 @@ This test suite covers all Python API functionality for test-driven development:
 """
 
 import gzip
-import tempfile
-from pathlib import Path
 
 import pytest
 

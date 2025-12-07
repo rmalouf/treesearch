@@ -41,14 +41,23 @@ pattern = treesearch.parse_query("""
     }
 """)
 
-# Search a single file
-for tree, match in treesearch.search_file("corpus.conllu", pattern):
+# Open a treebank (single file or glob pattern)
+treebank = treesearch.open("corpus.conllu")
+
+# Search for matches
+for tree, match in treebank.matches(pattern):
     verb = tree.get_word(match["Verb"])
     noun = tree.get_word(match["Noun"])
     print(f"{verb.form} has subject {noun.form}")
 
-# Search multiple files in parallel
-for tree, match in treesearch.search_files("data/*.conllu", pattern):
+# Multiple files with automatic parallel processing
+treebank = treesearch.open("data/*.conllu")
+for tree, match in treebank.matches(pattern):
+    verb = tree.get_word(match["Verb"])
+    print(f"Found: {verb.form}")
+
+# Or use convenience functions
+for tree, match in treesearch.search_file("corpus.conllu", pattern):
     verb = tree.get_word(match["Verb"])
     print(f"Found: {verb.form}")
 ```

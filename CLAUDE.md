@@ -14,9 +14,16 @@ Treesearch is a high-performance toolkit for querying linguistic dependency pars
 
 **Core Complete, Python Bindings Working, Channel-Based Iteration** (Dec 2025)
 
-The core pattern matching engine is fully implemented using constraint satisfaction with automatic parallel file processing. Python bindings provide a functional API and are fully working.
+The core pattern matching engine is fully implemented using constraint satisfaction with automatic parallel file processing. Python bindings provide both object-oriented and functional APIs and are fully working.
 
 ### Recent Changes (Dec 2025)
+- **Added object-oriented Python API** with Treebank class (Dec 2025)
+  - Exposed `Treebank` class with `from_file()`, `from_glob()`, `from_string()` class methods
+  - Instance methods: `trees()` and `matches(pattern)` for iteration
+  - Internal cloning allows multiple iterations over same treebank
+  - Added convenience functions: `open(path)` and `from_string(text)`
+  - Simplified from 4 iterator types to 2 (TreeIterator, MatchIterator)
+  - Kept functional API for backwards compatibility
 - **Completed Python bindings migration** to new iteration API
   - Removed `MatchSet` abstraction for simpler API
   - Automatic parallel processing via channel-based iteration
@@ -44,7 +51,7 @@ The core pattern matching engine is fully implemented using constraint satisfact
 - ✅ Iterator-based API for trees and matches (`iterators.rs`)
 - ✅ Automatic parallel file processing (rayon + channels)
 - ✅ 87 tests passing
-- ✅ **Python bindings** (functional API, fully working)
+- ✅ **Python bindings** (object-oriented + functional APIs, fully working)
 - ✅ **Performance benchmarks** (basic benchmarks exist)
 
 ## Architecture
@@ -54,8 +61,10 @@ The core pattern matching engine is fully implemented using constraint satisfact
 1. **Constraint satisfaction approach**: Pattern matching as CSP solving with exhaustive search
 2. **All solutions**: Find ALL possible matches, no filtering or pruning based on leftmost/shortest/etc.
 3. **Automatic parallel processing**: Channel-based file-level parallelism with rayon (implemented)
-4. **Functional over OO**: Prefer functional APIs over object-oriented ones. Use objects/structs for data storage, not for organizing namespaces.
-   - Recent refactor (commit 137499c): Python bindings changed from OO to functional API
+4. **Hybrid API design**: Support both object-oriented and functional interfaces for Python API flexibility.
+   - Object-oriented: Treebank class with `from_*()` methods and `trees()`/`matches()` instance methods
+   - Functional: Standalone functions like `search_file()`, `read_trees()` for convenience
+   - Use objects/structs for data storage and encapsulation, not just namespace organization
 5. **Iterator-based design**: Use iterators for memory efficiency and composability
 6. **Error handling strategy**:
    - **User input errors** (malformed queries, invalid CoNLL-U, missing files) → `Result::Err` with clear message
@@ -93,19 +102,31 @@ The core pattern matching engine is fully implemented using constraint satisfact
   - `match_iter()` method for searching across trees
   - Channel-based parallel processing (rayon + bounded channels)
 - `bytes.rs` - Byte handling utilities
-- `python.rs` - Python bindings via PyO3 (functional API, fully working)
+- `python.rs` - Python bindings via PyO3 (OO + functional APIs, fully working)
 
 #### Python Bindings (`python/`)
-- PyO3-based bindings in `src/python.rs` (functional API)
+- PyO3-based bindings in `src/python.rs`
 - Package structure in `python/treesearch/`
-- Functional API design:
+- **Object-oriented API** (primary):
+  - `Treebank` class with class methods:
+    - `Treebank.from_file(path)` - Single file
+    - `Treebank.from_glob(pattern)` - Multiple files
+    - `Treebank.from_string(text)` - From CoNLL-U string
+  - Instance methods:
+    - `treebank.trees()` - Iterate over trees (reusable, multiple iterations)
+    - `treebank.matches(pattern)` - Search for pattern matches (reusable)
+  - Convenience functions:
+    - `open(path)` - Auto-detects file vs glob pattern
+    - `from_string(text)` - Wrapper for Treebank.from_string()
+- **Functional API** (backwards compatible):
   - `parse_query(query: str) -> Pattern` - Parse query strings
   - `search(tree, pattern) -> list[dict]` - Search single tree
   - `read_trees(path) -> Iterator[Tree]` - Read from CoNLL-U file
   - `search_file(path, pattern) -> Iterator[tuple[Tree, dict]]` - Search single file
   - `read_trees_glob(pattern) -> Iterator[Tree]` - Read multiple files (automatic parallelism)
   - `search_files(pattern, pattern) -> Iterator[tuple[Tree, dict]]` - Search multiple files (automatic parallelism)
-- Data classes: `Tree`, `Word`, `Pattern` (for data storage, not namespace organization)
+- Data classes: `Tree`, `Word`, `Pattern`, `Treebank`
+- Iterator classes: `TreeIterator`, `MatchIterator`
 - All functions working, automatic parallel processing for multi-file operations
 
 #### Planning Documents (`plans/`)
@@ -133,7 +154,7 @@ treesearch/
 │   ├── conllu.rs     # CoNLL-U parsing
 │   ├── iterators.rs  # Iterator interfaces
 │   ├── bytes.rs      # Byte utilities
-│   └── python.rs     # Python bindings (compilation broken)
+│   └── python.rs     # Python bindings (fully working)
 ├── python/           # Python package structure
 │   └── treesearch/   # Package directory
 ├── tests/            # Integration tests
@@ -143,7 +164,7 @@ treesearch/
 ├── Cargo.toml        # Rust dependencies and config
 ├── pyproject.toml    # Python packaging config (maturin)
 ├── CLAUDE.md         # This file - comprehensive project guide
-├── API.md            # API reference (may be outdated)
+├── API.md            # API reference (up to date)
 └── README.md         # User-facing documentation
 ```
 

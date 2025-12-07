@@ -181,7 +181,7 @@ fn dfs(
         }
 
         let mut new_assign = assign.to_vec();
-        let mut new_domains = domains.to_vec();
+        let new_domains = domains.to_vec();
 
         // Assign var <- word_id and update domains
         new_assign[next_var] = Some(word_id);

@@ -119,7 +119,7 @@ def test_word_properties():
             if parent:
                 print(f"  Parent: {parent.form}")
             else:
-                print(f"  Parent: None (root)")
+                print("  Parent: None (root)")
 
             children = word.children()
             print(f"  Children: {[c.form for c in children]}")
