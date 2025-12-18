@@ -16,7 +16,7 @@ fn main() {
     let path = "/Volumes/Corpora/COHA/conll/*.conllu.gz";
     let pattern = parse_query(query).unwrap();
     let treebank = Treebank::from_glob(path).unwrap();
-    let count = treebank.match_iter(pattern).count();
+    let count = treebank.match_iter(pattern, true).count();
 
     println!("{}", count);
 }

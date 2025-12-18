@@ -242,11 +242,23 @@ impl PyTreebank {
     /// Can be called multiple times. Uses automatic parallel processing
     /// for multi-file treebanks.
     ///
+    /// Args:
+    ///     ordered: If True (default), trees are returned in deterministic order.
+    ///              If False, trees may arrive in any order for better performance.
+    ///
     /// Returns:
     ///     Iterator over Tree objects
-    fn trees(&self) -> PyTreeIterator {
+    ///
+    /// Example:
+    ///     >>> tb = Treebank.from_glob("data/*.conllu")
+    ///     >>> for tree in tb.trees(ordered=True):  # deterministic
+    ///     ...     print(tree)
+    ///     >>> for tree in tb.trees(ordered=False):  # faster
+    ///     ...     print(tree)
+    #[pyo3(signature = (ordered=true))]
+    fn trees(&self, ordered: bool) -> PyTreeIterator {
         PyTreeIterator {
-            inner: Box::new(self.inner.clone().tree_iter().map(Arc::new)),
+            inner: Box::new(self.inner.clone().tree_iter(ordered).map(Arc::new)),
         }
     }
 
@@ -257,15 +269,24 @@ impl PyTreebank {
     ///
     /// Args:
     ///     pattern: Compiled pattern from parse_query()
+    ///     ordered: If True (default), matches are returned in deterministic order.
+    ///              If False, matches may arrive in any order for better performance.
     ///
     /// Returns:
     ///     Iterator over (tree, match) tuples
-    fn matches(&self, pattern: &PyPattern) -> PyMatchIterator {
+    ///
+    /// Example:
+    ///     >>> tb = Treebank.from_glob("data/*.conllu")
+    ///     >>> pattern = parse_query("MATCH { V [upos='VERB']; }")
+    ///     >>> for tree, match in tb.matches(pattern, ordered=True):
+    ///     ...     print(match)
+    #[pyo3(signature = (pattern, ordered=true))]
+    fn matches(&self, pattern: &PyPattern, ordered: bool) -> PyMatchIterator {
         PyMatchIterator {
             inner: Box::new(
                 self.inner
                     .clone()
-                    .match_iter(pattern.inner.clone())
+                    .match_iter(pattern.inner.clone(), ordered)
                     .map(|m| (m.tree, m.bindings)),
             ),
         }
@@ -342,14 +363,17 @@ fn py_search(tree: &PyTree, pattern: &PyPattern) -> Vec<std::collections::HashMa
 ///
 /// Args:
 ///     path: Path to CoNLL-U file
+///     ordered: If True (default), trees are returned in deterministic order.
+///              If False, trees may arrive in any order for better performance.
 ///
 /// Returns:
 ///     Iterator over Tree objects
 #[pyfunction]
-fn read_trees(path: &str) -> PyTreeIterator {
+#[pyo3(signature = (path, ordered=true))]
+fn read_trees(path: &str, ordered: bool) -> PyTreeIterator {
     let treebank = Treebank::from_file(&PathBuf::from(path));
     PyTreeIterator {
-        inner: Box::new(treebank.tree_iter().map(Arc::new)),
+        inner: Box::new(treebank.tree_iter(ordered).map(Arc::new)),
     }
 }
 
@@ -360,16 +384,19 @@ fn read_trees(path: &str) -> PyTreeIterator {
 /// Args:
 ///     path: Path to CoNLL-U file
 ///     pattern: Compiled pattern from parse_query()
+///     ordered: If True (default), matches are returned in deterministic order.
+///              If False, matches may arrive in any order for better performance.
 ///
 /// Returns:
 ///     Iterator over (tree, match) tuples
 #[pyfunction]
-fn search_file(path: &str, pattern: &PyPattern) -> PyMatchIterator {
+#[pyo3(signature = (path, pattern, ordered=true))]
+fn search_file(path: &str, pattern: &PyPattern, ordered: bool) -> PyMatchIterator {
     let treebank = Treebank::from_file(&PathBuf::from(path));
     PyMatchIterator {
         inner: Box::new(
             treebank
-                .match_iter(pattern.inner.clone())
+                .match_iter(pattern.inner.clone(), ordered)
                 .map(|m| (m.tree, m.bindings)),
         ),
     }
@@ -382,6 +409,8 @@ fn search_file(path: &str, pattern: &PyPattern) -> PyMatchIterator {
 ///
 /// Args:
 ///     glob_pattern: Glob pattern (e.g., "data/*.conllu")
+///     ordered: If True (default), trees are returned in deterministic order.
+///              If False, trees may arrive in any order for better performance.
 ///
 /// Returns:
 ///     Iterator over Tree objects
@@ -389,11 +418,12 @@ fn search_file(path: &str, pattern: &PyPattern) -> PyMatchIterator {
 /// Raises:
 ///     ValueError: If glob pattern is invalid
 #[pyfunction]
-fn read_trees_glob(glob_pattern: &str) -> PyResult<PyTreeIterator> {
+#[pyo3(signature = (glob_pattern, ordered=true))]
+fn read_trees_glob(glob_pattern: &str, ordered: bool) -> PyResult<PyTreeIterator> {
     let treebank = Treebank::from_glob(glob_pattern)
         .map_err(|e| PyValueError::new_err(format!("Glob pattern error: {}", e)))?;
     Ok(PyTreeIterator {
-        inner: Box::new(treebank.tree_iter().map(Arc::new)),
+        inner: Box::new(treebank.tree_iter(ordered).map(Arc::new)),
     })
 }
 
@@ -405,6 +435,8 @@ fn read_trees_glob(glob_pattern: &str) -> PyResult<PyTreeIterator> {
 /// Args:
 ///     glob_pattern: Glob pattern (e.g., "data/*.conllu")
 ///     pattern: Compiled pattern from parse_query()
+///     ordered: If True (default), matches are returned in deterministic order.
+///              If False, matches may arrive in any order for better performance.
 ///
 /// Returns:
 ///     Iterator over (tree, match) tuples
@@ -412,13 +444,14 @@ fn read_trees_glob(glob_pattern: &str) -> PyResult<PyTreeIterator> {
 /// Raises:
 ///     ValueError: If glob pattern is invalid
 #[pyfunction]
-fn search_files(glob_pattern: &str, pattern: &PyPattern) -> PyResult<PyMatchIterator> {
+#[pyo3(signature = (glob_pattern, pattern, ordered=true))]
+fn search_files(glob_pattern: &str, pattern: &PyPattern, ordered: bool) -> PyResult<PyMatchIterator> {
     let treebank = Treebank::from_glob(glob_pattern)
         .map_err(|e| PyValueError::new_err(format!("Glob pattern error: {}", e)))?;
     Ok(PyMatchIterator {
         inner: Box::new(
             treebank
-                .match_iter(pattern.inner.clone())
+                .match_iter(pattern.inner.clone(), ordered)
                 .map(|m| (m.tree, m.bindings)),
         ),
     })

@@ -17,8 +17,8 @@ fn main() {
     let path = "/Volumes/Corpora/COHA/conll/*.conllu.gz";
     let pattern = parse_query(query).unwrap();
     let treebank = Treebank::from_glob(path).unwrap();
-    // Note: parallel processing is now handled internally by match_iter()
-    let count = treebank.match_iter(pattern).count();
+    // Note: unordered mode (false) enables maximum parallelism for best performance
+    let count = treebank.match_iter(pattern, false).count();
 
     println!("{}", count);
 }

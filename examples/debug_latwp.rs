@@ -10,7 +10,7 @@ fn main() {
     println!("Testing glob pattern...");
     let tree_count = Treebank::from_glob(path)
         .unwrap()
-        .tree_iter()
+        .tree_iter(true)
         .take(5) // Just take first 5 to see if it works
         .count();
     println!(
@@ -23,6 +23,6 @@ fn main() {
 
     println!("\nCounting all matches...");
     let treebank = Treebank::from_glob(path).unwrap();
-    let count = treebank.match_iter(pattern).count();
+    let count = treebank.match_iter(pattern, true).count();
     println!("Total matches: {}", count);
 }

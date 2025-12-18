@@ -23,7 +23,7 @@ pub use conllu::TreeIterator;
 pub use iterators::Treebank;
 pub use pattern::{Constraint, EdgeConstraint, Pattern, PatternVar, RelationType, VarId};
 pub use query::parse_query;
-pub use searcher::{Match, search, search_query};
+pub use searcher::{Match, search, search_arc, search_query};
 pub use tree::{Features, TokenId, Tree, Word, WordId};
 
 #[cfg(test)]
