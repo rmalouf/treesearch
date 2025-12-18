@@ -12,6 +12,7 @@ use crate::tree::Tree;
 use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::sync_channel;
+use std::sync::Arc;
 use std::thread;
 
 /// Source of trees for a collection
@@ -34,14 +35,14 @@ enum TreeSource {
 ///
 /// // Iterate over trees from a file
 /// let trees = Treebank::from_file("data.conllu");
-/// for tree in trees.tree_iter() {
+/// for tree in trees.tree_iter(true) {
 ///     println!("Tree with {} words", tree.words.len());
 /// }
 ///
 /// // Count trees from multiple files (parallel processing handled internally)
 /// let count = Treebank::from_glob("data/*.conllu")
 ///     .unwrap()
-///     .tree_iter()
+///     .tree_iter(true)
 ///     .count();
 /// ```
 #[derive(Clone)]
@@ -79,45 +80,208 @@ impl Treebank {
         }
     }
 
-    pub fn tree_iter(self) -> impl Iterator<Item = Tree> {
-        let (tx, rx) = sync_channel(8); // bounded for backpressure
+    /// Iterate over trees with optional ordering.
+    ///
+    /// # Arguments
+    /// * `ordered` - If true (default), maintains file and tree order for deterministic results.
+    ///               If false, trees may arrive in any order for better performance.
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use treesearch::Treebank;
+    ///
+    /// let treebank = Treebank::from_glob("data/*.conllu").unwrap();
+    ///
+    /// // Ordered iteration (deterministic)
+    /// for tree in treebank.clone().tree_iter(true) {
+    ///     println!("Tree: {}", tree.words.len());
+    /// }
+    ///
+    /// // Unordered iteration (faster for large corpora)
+    /// for tree in treebank.tree_iter(false) {
+    ///     println!("Tree: {}", tree.words.len());
+    /// }
+    /// ```
+    pub fn tree_iter(self, ordered: bool) -> impl Iterator<Item = Tree> {
+        if ordered {
+            // Ordered mode: maintain deterministic ordering via chunking
+            // Smaller chunks (2 files) improve load balancing for heterogeneous file sizes
+            let (tx, rx) = sync_channel(64); // larger buffer for better pipelining
 
-        thread::spawn(move || match self.source {
-            TreeSource::String(text) => {
-                for tree in TreeIterator::from_string(&text).filter_map(|result| result.ok()) {
-                    if tx.send(tree).is_err() {
-                        return;
-                    }
-                }
-            }
-            TreeSource::Files(paths) => {
-                for chunk in paths.chunks(8) {
-                    let results: Vec<_> = chunk
-                        .par_iter()
-                        .flat_map_iter(|path| {
-                            TreeIterator::from_file(path)
-                                .map_err(|e| {
-                                    eprintln!("Error: {:?}", e);
-                                })
-                                .ok()
-                                .into_iter()
-                                .flatten()
-                        })
-                        .collect();
-                    for item in results {
-                        if tx.send(item.unwrap()).is_err() {
+            thread::spawn(move || match self.source {
+                TreeSource::String(text) => {
+                    for tree in TreeIterator::from_string(&text).filter_map(|result| result.ok()) {
+                        if tx.send(tree).is_err() {
                             return;
                         }
                     }
                 }
-            }
-        });
-        rx.into_iter()
+                TreeSource::Files(paths) => {
+                    for chunk in paths.chunks(2) {
+                        let results: Vec<_> = chunk
+                            .par_iter()
+                            .flat_map_iter(|path| {
+                                TreeIterator::from_file(path)
+                                    .map_err(|e| {
+                                        eprintln!("Error: {:?}", e);
+                                    })
+                                    .ok()
+                                    .into_iter()
+                                    .flatten()
+                            })
+                            .collect();
+                        for item in results {
+                            if tx.send(item.unwrap()).is_err() {
+                                return;
+                            }
+                        }
+                    }
+                }
+            });
+            rx.into_iter()
+        } else {
+            // Unordered mode: maximum concurrency by removing synchronization barriers
+            let (tx, rx) = sync_channel(5000); // larger buffer for higher throughput
+
+            thread::spawn(move || match self.source {
+                TreeSource::String(text) => {
+                    for tree in TreeIterator::from_string(&text).filter_map(|result| result.ok()) {
+                        if tx.send(tree).is_err() {
+                            return;
+                        }
+                    }
+                }
+                TreeSource::Files(paths) => {
+                    paths.par_iter().for_each(|path| {
+                        let tx = tx.clone(); // Clone sender for each parallel thread
+                        if let Ok(reader) = TreeIterator::from_file(path) {
+                            for result in reader {
+                                match result {
+                                    Ok(tree) => {
+                                        if tx.send(tree).is_err() {
+                                            return;
+                                        }
+                                    }
+                                    Err(e) => {
+                                        eprintln!("Error: {:?}", e);
+                                    }
+                                }
+                            }
+                        } else {
+                            eprintln!("Failed to open file: {:?}", path);
+                        }
+                    });
+                }
+            });
+            rx.into_iter()
+        }
     }
 
-    pub fn match_iter(self, pattern: Pattern) -> impl Iterator<Item = Match> {
-        self.tree_iter()
-            .flat_map(move |tree| search(tree, &pattern))
+    /// Search for pattern matches with optional ordering.
+    ///
+    /// # Arguments
+    /// * `pattern` - The pattern to search for
+    /// * `ordered` - If true (default), maintains file and tree order for deterministic results.
+    ///               If false, matches may arrive in any order for better performance.
+    ///
+    /// # Examples
+    /// ```no_run
+    /// use treesearch::{Treebank, parse_query};
+    ///
+    /// let treebank = Treebank::from_glob("data/*.conllu").unwrap();
+    /// let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
+    ///
+    /// // Ordered iteration (deterministic)
+    /// for m in treebank.clone().match_iter(pattern.clone(), true) {
+    ///     println!("Match found");
+    /// }
+    ///
+    /// // Unordered iteration (faster for large corpora)
+    /// for m in treebank.match_iter(pattern, false) {
+    ///     println!("Match found");
+    /// }
+    /// ```
+    pub fn match_iter(self, pattern: Pattern, ordered: bool) -> impl Iterator<Item = Match> {
+        if ordered {
+            // Ordered mode: maintain deterministic ordering via chunking
+            // Smaller chunks (2 files) improve load balancing for heterogeneous file sizes
+            let (tx, rx) = sync_channel(64); // larger buffer for better pipelining
+
+            thread::spawn(move || match self.source {
+                TreeSource::String(text) => {
+                    for tree in TreeIterator::from_string(&text).filter_map(|result| result.ok()) {
+                        for m in search(tree, &pattern) {
+                            if tx.send(m).is_err() {
+                                return;
+                            }
+                        }
+                    }
+                }
+                TreeSource::Files(paths) => {
+                    for chunk in paths.chunks(2) {
+                        let results: Vec<_> = chunk
+                            .par_iter()
+                            .flat_map_iter(|path| {
+                                TreeIterator::from_file(path)
+                                    .map_err(|e| {
+                                        eprintln!("Error: {:?}", e);
+                                    })
+                                    .ok()
+                                    .into_iter()
+                                    .flatten()
+                            })
+                            .flat_map_iter(|result| {
+                                result.ok().into_iter().flat_map(|tree| search(tree, &pattern))
+                            })
+                            .collect();
+                        for m in results {
+                            if tx.send(m).is_err() {
+                                return;
+                            }
+                        }
+                    }
+                }
+            });
+            rx.into_iter()
+        } else {
+            // Unordered mode: maximum concurrency by performing search in parallel workers
+            let (tx, rx) = sync_channel(10000); // larger buffer for higher throughput
+
+            thread::spawn(move || match self.source {
+                TreeSource::String(text) => {
+                    for tree in TreeIterator::from_string(&text).filter_map(|result| result.ok()) {
+                        for m in search(tree, &pattern) {
+                            if tx.send(m).is_err() {
+                                return;
+                            }
+                        }
+                    }
+                }
+                TreeSource::Files(paths) => {
+                    // Simple file-level parallelism - rayon's work-stealing is very efficient
+                    paths.par_iter().for_each(|path| {
+                        let tx = tx.clone();
+                        if let Ok(reader) = TreeIterator::from_file(path) {
+                            for result in reader {
+                                match result {
+                                    Ok(tree) => {
+                                        for m in search(tree, &pattern) {
+                                            if tx.send(m).is_err() {
+                                                return;
+                                            }
+                                        }
+                                    }
+                                    Err(e) => eprintln!("Error: {:?}", e),
+                                }
+                            }
+                        } else {
+                            eprintln!("Failed to open file: {:?}", path);
+                        }
+                    });
+                }
+            });
+            rx.into_iter()
+        }
     }
 }
 
@@ -149,7 +313,7 @@ mod tests {
 
     #[test]
     fn test_treebank_from_string() {
-        let trees: Vec<_> = Treebank::from_string(TWO_TREE_CONLLU).tree_iter().collect();
+        let trees: Vec<_> = Treebank::from_string(TWO_TREE_CONLLU).tree_iter(true).collect();
 
         assert_eq!(trees.len(), 2);
         assert_eq!(trees[0].words.len(), 3);
@@ -160,7 +324,7 @@ mod tests {
     fn test_match_set_from_string() {
         let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
         let tree_set = Treebank::from_string(THREE_VERB_CONLLU);
-        let matches: Vec<_> = tree_set.match_iter(pattern).collect();
+        let matches: Vec<_> = tree_set.match_iter(pattern, true).collect();
 
         assert_eq!(matches.len(), 3);
     }
@@ -173,7 +337,7 @@ mod tests {
 
         let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
         let tree_set = Treebank::from_string(conllu);
-        let matches: Vec<_> = tree_set.match_iter(pattern).collect();
+        let matches: Vec<_> = tree_set.match_iter(pattern, true).collect();
 
         assert_eq!(matches.len(), 2);
     }
@@ -185,7 +349,7 @@ mod tests {
 
         let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
         let tree_set = Treebank::from_string(conllu);
-        let matches: Vec<_> = tree_set.match_iter(pattern).collect();
+        let matches: Vec<_> = tree_set.match_iter(pattern, true).collect();
 
         assert_eq!(matches.len(), 0);
     }
@@ -200,7 +364,7 @@ mod tests {
         let pattern =
             parse_query("MATCH { V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 -> V2; }").unwrap();
         let tree_set = Treebank::from_string(conllu);
-        let matches: Vec<_> = tree_set.match_iter(pattern).collect();
+        let matches: Vec<_> = tree_set.match_iter(pattern, true).collect();
 
         assert_eq!(matches.len(), 1);
     }
@@ -241,7 +405,7 @@ mod tests {
                 ),
             ]);
 
-            let results: Vec<_> = Treebank::from_paths(paths).tree_iter().collect();
+            let results: Vec<_> = Treebank::from_paths(paths).tree_iter(true).collect();
 
             assert_eq!(results.len(), 2);
             assert_eq!(results[0].words.len(), 2);
@@ -263,7 +427,7 @@ mod tests {
             ]);
 
             let pattern = format!("{}/*.conllu", dir.path().display());
-            let results: Vec<_> = Treebank::from_glob(&pattern).unwrap().tree_iter().collect();
+            let results: Vec<_> = Treebank::from_glob(&pattern).unwrap().tree_iter(true).collect();
 
             assert_eq!(results.len(), 2);
         }
@@ -283,7 +447,7 @@ mod tests {
 
             let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
             let tree_set = Treebank::from_paths(paths);
-            let results: Vec<_> = tree_set.match_iter(pattern).collect();
+            let results: Vec<_> = tree_set.match_iter(pattern, true).collect();
 
             assert_eq!(results.len(), 2);
         }
@@ -301,7 +465,7 @@ mod tests {
             let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
             let glob_pattern = format!("{}/*.conllu", dir.path().display());
             let tree_set = Treebank::from_glob(&glob_pattern).unwrap();
-            let results: Vec<_> = tree_set.match_iter(pattern).collect();
+            let results: Vec<_> = tree_set.match_iter(pattern, true).collect();
 
             assert_eq!(results.len(), 2);
         }
@@ -317,8 +481,87 @@ mod tests {
             let bad_file = dir.path().join("nonexistent.conllu");
             paths = vec![good_file.clone(), bad_file, good_file];
 
-            let results: Vec<_> = Treebank::from_paths(paths).tree_iter().collect();
+            let results: Vec<_> = Treebank::from_paths(paths).tree_iter(true).collect();
 
+            assert_eq!(results.len(), 2);
+        }
+
+        #[test]
+        fn test_ordered_iteration_deterministic() {
+            let (_dir, paths) = create_test_files(&[
+                ("a.conllu", "1\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
+                ("b.conllu", "1\tsleeps\tsleep\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
+                ("c.conllu", "1\twalks\twalk\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
+            ]);
+
+            // Multiple iterations should produce same order
+            let treebank = Treebank::from_paths(paths.clone());
+            let run1: Vec<_> = treebank.clone().tree_iter(true).collect();
+            let run2: Vec<_> = treebank.clone().tree_iter(true).collect();
+
+            assert_eq!(run1.len(), 3);
+            assert_eq!(run2.len(), 3);
+
+            // Verify same order by comparing lemmas
+            for (t1, t2) in run1.iter().zip(run2.iter()) {
+                assert_eq!(
+                    t1.string_pool.resolve(t1.words[0].lemma),
+                    t2.string_pool.resolve(t2.words[0].lemma)
+                );
+            }
+        }
+
+        #[test]
+        fn test_unordered_iteration_completeness() {
+            let (_dir, paths) = create_test_files(&[
+                ("a.conllu", "1\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
+                ("b.conllu", "1\tsleeps\tsleep\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
+                ("c.conllu", "1\twalks\twalk\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
+            ]);
+
+            let treebank = Treebank::from_paths(paths);
+            let results: Vec<_> = treebank.tree_iter(false).collect();
+
+            // Should still get all trees, just possibly in different order
+            assert_eq!(results.len(), 3);
+
+            // Verify we got all the expected lemmas
+            let mut lemmas: Vec<Vec<u8>> = results
+                .iter()
+                .map(|t| t.string_pool.resolve(t.words[0].lemma).to_vec())
+                .collect();
+            lemmas.sort();
+
+            let expected: Vec<Vec<u8>> = vec![b"run".to_vec(), b"sleep".to_vec(), b"walk".to_vec()];
+            assert_eq!(lemmas, expected);
+        }
+
+        #[test]
+        fn test_match_iter_ordered() {
+            let (_dir, paths) = create_test_files(&[
+                ("a.conllu", "1\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
+                ("b.conllu", "1\tsleeps\tsleep\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
+            ]);
+
+            let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
+            let treebank = Treebank::from_paths(paths);
+            let results: Vec<_> = treebank.match_iter(pattern, true).collect();
+
+            assert_eq!(results.len(), 2);
+        }
+
+        #[test]
+        fn test_match_iter_unordered() {
+            let (_dir, paths) = create_test_files(&[
+                ("a.conllu", "1\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
+                ("b.conllu", "1\tsleeps\tsleep\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
+            ]);
+
+            let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
+            let treebank = Treebank::from_paths(paths);
+            let results: Vec<_> = treebank.match_iter(pattern, false).collect();
+
+            // Should get all matches, order doesn't matter
             assert_eq!(results.len(), 2);
         }
 
