@@ -1,6 +1,6 @@
-# Tree & Word API Reference
+# Tree and Word classes
 
-Complete reference for Tree and Word objects.
+Classes for representing and navigating dependency trees.
 
 ## Tree
 
@@ -10,7 +10,7 @@ Represents a dependency tree (parsed sentence) from a CoNLL-U file.
 
 #### sentence_text
 
-Reconstructed sentence text.
+Reconstructed sentence text from CoNLL-U metadata.
 
 ```python
 tree.sentence_text -> str | None
@@ -18,7 +18,7 @@ tree.sentence_text -> str | None
 
 **Returns:**
 
-- Sentence text if available from CoNLL-U metadata, None otherwise
+- Sentence text if available from CoNLL-U `# text =` comment, None otherwise
 
 **Example:**
 
@@ -45,8 +45,9 @@ tree.metadata -> dict[str, str]
 **Example:**
 
 ```python
-print(tree.metadata)
-# {'sent_id': '1', 'text': 'Hello world.'}
+for tree in treesearch.read_trees("corpus.conllu"):
+    if 'sent_id' in tree.metadata:
+        print(f"Sentence {tree.metadata['sent_id']}: {tree.sentence_text}")
 ```
 
 ---
@@ -63,7 +64,7 @@ tree.get_word(id: int) -> Word | None
 
 **Parameters:**
 
-- `id` (int): Word index (0-based)
+- `id` (int) - Word index (0-based)
 
 **Returns:**
 
@@ -72,10 +73,18 @@ tree.get_word(id: int) -> Word | None
 **Example:**
 
 ```python
-word = tree.get_word(3)
-if word:
-    print(f"{word.form} ({word.pos})")
+for tree, match in treesearch.search_file("corpus.conllu", pattern):
+    verb = tree.get_word(match["V"])
+    if verb:
+        print(f"{verb.form} ({verb.pos})")
 ```
+
+**Notes:**
+
+- Word IDs are 0-based indices into the tree
+- Returns None if ID is out of range
+
+**See also:** Word properties and methods
 
 ---
 
@@ -89,23 +98,39 @@ tree.find_path(x: Word, y: Word) -> list[Word] | None
 
 **Parameters:**
 
-- `x` (Word): Starting word
-- `y` (Word): Target word
+- `x` (Word) - Starting word
+- `y` (Word) - Target word
 
 **Returns:**
 
-- List of words forming the path from x to y, or None if no path exists
+- List of words forming the dependency path from x to y, or None if no path exists
 
 **Example:**
 
 ```python
-verb = tree.get_word(match["V"])
-noun = tree.get_word(match["N"])
+pattern = treesearch.parse_query("""
+    MATCH {
+        V [upos="VERB"];
+        N [upos="NOUN"];
+        V -[obj]-> N;
+    }
+""")
 
-path = tree.find_path(verb, noun)
-if path:
-    print(" -> ".join(w.form for w in path))
+for tree, match in treesearch.search_file("corpus.conllu", pattern):
+    verb = tree.get_word(match["V"])
+    noun = tree.get_word(match["N"])
+
+    path = tree.find_path(verb, noun)
+    if path:
+        path_str = " -> ".join(f"{w.form}({w.deprel})" for w in path)
+        print(f"Path: {path_str}")
 ```
+
+**Notes:**
+
+- Path includes both start and end words
+- Returns None if words are in disconnected components
+- Path follows dependency edges (not linear word order)
 
 ---
 
@@ -119,12 +144,13 @@ len(tree) -> int
 
 **Returns:**
 
-- Number of words (including root)
+- Number of words in the tree
 
 **Example:**
 
 ```python
-print(f"Tree has {len(tree)} words")
+for tree in treesearch.read_trees("corpus.conllu"):
+    print(f"Sentence has {len(tree)} words: {tree.sentence_text}")
 ```
 
 ---
@@ -135,7 +161,7 @@ Represents a single word (node) in a dependency tree.
 
 ### Properties
 
-All properties are read-only attributes.
+All properties are read-only.
 
 #### id
 
@@ -145,6 +171,15 @@ Word ID (0-based index in tree).
 word.id -> int
 ```
 
+**Example:**
+
+```python
+verb = tree.get_word(match["V"])
+print(f"Verb at position {verb.id}")
+```
+
+---
+
 #### token_id
 
 Token ID from CoNLL-U file (1-based).
@@ -152,6 +187,14 @@ Token ID from CoNLL-U file (1-based).
 ```python
 word.token_id -> int
 ```
+
+**Notes:**
+
+- Corresponds to the first column in CoNLL-U format
+- 1-based indexing (first word is 1, not 0)
+- Use `word.id` for accessing words via `tree.get_word()`
+
+---
 
 #### form
 
@@ -164,8 +207,12 @@ word.form -> str
 **Example:**
 
 ```python
-print(word.form)  # "running"
+for tree, match in treesearch.search_file("corpus.conllu", pattern):
+    verb = tree.get_word(match["V"])
+    print(f"Found verb: {verb.form}")
 ```
+
+---
 
 #### lemma
 
@@ -178,8 +225,13 @@ word.lemma -> str
 **Example:**
 
 ```python
-print(word.lemma)  # "run"
+for tree, match in treesearch.search_file("corpus.conllu", pattern):
+    verb = tree.get_word(match["V"])
+    print(f"{verb.form} -> {verb.lemma}")
+    # Output: "running -> run"
 ```
+
+---
 
 #### pos
 
@@ -192,12 +244,21 @@ word.pos -> str
 **Example:**
 
 ```python
-print(word.pos)  # "VERB"
+verb = tree.get_word(match["V"])
+if verb.pos == "VERB":
+    print(f"Confirmed verb: {verb.form}")
 ```
+
+**Notes:**
+
+- Returns the Universal Dependencies UPOS tag
+- See [Universal POS tags](https://universaldependencies.org/u/pos/) for tag list
+
+---
 
 #### xpos
 
-Language-specific POS tag (XPOS field).
+Language-specific POS tag (XPOS field in CoNLL-U).
 
 ```python
 word.xpos -> str | None
@@ -205,14 +266,23 @@ word.xpos -> str | None
 
 **Returns:**
 
-- XPOS tag, or None if unspecified (`_`)
+- XPOS tag string, or None if unspecified (`_` in CoNLL-U)
 
 **Example:**
 
 ```python
-if word.xpos:
-    print(word.xpos)  # "VBG"
+verb = tree.get_word(match["V"])
+if verb.xpos:
+    print(f"{verb.pos} (language-specific: {verb.xpos})")
+    # Output: "VERB (language-specific: VBG)"
 ```
+
+**Notes:**
+
+- Tag set varies by language and treebank
+- Returns None when CoNLL-U has `_` in XPOS field
+
+---
 
 #### deprel
 
@@ -225,8 +295,18 @@ word.deprel -> str
 **Example:**
 
 ```python
-print(word.deprel)  # "nsubj"
+for child in verb.children():
+    print(f"{child.form}: {child.deprel}")
+    # Output: "quickly: advmod"
+    # Output: "ball: obj"
 ```
+
+**Notes:**
+
+- See [Universal Dependencies relations](https://universaldependencies.org/u/dep/) for relation types
+- Root words typically have `deprel="root"`
+
+---
 
 #### head
 
@@ -238,14 +318,20 @@ word.head -> int | None
 
 **Returns:**
 
-- Parent word ID, or None for root words
+- Parent word ID (0-based), or None for root words
 
 **Example:**
 
 ```python
+word = tree.get_word(5)
 if word.head is not None:
     parent = tree.get_word(word.head)
+    print(f"{word.form} is child of {parent.form}")
+else:
+    print(f"{word.form} is root")
 ```
+
+**See also:** parent()
 
 ---
 
@@ -266,12 +352,15 @@ word.parent() -> Word | None
 **Example:**
 
 ```python
+word = tree.get_word(match["N"])
 parent = word.parent()
 if parent:
-    print(f"{word.form} is child of {parent.form}")
+    print(f"{word.form} ({word.deprel}) <- {parent.form}")
 else:
     print(f"{word.form} is root")
 ```
+
+**See also:** children(), head
 
 ---
 
@@ -290,9 +379,14 @@ word.children() -> list[Word]
 **Example:**
 
 ```python
-for child in word.children():
+verb = tree.get_word(match["V"])
+for child in verb.children():
     print(f"{child.form} ({child.deprel})")
+# Output: "quickly (advmod)"
+# Output: "ball (obj)"
 ```
+
+**See also:** children_by_deprel(), parent()
 
 ---
 
@@ -306,30 +400,42 @@ word.children_by_deprel(deprel: str) -> list[Word]
 
 **Parameters:**
 
-- `deprel` (str): Dependency relation name (e.g., "nsubj", "obj")
+- `deprel` (str) - Dependency relation name (e.g., `"nsubj"`, `"obj"`)
 
 **Returns:**
 
 - List of child Word objects with the specified deprel (may be empty)
-- Returns an empty list if the word has no children or no children matching the relation
 
 **Example:**
 
 ```python
-# Get all objects of a verb
-objects = verb.children_by_deprel("obj")
-for obj in objects:
-    print(f"Object: {obj.form}")
+pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
 
-# Get subject
-subjects = verb.children_by_deprel("nsubj")
-if subjects:
-    print(f"Subject: {subjects[0].form}")
+for tree, match in treesearch.search_file("corpus.conllu", pattern):
+    verb = tree.get_word(match["V"])
 
-# Check for existence efficiently
-if verb.children_by_deprel("xcomp"):
-    print("Verb has an xcomp dependent")
+    # Get subjects
+    subjects = verb.children_by_deprel("nsubj")
+    if subjects:
+        print(f"Subject: {subjects[0].form}")
+
+    # Get objects
+    objects = verb.children_by_deprel("obj")
+    for obj in objects:
+        print(f"Object: {obj.form}")
+
+    # Check for passive auxiliary
+    if verb.children_by_deprel("aux:pass"):
+        print("Passive construction")
 ```
+
+**Notes:**
+
+- Returns empty list if no children match the relation
+- More efficient than filtering results from `children()`
+- Useful for checking existence: `if word.children_by_deprel("xcomp"):`
+
+**See also:** children()
 
 ---
 
@@ -341,74 +447,132 @@ List of child word IDs (0-based indices).
 word.children_ids -> list[int]
 ```
 
+**Returns:**
+
+- List of child word IDs
+
 **Example:**
 
 ```python
-print(word.children_ids)  # [4, 7, 9]
+verb = tree.get_word(match["V"])
+print(f"Children at positions: {verb.children_ids}")
+# Output: "Children at positions: [3, 7, 9]"
 ```
+
+**Notes:**
+
+- Returns IDs, not Word objects
+- Use `tree.get_word(id)` to get Word objects
+- More efficient than `children()` if you only need IDs
 
 ---
 
-## Common Patterns
+## Examples
 
-### Iterating Through a Tree
+### Navigating dependency structure
+
+```python
+# Find verbs with subjects and objects
+pattern = treesearch.parse_query("""
+    MATCH {
+        V [upos="VERB"];
+        Subj [upos="NOUN"];
+        Obj [upos="NOUN"];
+        V <-[nsubj]- Subj;
+        V -[obj]-> Obj;
+    }
+""")
+
+for tree, match in treesearch.search_file("corpus.conllu", pattern):
+    verb = tree.get_word(match["V"])
+    subj = tree.get_word(match["Subj"])
+    obj = tree.get_word(match["Obj"])
+
+    print(f"{subj.form} {verb.form} {obj.form}")
+    print(f"Sentence: {tree.sentence_text}")
+```
+
+### Exploring tree structure
 
 ```python
 for tree in treesearch.read_trees("corpus.conllu"):
+    # Iterate through all words
     for word_id in range(len(tree)):
         word = tree.get_word(word_id)
         if word:
-            print(f"{word.form}: {word.pos}")
+            # Show word and its parent
+            parent = word.parent()
+            if parent:
+                print(f"{word.form} -> {parent.form} ({word.deprel})")
+            else:
+                print(f"{word.form} (root)")
 ```
 
-### Finding Specific Relations
+### Analyzing argument structure
 
 ```python
+pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
+
 for tree, match in treesearch.search_file("corpus.conllu", pattern):
     verb = tree.get_word(match["V"])
 
-    # Get all children
-    for child in verb.children():
-        print(f"Dependent: {child.form} ({child.deprel})")
-
-    # Get specific relation
+    # Get all dependents by type
     subjects = verb.children_by_deprel("nsubj")
     objects = verb.children_by_deprel("obj")
+    indirect_objects = verb.children_by_deprel("iobj")
+    clausal_complements = verb.children_by_deprel("xcomp")
+
+    # Analyze valency
+    print(f"Verb: {verb.lemma}")
+    print(f"  Subjects: {len(subjects)}")
+    print(f"  Objects: {len(objects)}")
+    print(f"  Clausal complements: {len(clausal_complements)}")
 ```
 
-### Navigating Tree Structure
+### Finding paths between words
 
 ```python
-word = tree.get_word(5)
+# Find control constructions (help + to-infinitive)
+pattern = treesearch.parse_query("""
+    MATCH {
+        Main [lemma="help"];
+        Inf [upos="VERB"];
+        Main -[xcomp]-> Inf;
+    }
+""")
 
-# Go up
-parent = word.parent()
-if parent:
-    grandparent = parent.parent()
+for tree, match in treesearch.search_file("corpus.conllu", pattern):
+    main = tree.get_word(match["Main"])
+    inf = tree.get_word(match["Inf"])
 
-# Go down
-for child in word.children():
-    for grandchild in child.children():
-        print(grandchild.form)
+    # Find path between main verb and infinitive
+    path = tree.find_path(main, inf)
+    if path:
+        path_forms = " -> ".join(w.form for w in path)
+        print(f"Path: {path_forms}")
 ```
 
-### Accessing Sentence Information
+### Accessing metadata
 
 ```python
 for tree in treesearch.read_trees("corpus.conllu"):
-    # Get sentence text
-    print(f"Sentence: {tree.sentence_text}")
+    # Get sentence metadata
+    sent_id = tree.metadata.get('sent_id', 'unknown')
+    text = tree.sentence_text or "no text"
 
-    # Get metadata
-    if 'sent_id' in tree.metadata:
-        print(f"ID: {tree.metadata['sent_id']}")
+    # Count words by POS
+    pos_counts = {}
+    for word_id in range(len(tree)):
+        word = tree.get_word(word_id)
+        if word:
+            pos_counts[word.pos] = pos_counts.get(word.pos, 0) + 1
 
-    # Get word count
-    print(f"Words: {len(tree)}")
+    print(f"Sentence {sent_id}: {text}")
+    print(f"POS distribution: {pos_counts}")
 ```
 
-## Next Steps
+## See also
 
-- [Functions API](functions.md) - Search and read functions
-- [Pattern API](pattern.md) - Pattern object reference
-- [Working with Results](../guide/results.md) - Practical examples
+- [Treebank](treebank.md) - Treebank class for collections of trees
+- [Functions](functions.md) - Functions for reading and searching
+- [Pattern](pattern.md) - Pattern class for compiled queries
