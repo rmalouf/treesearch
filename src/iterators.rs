@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::sync_channel;
 use std::thread;
+use crossbeam_channel::bounded;
 
 /// Source of trees for a collection
 #[derive(Debug, Clone)]
@@ -205,7 +206,7 @@ impl Treebank {
         if ordered {
             // Ordered mode: maintain deterministic ordering via chunking
             // Smaller chunks (2 files) improve load balancing for heterogeneous file sizes
-            let (tx, rx) = sync_channel(64); // larger buffer for better pipelining
+            let (tx, rx) = crossbeam_channel::bounded(5000); // larger buffer for better pipelining
 
             thread::spawn(move || match self.source {
                 TreeSource::String(text) => {
@@ -219,36 +220,38 @@ impl Treebank {
                 }
                 TreeSource::Files(paths) => {
                     for chunk in paths.chunks(2) {
-                        let results: Vec<_> = chunk
+                        // 1) compute per-path results in parallel, but keep them grouped by path
+                        let per_path: Vec<Vec<_>> = chunk
                             .par_iter()
-                            .flat_map_iter(|path| {
-                                TreeIterator::from_file(path)
-                                    .map_err(|e| {
+                            .map(|path| {
+                                let it = match TreeIterator::from_file(path) {
+                                    Ok(it) => it,
+                                    Err(e) => {
                                         eprintln!("Error: {:?}", e);
-                                    })
-                                    .ok()
-                                    .into_iter()
-                                    .flatten()
+                                        return Vec::new();
+                                    }
+                                };
+
+                                it.filter_map(Result::ok)                 // drop bad trees, keep order
+                                    .flat_map(|tree| search(tree, &pattern)) // search yields matches in order
+                                    .collect::<Vec<_>>()                  // per-file ordered vec
                             })
-                            .flat_map_iter(|result| {
-                                result
-                                    .ok()
-                                    .into_iter()
-                                    .flat_map(|tree| search(tree, &pattern))
-                            })
-                            .collect();
-                        for m in results {
+                            .collect(); // for slices, Rayon collects in the original order of `chunk`
+
+                        // 2) send in deterministic order: path order, then match order within each path
+                        for m in per_path.into_iter().flatten() {
                             if tx.send(m).is_err() {
                                 return;
                             }
                         }
                     }
                 }
+
             });
             rx.into_iter()
         } else {
             // Unordered mode: maximum concurrency by performing search in parallel workers
-            let (tx, rx) = sync_channel(10000); // larger buffer for higher throughput
+            let (tx, rx) = crossbeam_channel::bounded::<Match>(5000);; // larger buffer for higher throughput
 
             thread::spawn(move || match self.source {
                 TreeSource::String(text) => {
@@ -261,7 +264,6 @@ impl Treebank {
                     }
                 }
                 TreeSource::Files(paths) => {
-                    // Simple file-level parallelism - rayon's work-stealing is very efficient
                     paths.par_iter().for_each(|path| {
                         let tx = tx.clone();
                         if let Ok(reader) = TreeIterator::from_file(path) {

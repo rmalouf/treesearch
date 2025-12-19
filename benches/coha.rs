@@ -5,7 +5,7 @@ use treesearch::conllu::TreeIterator;
 use treesearch::{Treebank, parse_query};
 
 #[global_allocator]
-// static ALLOC: AllocProfiler = AllocProfiler::system();
+static ALLOC: AllocProfiler = AllocProfiler::system();
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 // static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
@@ -124,7 +124,7 @@ fn match_iter_ordered_multi(bencher: Bencher) {
     });
 }
 
-#[divan::bench(sample_count = 1)]
+#[divan::bench(sample_count = 3)]
 fn match_iter_unordered_multi(bencher: Bencher) {
     let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
     let treebank =
