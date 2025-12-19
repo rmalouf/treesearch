@@ -1,12 +1,12 @@
 # Treesearch
 
-A high-performance toolkit for querying linguistic dependency parses at scale.
+Pattern matching for dependency treebanks.
 
-> **⚠️ Early Stage**: This project is under active development. The API and query language **will** change as we refine the design. Feedback and contributions are welcome!
+> **⚠️ Early Stage**: This project is under active development. The API and query language **will** change as we refine the design.
 
 ## Overview
 
-Treesearch enables structural pattern matching over dependency parse trees, designed for corpus linguistics research on large treebanks. Key features:
+Treesearch finds syntactic patterns in dependency-parsed corpora. It reads treebanks in CoNLL-U format and returns all sentences matching a specified structural pattern. Designed for corpus linguistics research on large treebanks with automatic parallel processing for multi-file operations.
 
 ## Installation
 
@@ -27,149 +27,64 @@ pip install maturin
 maturin develop
 ```
 
-## Quick Start
+## Quick Example
+
+Find passive constructions in an English treebank:
 
 ```python
 import treesearch
 
-# Define a pattern
+# Parse a pattern for passive voice
 pattern = treesearch.parse_query("""
     MATCH {
-        Verb [upos="VERB"];
-        Noun [upos="NOUN"];
-        Verb -[nsubj]-> Noun;
+        V [upos="VERB"];
+        Aux [lemma="be"];
+        V <-[aux:pass]- Aux;
     }
 """)
 
-# Open a treebank (single file or glob pattern)
-treebank = treesearch.open("corpus.conllu")
+# Search a single file
+for tree, match in treesearch.search_file("corpus.conllu", pattern):
+    verb = tree.get_word(match["V"])
+    print(f"{verb.form}: {tree.sentence_text}")
+```
 
-# Search for matches
-for tree, match in treebank.matches(pattern):
-    verb = tree.get_word(match["Verb"])
-    noun = tree.get_word(match["Noun"])
-    print(f"{verb.form} has subject {noun.form}")
+Search multiple files with automatic parallel processing:
 
-# Multiple files with automatic parallel processing
+```python
+# Glob pattern for multiple files
 treebank = treesearch.open("data/*.conllu")
 for tree, match in treebank.matches(pattern):
-    verb = tree.get_word(match["Verb"])
-    print(f"Found: {verb.form}")
-
-# Or use convenience functions
-for tree, match in treesearch.search_file("corpus.conllu", pattern):
-    verb = tree.get_word(match["Verb"])
-    print(f"Found: {verb.form}")
+    verb = tree.get_word(match["V"])
+    print(f"{verb.form}: {tree.sentence_text}")
 ```
 
-## Query Language
+## Pattern Language
 
-### Node Constraints
-
-Declare pattern variables with constraints on word properties:
+Patterns specify structural constraints on dependency trees:
 
 ```
 MATCH {
-    Verb [upos="VERB", lemma="be"];
-    Noun [upos="NOUN"];
-    Adj [upos="ADJ"];
+    Verb [upos="VERB", lemma="help"];
+    Obj [upos="NOUN"];
+    Verb -[obj]-> Obj;
 }
 ```
 
-**Available constraints:**
-- `upos="VERB"` - Universal POS tag
-- `xpos="VBD"` - Language-specific POS tag
-- `lemma="run"` - Lemma
-- `form="running"` - Surface form
-- `deprel="nsubj"` - Dependency relation
-- `feats.Tense="Past"` - Morphological features
+**Node constraints**: `upos`, `xpos`, `lemma`, `form`, `deprel`, `feats.*` (morphological features)
 
-### Edge Constraints
+**Edge constraints**: `->` (child), `<-` (parent), `-[label]->` (labeled edge), `!->` (negative)
 
-Specify structural relationships between nodes:
-
-```
-MATCH {
-    Verb [upos="VERB"];
-    Noun [upos="NOUN"];
-
-    # Verb has child Noun with nsubj relation
-    Verb -[nsubj]-> Noun;
-
-    # Any child relationship
-    Verb -> Noun;
-}
-```
-
-### Negative Constraints
-
-Specify edges that must NOT exist:
-
-```
-MATCH {
-    V [upos="VERB"];
-    Obj [];
-
-    # V does NOT have an obj edge to Obj
-    V !-[obj]-> Obj;
-
-    # V does NOT have any child
-    V !-> Obj;
-}
-```
-
-### Feature Constraints
-
-Query morphological features using dotted notation:
-
-```
-MATCH {
-    # Past tense verb
-    Verb [feats.Tense="Past"];
-}
-```
-
-```
-MATCH {
-    # Plural nominative noun
-    Noun [feats.Number="Plur", feats.Case="Nom"];
-}
-```
-
-```
-MATCH {
-    # Combine with other constraints
-    Be [lemma="be", upos="VERB", feats.Tense="Past"];
-}
-```
-
-Feature constraints use exact string matching (case-sensitive) and return no match if the feature is not present.
-
-## API Reference
-
-See [API.md](API.md) for complete Python API documentation, including:
-- Function reference
-- Iterator interfaces
-- Tree and Word objects
-- Error handling
-- Performance tips
+**Precedence**: `<` (immediately precedes), `<<` (precedes)
 
 ## Data Format
 
-Treesearch reads dependency trees in [CoNLL-U format](https://universaldependencies.org/format.html), the standard format for Universal Dependencies treebanks. Files can be plain text (`.conllu`) or gzip-compressed (`.conllu.gz`).
+Reads treebanks in [CoNLL-U format](https://universaldependencies.org/format.html). Supports plain text (`.conllu`) and gzip-compressed files (`.conllu.gz`) with automatic decompression.
 
-**Tip**: Use gzipped files (`.conllu.gz`) to reduce I/O time and save disk space. Decompression is automatic and transparent—no code changes needed.
+## Documentation
 
-## Contributing & Feedback
-
-This project is in early development and we welcome feedback! If you:
-
-- Find a bug or unexpected behavior
-- Have suggestions for the query language
-- Want to request a feature
-- Have questions about usage
-
-Please [open an issue](https://github.com/rmalouf/treesearch/issues) on GitHub.
+- [API.md](API.md) - Complete Python API reference
+- [GitHub repository](https://github.com/rmalouf/treesearch) - Source code and issue tracker
 
 ## License
 
