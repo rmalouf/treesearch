@@ -1,22 +1,16 @@
-# Pattern API Reference
+# Pattern class
 
-Complete reference for Pattern objects.
+Compiled query pattern for tree matching.
 
-## Pattern
+## Overview
 
-A compiled query pattern for tree matching. Created by `parse_query()` and used with search functions.
+Pattern objects represent compiled queries created by `parse_query()`. Patterns are opaque, reusable, and thread-safe objects used with search functions to find matches in dependency trees.
 
-### Overview
+Patterns should be compiled once and reused across multiple searches for best performance.
 
-Patterns are opaque objects that represent compiled queries. They should be:
+## Properties
 
-- Created once with `parse_query()`
-- Reused across multiple searches
-- Treated as immutable
-
-### Properties
-
-#### n_vars
+### n_vars
 
 Number of variables in the pattern.
 
@@ -32,76 +26,144 @@ pattern.n_vars -> int
 
 ```python
 pattern = treesearch.parse_query("""
-MATCH {
-    V [upos="VERB"];
-    N [upos="NOUN"];
-    V -[obj]-> N;
-}
+    MATCH {
+        V [upos="VERB"];
+        N [upos="NOUN"];
+        Aux [lemma="be"];
+        V -[obj]-> N;
+        V <-[aux]- Aux;
+    }
 """)
 
-print(pattern.n_vars)  # 2
+print(f"Pattern has {pattern.n_vars} variables")
+# Output: "Pattern has 3 variables"
 ```
+
+**Notes:**
+
+- Useful for understanding pattern complexity
+- Each variable must be assigned to a different word during matching
 
 ---
 
-## Creating Patterns
+## Creating patterns
 
-Use `parse_query()` to create patterns:
+Patterns are created using the `parse_query()` function:
 
 ```python
 pattern = treesearch.parse_query(query_string)
 ```
 
-See [parse_query()](functions.md#parse_query) for details.
+**Example:**
+
+```python
+# Simple pattern
+pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
+
+# Complex pattern with multiple constraints
+pattern = treesearch.parse_query("""
+    MATCH {
+        V [upos="VERB"];
+        Subj [upos="NOUN"];
+        Obj [upos="NOUN"];
+        V <-[nsubj]- Subj;
+        V -[obj]-> Obj;
+    }
+""")
+```
+
+**See also:** [parse_query()](functions.md#parse_query)
 
 ---
 
-## Using Patterns
+## Using patterns
 
-Patterns are used with search functions:
+Patterns are used with search functions and methods.
 
 ### With search()
 
+Search a single tree.
+
 ```python
 for match in treesearch.search(tree, pattern):
-    # Process matches
-    pass
+    # Process match
+    verb = tree.get_word(match["V"])
 ```
 
-### With search_file()
-
-```python
-for tree, match in treesearch.search_file("file.conllu", pattern):
-    # Process matches
-    pass
-```
-
-### With search_files()
-
-```python
-for tree, match in treesearch.search_files("*.conllu", pattern):
-    # Process matches
-    pass
-```
+**See also:** [search()](functions.md#search)
 
 ---
 
-## Pattern Reuse
+### With search_file()
 
-**Best practice:** Compile patterns once, use many times.
+Search a single CoNLL-U file.
 
 ```python
-# Good: Compile once
-pattern = treesearch.parse_query(query)
+for tree, match in treesearch.search_file("corpus.conllu", pattern):
+    # Process match
+    verb = tree.get_word(match["V"])
+```
 
-for file in files:
+**See also:** [search_file()](functions.md#search_file)
+
+---
+
+### With search_files()
+
+Search multiple CoNLL-U files with automatic parallel processing.
+
+```python
+for tree, match in treesearch.search_files("data/*.conllu", pattern):
+    # Process match
+    verb = tree.get_word(match["V"])
+```
+
+**See also:** [search_files()](functions.md#search_files)
+
+---
+
+### With Treebank.matches()
+
+Search a treebank using the object-oriented API.
+
+```python
+tb = treesearch.Treebank.from_glob("data/*.conllu")
+for tree, match in tb.matches(pattern):
+    # Process match
+    verb = tree.get_word(match["V"])
+```
+
+**See also:** [Treebank.matches()](treebank.md#matches)
+
+---
+
+## Pattern reuse
+
+Compile patterns once and reuse them across multiple searches.
+
+### Best practice
+
+```python
+# Compile once
+pattern = treesearch.parse_query("""
+    MATCH {
+        V [upos="VERB"];
+        N [upos="NOUN"];
+        V -[obj]-> N;
+    }
+""")
+
+# Reuse across files
+for file in file_list:
     for tree, match in treesearch.search_file(file, pattern):
         process(match)
 ```
 
+### Anti-pattern
+
 ```python
 # Bad: Re-compiling every iteration
-for file in files:
+for file in file_list:
     pattern = treesearch.parse_query(query)  # Wasteful!
     for tree, match in treesearch.search_file(file, pattern):
         process(match)
@@ -109,11 +171,11 @@ for file in files:
 
 ---
 
-## Pattern Properties
+## Pattern properties
 
-### Thread Safety
+### Thread safety
 
-Patterns are thread-safe and can be shared across threads:
+Patterns are thread-safe and can be shared across threads.
 
 ```python
 from concurrent.futures import ThreadPoolExecutor
@@ -127,19 +189,23 @@ with ThreadPoolExecutor() as executor:
     results = executor.map(search_file, file_paths)
 ```
 
+---
+
 ### Immutability
 
-Patterns cannot be modified after creation:
+Patterns cannot be modified after creation.
 
 ```python
-pattern = treesearch.parse_query("MATCH { V [upos='VERB']; }")
+pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
 # No way to change constraints or add variables
 # Must create new pattern instead
 ```
 
-### Memory
+---
 
-Patterns are lightweight and cheap to clone:
+### Memory efficiency
+
+Patterns are lightweight and cheap to clone.
 
 ```python
 pattern1 = treesearch.parse_query(query)
@@ -150,61 +216,116 @@ pattern2 = pattern1  # Shares underlying data
 
 ## Examples
 
-### Simple Pattern
+### Passive constructions
 
 ```python
-pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
-print(f"Pattern has {pattern.n_vars} variable(s)")  # 1
+passive = treesearch.parse_query("""
+    MATCH {
+        V [upos="VERB"];
+        Aux [lemma="be"];
+        V <-[aux:pass]- Aux;
+    }
+""")
+
+print(f"Searching for {passive.n_vars} variables")
+
+for tree, match in treesearch.search_file("corpus.conllu", passive):
+    verb = tree.get_word(match["V"])
+    print(f"Passive: {tree.sentence_text}")
 ```
 
-### Complex Pattern
+### Control verbs
 
 ```python
-query = """
-MATCH {
-    Main [upos="VERB"];
-    Aux [lemma="have"];
-    Comp [upos="VERB"];
-    Main <-[aux]- Aux;
-    Main -[xcomp]-> Comp;
-}
-"""
+help_infinitive = treesearch.parse_query("""
+    MATCH {
+        Main [lemma="help"];
+        Inf [upos="VERB"];
+        Main -[xcomp]-> Inf;
+    }
+""")
 
-pattern = treesearch.parse_query(query)
-print(f"Pattern has {pattern.n_vars} variables")  # 3
+for tree, match in treesearch.search_files("data/*.conllu", help_infinitive):
+    main = tree.get_word(match["Main"])
+    inf = tree.get_word(match["Inf"])
+    print(f"{main.form} ... {inf.form}: {tree.sentence_text}")
 ```
 
-### Checking Pattern Validity
+### Relative clauses
+
+```python
+relative = treesearch.parse_query("""
+    MATCH {
+        Head [upos="NOUN"];
+        Rel [upos="PRON"];
+        V [upos="VERB"];
+        Head -[acl:relcl]-> V;
+        V <-[nsubj]- Rel;
+    }
+""")
+
+tb = treesearch.Treebank.from_glob("data/*.conllu")
+for tree, match in tb.matches(relative):
+    head = tree.get_word(match["Head"])
+    rel = tree.get_word(match["Rel"])
+    verb = tree.get_word(match["V"])
+    print(f"{head.form} {rel.form} {verb.form}")
+```
+
+### Checking pattern validity
 
 ```python
 try:
-    pattern = treesearch.parse_query("MATCH { V [invalid] }")
+    pattern = treesearch.parse_query("MATCH { V [invalid syntax] }")
 except ValueError as e:
     print(f"Invalid query: {e}")
 ```
 
 ---
 
-## Pattern Compilation
+## Pattern compilation
 
-When you call `parse_query()`, treesearch:
+When you call `parse_query()`, treesearch performs several steps:
 
-1. **Parses** the query string into an AST
-2. **Validates** variable names and constraints
-3. **Optimizes** the search order (MRV heuristic)
-4. **Compiles** into an efficient internal representation
+1. **Parsing** - Converts query string into an abstract syntax tree
+2. **Validation** - Checks variable names and constraint syntax
+3. **Optimization** - Determines efficient variable ordering using MRV heuristic
+4. **Compilation** - Creates internal representation for constraint satisfaction
 
 The compiled pattern contains:
 
-- Variable definitions and constraints
-- Edge constraints (dependency and precedence)
-- Optimized variable ordering for search
+- Variable definitions and constraints (lemma, form, POS, deprel)
+- Edge constraints (dependency relations and precedence)
+- Optimized variable ordering for search efficiency
 - Precomputed constraint checks
 
 ---
 
-## Next Steps
+## Error handling
 
-- [Functions API](functions.md) - Using patterns with search functions
-- [Query Language](../guide/query-language.md) - Writing queries
-- [Searching Guide](../guide/searching.md) - Search strategies
+Pattern compilation can fail with `ValueError` for invalid queries.
+
+```python
+try:
+    pattern = treesearch.parse_query("MATCH { V [upos='VERB' }")  # Missing ]
+except ValueError as e:
+    print(f"Parse error: {e}")
+
+try:
+    pattern = treesearch.parse_query("MATCH { V [nosuchfield='X']; }")
+except ValueError as e:
+    print(f"Invalid constraint: {e}")
+```
+
+**See also:** [Query language guide](../guide/query-language.md)
+
+---
+
+## See also
+
+- [parse_query()](functions.md#parse_query) - Creating patterns
+- [Query language](../guide/query-language.md) - Query syntax reference
+- [search()](functions.md#search) - Using patterns with single trees
+- [search_file()](functions.md#search_file) - Using patterns with files
+- [search_files()](functions.md#search_files) - Using patterns with multiple files
+- [Treebank](treebank.md) - Object-oriented pattern search
