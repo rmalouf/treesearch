@@ -11,10 +11,14 @@ use crate::searcher::{Match, search};
 use crate::tree::Tree;
 use rayon::prelude::*;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::mpsc::sync_channel;
 use std::thread;
-use crossbeam_channel::bounded;
+
+/// Batch size for sending matches through channels
+const MATCH_BATCH_SIZE: usize = 500;
+
+/// Channel buffer size (in batches)
+const CHANNEL_BUFFER_SIZE: usize = 100;
 
 /// Source of trees for a collection
 #[derive(Debug, Clone)]
@@ -206,20 +210,28 @@ impl Treebank {
         if ordered {
             // Ordered mode: maintain deterministic ordering via chunking
             // Smaller chunks (2 files) improve load balancing for heterogeneous file sizes
-            let (tx, rx) = crossbeam_channel::bounded(5000); // larger buffer for better pipelining
+            let (tx, rx) = crossbeam_channel::bounded(CHANNEL_BUFFER_SIZE); // batches, not individual matches
 
             thread::spawn(move || match self.source {
                 TreeSource::String(text) => {
+                    let mut batch = Vec::with_capacity(MATCH_BATCH_SIZE);
                     for tree in TreeIterator::from_string(&text).filter_map(|result| result.ok()) {
                         for m in search(tree, &pattern) {
-                            if tx.send(m).is_err() {
-                                return;
+                            batch.push(m);
+                            if batch.len() >= MATCH_BATCH_SIZE {
+                                if tx.send(batch).is_err() {
+                                    return;
+                                }
+                                batch = Vec::with_capacity(MATCH_BATCH_SIZE);
                             }
                         }
                     }
+                    if !batch.is_empty() {
+                        let _ = tx.send(batch);
+                    }
                 }
                 TreeSource::Files(paths) => {
-                    for chunk in paths.chunks(2) {
+                    for chunk in paths.chunks(4) {
                         // 1) compute per-path results in parallel, but keep them grouped by path
                         let per_path: Vec<Vec<_>> = chunk
                             .par_iter()
@@ -238,9 +250,9 @@ impl Treebank {
                             })
                             .collect(); // for slices, Rayon collects in the original order of `chunk`
 
-                        // 2) send in deterministic order: path order, then match order within each path
-                        for m in per_path.into_iter().flatten() {
-                            if tx.send(m).is_err() {
+                        // 2) send batches in deterministic order: path order, then match order within each path
+                        for batch in per_path {
+                            if !batch.is_empty() && tx.send(batch).is_err() {
                                 return;
                             }
                         }
@@ -248,36 +260,52 @@ impl Treebank {
                 }
 
             });
-            rx.into_iter()
+            rx.into_iter().flatten()
         } else {
             // Unordered mode: maximum concurrency by performing search in parallel workers
-            let (tx, rx) = crossbeam_channel::bounded::<Match>(5000);; // larger buffer for higher throughput
+            let (tx, rx) = crossbeam_channel::bounded(CHANNEL_BUFFER_SIZE); // batches for higher throughput
 
             thread::spawn(move || match self.source {
                 TreeSource::String(text) => {
+                    let mut batch = Vec::with_capacity(MATCH_BATCH_SIZE);
                     for tree in TreeIterator::from_string(&text).filter_map(|result| result.ok()) {
                         for m in search(tree, &pattern) {
-                            if tx.send(m).is_err() {
-                                return;
+                            batch.push(m);
+                            if batch.len() >= MATCH_BATCH_SIZE {
+                                if tx.send(batch).is_err() {
+                                    return;
+                                }
+                                batch = Vec::with_capacity(MATCH_BATCH_SIZE);
                             }
                         }
+                    }
+                    if !batch.is_empty() {
+                        let _ = tx.send(batch);
                     }
                 }
                 TreeSource::Files(paths) => {
                     paths.par_iter().for_each(|path| {
                         let tx = tx.clone();
                         if let Ok(reader) = TreeIterator::from_file(path) {
+                            let mut batch = Vec::with_capacity(MATCH_BATCH_SIZE);
                             for result in reader {
                                 match result {
                                     Ok(tree) => {
                                         for m in search(tree, &pattern) {
-                                            if tx.send(m).is_err() {
-                                                return;
+                                            batch.push(m);
+                                            if batch.len() >= MATCH_BATCH_SIZE {
+                                                if tx.send(batch).is_err() {
+                                                    return;
+                                                }
+                                                batch = Vec::with_capacity(MATCH_BATCH_SIZE);
                                             }
                                         }
                                     }
                                     Err(e) => eprintln!("Error: {:?}", e),
                                 }
+                            }
+                            if !batch.is_empty() {
+                                let _ = tx.send(batch);
                             }
                         } else {
                             eprintln!("Failed to open file: {:?}", path);
@@ -285,7 +313,7 @@ impl Treebank {
                     });
                 }
             });
-            rx.into_iter()
+            rx.into_iter().flatten()
         }
     }
 }
