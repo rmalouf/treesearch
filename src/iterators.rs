@@ -11,8 +11,8 @@ use crate::searcher::{Match, search};
 use crate::tree::Tree;
 use rayon::prelude::*;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::sync_channel;
 use std::sync::Arc;
+use std::sync::mpsc::sync_channel;
 use std::thread;
 
 /// Source of trees for a collection
@@ -231,7 +231,10 @@ impl Treebank {
                                     .flatten()
                             })
                             .flat_map_iter(|result| {
-                                result.ok().into_iter().flat_map(|tree| search(tree, &pattern))
+                                result
+                                    .ok()
+                                    .into_iter()
+                                    .flat_map(|tree| search(tree, &pattern))
                             })
                             .collect();
                         for m in results {
@@ -313,7 +316,9 @@ mod tests {
 
     #[test]
     fn test_treebank_from_string() {
-        let trees: Vec<_> = Treebank::from_string(TWO_TREE_CONLLU).tree_iter(true).collect();
+        let trees: Vec<_> = Treebank::from_string(TWO_TREE_CONLLU)
+            .tree_iter(true)
+            .collect();
 
         assert_eq!(trees.len(), 2);
         assert_eq!(trees[0].words.len(), 3);
@@ -427,7 +432,10 @@ mod tests {
             ]);
 
             let pattern = format!("{}/*.conllu", dir.path().display());
-            let results: Vec<_> = Treebank::from_glob(&pattern).unwrap().tree_iter(true).collect();
+            let results: Vec<_> = Treebank::from_glob(&pattern)
+                .unwrap()
+                .tree_iter(true)
+                .collect();
 
             assert_eq!(results.len(), 2);
         }
@@ -490,7 +498,10 @@ mod tests {
         fn test_ordered_iteration_deterministic() {
             let (_dir, paths) = create_test_files(&[
                 ("a.conllu", "1\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
-                ("b.conllu", "1\tsleeps\tsleep\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
+                (
+                    "b.conllu",
+                    "1\tsleeps\tsleep\tVERB\tVBZ\t_\t0\troot\t_\t_\n",
+                ),
                 ("c.conllu", "1\twalks\twalk\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
             ]);
 
@@ -515,7 +526,10 @@ mod tests {
         fn test_unordered_iteration_completeness() {
             let (_dir, paths) = create_test_files(&[
                 ("a.conllu", "1\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
-                ("b.conllu", "1\tsleeps\tsleep\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
+                (
+                    "b.conllu",
+                    "1\tsleeps\tsleep\tVERB\tVBZ\t_\t0\troot\t_\t_\n",
+                ),
                 ("c.conllu", "1\twalks\twalk\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
             ]);
 
@@ -540,7 +554,10 @@ mod tests {
         fn test_match_iter_ordered() {
             let (_dir, paths) = create_test_files(&[
                 ("a.conllu", "1\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
-                ("b.conllu", "1\tsleeps\tsleep\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
+                (
+                    "b.conllu",
+                    "1\tsleeps\tsleep\tVERB\tVBZ\t_\t0\troot\t_\t_\n",
+                ),
             ]);
 
             let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
@@ -554,7 +571,10 @@ mod tests {
         fn test_match_iter_unordered() {
             let (_dir, paths) = create_test_files(&[
                 ("a.conllu", "1\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
-                ("b.conllu", "1\tsleeps\tsleep\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
+                (
+                    "b.conllu",
+                    "1\tsleeps\tsleep\tVERB\tVBZ\t_\t0\troot\t_\t_\n",
+                ),
             ]);
 
             let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();

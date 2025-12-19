@@ -445,7 +445,11 @@ fn read_trees_glob(glob_pattern: &str, ordered: bool) -> PyResult<PyTreeIterator
 ///     ValueError: If glob pattern is invalid
 #[pyfunction]
 #[pyo3(signature = (glob_pattern, pattern, ordered=true))]
-fn search_files(glob_pattern: &str, pattern: &PyPattern, ordered: bool) -> PyResult<PyMatchIterator> {
+fn search_files(
+    glob_pattern: &str,
+    pattern: &PyPattern,
+    ordered: bool,
+) -> PyResult<PyMatchIterator> {
     let treebank = Treebank::from_glob(glob_pattern)
         .map_err(|e| PyValueError::new_err(format!("Glob pattern error: {}", e)))?;
     Ok(PyMatchIterator {

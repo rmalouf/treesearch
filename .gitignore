@@ -44,5 +44,7 @@ docs/_build/
 # Large corpus files should not be committed
 *.conllu
 *.conllu.gz
+*.conll
+*.conll.gz
 *.parquet
 
