@@ -244,9 +244,9 @@ impl Treebank {
                                     }
                                 };
 
-                                it.filter_map(Result::ok)                 // drop bad trees, keep order
+                                it.filter_map(Result::ok) // drop bad trees, keep order
                                     .flat_map(|tree| search(tree, &pattern)) // search yields matches in order
-                                    .collect::<Vec<_>>()                  // per-file ordered vec
+                                    .collect::<Vec<_>>() // per-file ordered vec
                             })
                             .collect(); // for slices, Rayon collects in the original order of `chunk`
 
@@ -258,7 +258,6 @@ impl Treebank {
                         }
                     }
                 }
-
             });
             rx.into_iter().flatten()
         } else {
