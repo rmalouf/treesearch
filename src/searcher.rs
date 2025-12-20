@@ -286,31 +286,6 @@ pub fn search(tree: Tree, pattern: &Pattern) -> Vec<Match> {
     find_all_matches(tree, pattern)
 }
 
-/// Search a tree that's already wrapped in Arc (avoids double-wrapping)
-pub fn search_arc(tree: Arc<Tree>, pattern: &Pattern) -> Vec<Match> {
-    // Initial candidate domains (node consistency)
-    let mut domains: Vec<Vec<WordId>> = vec![Vec::new(); pattern.n_vars];
-    for (var_id, constr) in pattern.var_constraints.iter().enumerate() {
-        for (word_id, word) in tree.words.iter().enumerate() {
-            if satisfies_var_constraint(&tree, word, constr) {
-                domains[var_id].push(word_id);
-            }
-        }
-        if domains[var_id].is_empty() {
-            return Vec::new(); // no solution possible
-        }
-    }
-
-    let assign: Vec<Option<WordId>> = vec![None; pattern.n_vars];
-    dfs(&tree, pattern, &assign, &domains)
-        .into_iter()
-        .map(|bindings| Match {
-            tree: Arc::clone(&tree),
-            bindings,
-        })
-        .collect()
-}
-
 /// Search a tree with a query string
 pub fn search_query(tree: Tree, query: &str) -> Result<Vec<Match>, QueryError> {
     let pattern = parse_query(query)?;
