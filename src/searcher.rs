@@ -11,6 +11,7 @@ use crate::pattern::{Constraint, EdgeConstraint, Pattern};
 use crate::query::{QueryError, parse_query};
 use crate::tree::Word;
 use crate::tree::{Tree, WordId};
+use fixedbitset::FixedBitSet;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -121,22 +122,26 @@ fn satisfies_arc_constraint(
 }
 
 pub fn find_all_matches(tree: Tree, pattern: &Pattern) -> Vec<Match> {
-    // Initial candidate domains (node consistency)
-    let mut domains: Vec<Vec<WordId>> = vec![Vec::new(); pattern.n_vars];
+    let num_words = tree.words.len();
+
+    // Initial candidate domains (node consistency) using bitsets
+    let mut domains: Vec<FixedBitSet> = vec![FixedBitSet::with_capacity(num_words); pattern.n_vars];
     for (var_id, constr) in pattern.var_constraints.iter().enumerate() {
         for (word_id, word) in tree.words.iter().enumerate() {
             if satisfies_var_constraint(&tree, word, constr) {
-                domains[var_id].push(word_id);
+                domains[var_id].insert(word_id);
             }
         }
-        if domains[var_id].is_empty() {
+        if domains[var_id].count_ones(..) == 0 {
             return Vec::new(); // no solution possible
         }
     }
 
     let tree = Arc::new(tree);
     let assign: Vec<Option<WordId>> = vec![None; pattern.n_vars];
-    dfs(&tree, pattern, &assign, &domains)
+    let assigned_words = FixedBitSet::with_capacity(num_words);
+
+    dfs(&tree, pattern, &assign, &domains, &assigned_words)
         .into_iter()
         .map(|bindings| Match {
             tree: Arc::clone(&tree),
@@ -149,7 +154,8 @@ fn dfs(
     tree: &Tree,
     pattern: &Pattern,
     assign: &[Option<WordId>],
-    domains: &[Vec<WordId>],
+    domains: &[FixedBitSet],
+    assigned_words: &FixedBitSet,
 ) -> Vec<Bindings> {
     // No more variables to assign
     if assign.iter().all(|word_id| word_id.is_some()) {
@@ -163,17 +169,17 @@ fn dfs(
     // Select an unassigned variable with Minimum Remaining Values (MRV)
     let next_var = (0..pattern.n_vars)
         .filter(|&var_id| assign[var_id].is_none())
-        .min_by_key(|&var_id| domains[var_id].len())
+        .min_by_key(|&var_id| domains[var_id].count_ones(..))
         .unwrap();
 
     let mut solutions: Vec<Bindings> = Vec::new();
 
-    // Try each candidate word for this variable
-    for &word_id in &domains[next_var] {
-        // AllDifferent: Check if word_id is already assigned to another variable
-        if assign.contains(&Some(word_id)) {
+    // Try each candidate word for this variable (iterate over set bits in the domain bitset)
+    for word_id in domains[next_var].ones() {
+        // AllDifferent: Check if word_id is already assigned to another variable using bitset (O(1))
+        if assigned_words.contains(word_id) {
             continue;
-        };
+        }
 
         // Early prune: Check arc consistency with already-assigned neighbors
         if !check_arc_consistency(tree, pattern, assign, next_var, word_id) {
@@ -181,18 +187,20 @@ fn dfs(
         }
 
         let mut new_assign = assign.to_vec();
-        // let new_domains = domains.to_vec();
+        //let mut new_domains = domains.to_vec();
         let new_domains = domains;
 
-        // Assign var <- word_id and update domains
+        // Assign var <- word_id and update bitset
         new_assign[next_var] = Some(word_id);
+        let mut new_assigned_words = assigned_words.clone();
+        new_assigned_words.insert(word_id);
 
         // AllDifferent: Remove word_id from all other unassigned variable domains
         // for domain in &mut new_domains {
-        //     domain.retain(|&w| w != word_id);
+        //     domain.set(word_id, false);
         // }
         // if !(0..pattern.n_vars)
-        //     .all(|var_id| new_assign[var_id].is_some() || !new_domains[var_id].is_empty())
+        //     .all(|var_id| new_assign[var_id].is_some() || new_domains[var_id].count_ones(..) > 0)
         // {
         //     continue;
         // }
@@ -210,7 +218,7 @@ fn dfs(
         // }
 
         // Recurse - go on to next variable
-        solutions.extend(dfs(tree, pattern, &new_assign, new_domains));
+        solutions.extend(dfs(tree, pattern, &new_assign, new_domains, &new_assigned_words));
     }
     solutions
 }
@@ -221,7 +229,7 @@ fn forward_check(
     next_var: usize,
     word_id: WordId,
     new_assign: &mut [Option<WordId>],
-    new_domains: &mut [Vec<WordId>],
+    new_domains: &mut [FixedBitSet],
 ) -> bool {
     // Forward-check: Propagate along edge constraints touching next_var
     for &edge_idx in &pattern.out_edges[next_var] {
@@ -230,9 +238,13 @@ fn forward_check(
         if new_assign[target_var_id].is_some() {
             continue;
         }
-        new_domains[target_var_id]
-            .retain(|&w| satisfies_arc_constraint(tree, word_id, w, edge_constraint));
-        if new_domains[target_var_id].is_empty() {
+        // Remove words from domain that don't satisfy the arc constraint
+        for w in new_domains[target_var_id].ones().collect::<Vec<_>>() {
+            if !satisfies_arc_constraint(tree, word_id, w, edge_constraint) {
+                new_domains[target_var_id].set(w, false);
+            }
+        }
+        if new_domains[target_var_id].count_ones(..) == 0 {
             return false;
         }
     }
@@ -243,9 +255,13 @@ fn forward_check(
         if new_assign[source_var_id].is_some() {
             continue;
         }
-        new_domains[source_var_id]
-            .retain(|&w| satisfies_arc_constraint(tree, w, word_id, edge_constraint));
-        if new_domains[source_var_id].is_empty() {
+        // Remove words from domain that don't satisfy the arc constraint
+        for w in new_domains[source_var_id].ones().collect::<Vec<_>>() {
+            if !satisfies_arc_constraint(tree, w, word_id, edge_constraint) {
+                new_domains[source_var_id].set(w, false);
+            }
+        }
+        if new_domains[source_var_id].count_ones(..) == 0 {
             return false;
         }
     }
