@@ -115,26 +115,26 @@ fn match_iter_unordered_single(bencher: Bencher) {
 // 27 files ranging from 15M to 133M across all genres (1900-1950)
 #[divan::bench(sample_count = 3)]
 fn match_iter_ordered_multi(bencher: Bencher) {
-    // let pattern = parse_query("MATCH { V [upos=\"VERB\"]; N[upos=\"NOUN\"]; V -[dobj]->N;}").unwrap();
-    let pattern = parse_query("MATCH { V [upos=\"VERB\"];}").unwrap();
+    let pattern = parse_query("MATCH { V [upos=\"VERB\"]; N1[upos=\"NOUN\"]; N2[upos=\"NOUN\"]; P[upos=\"ADP\"];V -[obj]->N1; N1-[nmod]->N2; N2-[case]->P;}").unwrap();
+   // let pattern = parse_query("MATCH { V [upos=\"VERB\"];}").unwrap();
 
     let treebank =
         Treebank::from_glob("/Volumes/Corpora/COHA/conll/text_*_19[0-5]0.conllu.gz").unwrap();
     bencher.bench_local(|| {
         let count = black_box(treebank.clone().match_iter(pattern.clone(), true).count());
-        dbg!(count);
+        //dbg!(count);
         black_box(count);
     });
 }
 
 #[divan::bench(sample_count = 3)]
 fn match_iter_unordered_multi(bencher: Bencher) {
-    let pattern = parse_query("MATCH { V [upos=\"VERB\"];}").unwrap();
+    let pattern = parse_query("MATCH { V [upos=\"VERB\"]; N1[upos=\"NOUN\"]; N2[upos=\"NOUN\"]; P[upos=\"ADP\"];V -[obj]->N1; N1-[nmod]->N2; N2-[case]->P;}").unwrap();
     let treebank =
         Treebank::from_glob("/Volumes/Corpora/COHA/conll/text_*_19[0-5]0.conllu.gz").unwrap();
     bencher.bench_local(|| {
         let count = black_box(treebank.clone().match_iter(pattern.clone(), false).count());
-        dbg!(count);
+        //dbg!(count);
         black_box(count);
     });
 }

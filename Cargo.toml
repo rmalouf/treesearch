@@ -22,6 +22,7 @@ rayon = "1.11"
 glob = "0.3"
 thiserror = "2.0"
 crossbeam-channel = "0.5"
+fixedbitset = "0.5"
 
 [features]
 # Default features for Rust-only builds
