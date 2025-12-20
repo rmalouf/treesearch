@@ -116,7 +116,7 @@ fn match_iter_unordered_single(bencher: Bencher) {
 #[divan::bench(sample_count = 3)]
 fn match_iter_ordered_multi(bencher: Bencher) {
     let pattern = parse_query("MATCH { V [upos=\"VERB\"]; N1[upos=\"NOUN\"]; N2[upos=\"NOUN\"]; P[upos=\"ADP\"];V -[obj]->N1; N1-[nmod]->N2; N2-[case]->P;}").unwrap();
-   // let pattern = parse_query("MATCH { V [upos=\"VERB\"];}").unwrap();
+    // let pattern = parse_query("MATCH { V [upos=\"VERB\"];}").unwrap();
 
     let treebank =
         Treebank::from_glob("/Volumes/Corpora/COHA/conll/text_*_19[0-5]0.conllu.gz").unwrap();
