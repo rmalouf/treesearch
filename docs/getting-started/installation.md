@@ -94,38 +94,6 @@ cargo check
 cargo test
 ```
 
-## Troubleshooting
-
-### maturin not found
-
-Make sure maturin is installed and in your PATH:
-
-```bash
-pip install maturin
-```
-
-### Rust compiler errors
-
-Ensure you have the latest stable Rust:
-
-```bash
-rustup update stable
-```
-
-### Python version too old
-
-Treesearch requires Python 3.12+. Use pyenv or conda to install a newer Python version:
-
-```bash
-# Using pyenv
-pyenv install 3.12
-pyenv local 3.12
-
-# Using conda
-conda create -n treesearch python=3.12
-conda activate treesearch
-```
-
 ## Next Steps
 
 - [Quick Start Tutorial](quickstart.md) - Get started with your first search

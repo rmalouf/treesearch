@@ -36,9 +36,6 @@ for tree, match in treesearch.search_files("corpus/*.conllu", pattern):
 
 ## Key Features
 
-### Exhaustive Search
-Finds **all** valid matches in your corpus - no arbitrary filtering or pruning.
-
 ### Powerful Query Language
 - Node constraints: lemma, POS tags, word forms (with negation support)
 - Dependency edges: specify parent-child relationships (positive and negative)

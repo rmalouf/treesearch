@@ -2,9 +2,7 @@
 
 Complete Python API documentation for treesearch.
 
-## Organization
-
-The API is organized into functional categories:
+## Overview
 
 ### Treebank operations
 
