@@ -29,8 +29,13 @@ impl BytestringPool {
     }
 
     #[inline]
-    pub fn resolve(&self, s: Sym) -> Arc<[u8]> {
-        self.0.lock().unwrap().resolve(s)
+    pub fn resolve(&self, sym: Sym) -> Arc<[u8]> {
+        self.0.lock().unwrap().resolve(sym)
+    }
+
+    #[inline]
+    pub fn compare_bytes(&self, sym: Sym, bytes: &[u8]) -> bool {
+        self.0.lock().unwrap().compare_bytes(sym, bytes)
     }
 }
 
@@ -87,8 +92,13 @@ impl ByteInterner {
     }
 
     #[inline]
-    pub fn resolve(&self, s: Sym) -> Arc<[u8]> {
-        self.slab[(s.0.get() - 1) as usize].clone()
+    pub fn resolve(&self, sym: Sym) -> Arc<[u8]> {
+        self.slab[(sym.0.get() - 1) as usize].clone()
+    }
+
+    #[inline]
+    pub fn compare_bytes(&self, sym: Sym, bytes: &[u8]) -> bool {
+        &*self.slab[(sym.0.get() - 1) as usize] == bytes
     }
 }
 
@@ -209,6 +219,31 @@ mod tests {
 
         // Cloned pool shares the same interner (Arc)
         assert_eq!(sym1, sym2);
+    }
+
+    #[test]
+    fn test_compare_bytes() {
+        let mut pool = BytestringPool::new();
+        let sym1 = pool.get_or_intern(b"hello");
+        let sym2 = pool.get_or_intern(b"world");
+        let sym3 = pool.get_or_intern(b"");
+
+        // Exact matches
+        assert!(pool.compare_bytes(sym1, b"hello"));
+        assert!(pool.compare_bytes(sym2, b"world"));
+        assert!(pool.compare_bytes(sym3, b""));
+
+        // Mismatches
+        assert!(!pool.compare_bytes(sym1, b"world"));
+        assert!(!pool.compare_bytes(sym1, b"Hello")); // Case sensitive
+        assert!(!pool.compare_bytes(sym1, b"hell"));  // Prefix
+        assert!(!pool.compare_bytes(sym1, b"helloo")); // Longer
+        assert!(!pool.compare_bytes(sym3, b"x"));
+
+        // Unicode
+        let sym_unicode = pool.get_or_intern("café".as_bytes());
+        assert!(pool.compare_bytes(sym_unicode, "café".as_bytes()));
+        assert!(!pool.compare_bytes(sym_unicode, "cafe".as_bytes()));
     }
 
     // ===== bs_split_once Tests =====
