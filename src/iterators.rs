@@ -39,7 +39,7 @@ enum TreeSource {
 /// use treesearch::Treebank;
 ///
 /// // Iterate over trees from a file
-/// let trees = Treebank::from_file("data.conllu");
+/// let trees = Treebank::from_path("data.conllu");
 /// for tree in trees.tree_iter(true) {
 ///     println!("Tree with {} words", tree.words.len());
 /// }
@@ -64,9 +64,16 @@ impl Treebank {
     }
 
     /// Create from a single file path
-    pub fn from_file(path: impl AsRef<Path>) -> Self {
+    pub fn from_path(path: impl AsRef<Path>) -> Self {
         let path_vec = vec![path.as_ref().to_path_buf()];
         Self::from_paths(path_vec)
+    }
+
+    /// Create from explicit file paths
+    pub fn from_paths(file_paths: Vec<PathBuf>) -> Self {
+        Self {
+            source: TreeSource::Files(file_paths),
+        }
     }
 
     /// Create from a glob pattern
@@ -76,13 +83,6 @@ impl Treebank {
         let mut file_paths: Vec<PathBuf> = glob::glob(pattern)?.filter_map(Result::ok).collect();
         file_paths.sort();
         Ok(Self::from_paths(file_paths))
-    }
-
-    /// Create from explicit file paths
-    pub fn from_paths(file_paths: Vec<PathBuf>) -> Self {
-        Self {
-            source: TreeSource::Files(file_paths),
-        }
     }
 
     /// Iterate over trees with optional ordering.

@@ -6,14 +6,14 @@
 //! Core implementation in Rust with Python bindings.
 
 // Core modules
-mod conllu; // CoNLL-U file parsing
-mod iterators; // Iterator interfaces for trees and matches
-mod pattern; // Pattern AST
-mod query; // Query language parser
-mod searcher;
-mod tree; // Tree data structures with full CoNLL-U support
-mod python;
-mod bytes;
+pub mod conllu; // CoNLL-U file parsing
+pub mod iterators; // Iterator interfaces for trees and matches
+pub mod pattern; // Pattern AST
+pub mod query; // Query language parser
+pub mod searcher;
+pub mod tree; // Tree data structures with full CoNLL-U support
+pub mod python;
+pub mod bytes;
 
 // Re-exports for convenience
 pub use conllu::TreeIterator;

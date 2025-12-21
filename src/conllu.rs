@@ -182,27 +182,22 @@ impl<R: BufRead> TreeIterator<R> {
     }
 }
 
-/// Open a file and detect if it's gzipped based on magic bytes
-fn open_file(path: &Path) -> std::io::Result<Box<dyn Read + Send>> {
-    let file = File::open(path)?;
-    let mut buffered = BufReader::new(file);
-    let buf = buffered.fill_buf()?;
-
-    // Peek at first 2 bytes to check for gzip magic bytes (0x1f 0x8b)
-    if buf.len() >= 2 && buf[0] == 0x1f && buf[1] == 0x8b {
-        Ok(Box::new(GzDecoder::new(buffered)))
-    } else {
-        Ok(Box::new(buffered))
-    }
-}
-
 impl TreeIterator<BufReader<Box<dyn Read + Send>>> {
     /// Create a reader from a file path (transparently handles gzip compression)
     pub fn from_file(path: &Path) -> std::io::Result<Self> {
-        let file = open_file(path)?;
-        let reader = BufReader::new(file);
+        let file = File::open(path)?;
+        let mut reader = BufReader::new(file);
+
+        // Peek at the magic bytes to detect gzip
+        let buf = reader.fill_buf()?;
+        let reader: Box<dyn Read + Send> = if buf.starts_with(&[0x1f, 0x8b]) {
+            Box::new(GzDecoder::new(reader))
+        } else {
+            Box::new(reader)
+        };
+
         Ok(Self {
-            reader,
+            reader: BufReader::new(reader),
             line_num: 0,
             string_pool: BytestringPool::new(),
         })

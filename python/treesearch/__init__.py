@@ -2,7 +2,12 @@
 """
 
 from importlib.metadata import version
+from pathlib import Path
+import glob
+
 __version__ = version("treesearch")
+
+from typing import Iterable
 
 try:
     from .treesearch import (
@@ -48,14 +53,15 @@ __all__ = [
 ]
 
 
-def open(path):
+def open(source):
     """Open a treebank from a file or glob pattern.
 
     Automatically detects whether the path is a glob pattern (contains * or ?)
     and uses the appropriate method to create a Treebank.
 
     Args:
-        path: Path to a CoNLL-U file or glob pattern (e.g., "data/*.conllu")
+        source: Path to a CoNLL-U file or glob pattern (str or pathlib.Path)
+              e.g., "data/*.conllu" or Path("corpus.conllu")
 
     Returns:
         Treebank object
@@ -65,14 +71,22 @@ def open(path):
 
     Example:
         >>> tb = treesearch.open("corpus.conllu")
+        >>> tb = treesearch.open(Path("corpus.conllu"))
         >>> tb = treesearch.open("data/*.conllu")
         >>> for tree in tb.trees():
         ...     print(tree.sentence_text)
     """
-    if "*" in path or "?" in path:
-        return Treebank.from_glob(path)
+
+    if isinstance(source, str):
+        paths = list(glob.glob(source, recursive=True))
+        return Treebank.from_files(paths)
+    elif isinstance(source, Path):
+        return Treebank.from_file(str(source))
+    elif isinstance(source, Iterable):
+        source = [str(path) for path in source]
+        return Treebank.from_files(source)
     else:
-        return Treebank.from_file(path)
+        raise ValueError()
 
 
 def from_string(text):
