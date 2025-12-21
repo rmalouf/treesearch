@@ -461,10 +461,15 @@ fn search_files(
     })
 }
 
-/// Python module initialization
+
+#[pyfunction]
+fn __version__() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
 #[pymodule]
 fn treesearch(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    // Classes
+
     m.add_class::<PyTree>()?;
     m.add_class::<PyWord>()?;
     m.add_class::<PyPattern>()?;
@@ -472,7 +477,6 @@ fn treesearch(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTreeIterator>()?;
     m.add_class::<PyMatchIterator>()?;
 
-    // Functions
     m.add_function(wrap_pyfunction!(py_parse_query, m)?)?;
     m.add_function(wrap_pyfunction!(py_search, m)?)?;
     m.add_function(wrap_pyfunction!(read_trees, m)?)?;

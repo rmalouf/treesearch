@@ -25,15 +25,10 @@ crossbeam-channel = "0.5"
 fastbit = "0.11"
 
 [features]
-# Default features for Rust-only builds
 default = []
-
-# Python extension module (automatically enabled by maturin)
 extension-module = ["pyo3/extension-module"]
 
 [dev-dependencies]
-# Testing utilities
-#criterion = "0.7"
 divan = "0.1"
 tempfile = "3"
 
@@ -42,9 +37,6 @@ opt-level = 3
 lto = true
 codegen-units = 1
 debug = true
-
-[profile.dev]
-opt-level = 0
 
 [[bench]]
 name = "conllu"
