@@ -25,14 +25,14 @@ pub struct Match {
 /// Check if a tree word satisfies a pattern variable's constraint
 fn satisfies_var_constraint(tree: &Tree, word: &Word, constraint: &Constraint) -> bool {
     match constraint {
-        Constraint::Lemma(lemma) => *tree.string_pool.resolve(word.lemma) == *lemma.as_bytes(),
-        Constraint::UPOS(pos) => *tree.string_pool.resolve(word.upos) == *pos.as_bytes(),
-        Constraint::XPOS(pos) => *tree.string_pool.resolve(word.xpos) == *pos.as_bytes(),
-        Constraint::Form(form) => *tree.string_pool.resolve(word.form) == *form.as_bytes(),
-        Constraint::DepRel(deprel) => *tree.string_pool.resolve(word.deprel) == *deprel.as_bytes(),
+        Constraint::Lemma(lemma) => tree.string_pool.compare_bytes(word.lemma, lemma.as_bytes()),
+        Constraint::UPOS(pos) => tree.string_pool.compare_bytes(word.upos, pos.as_bytes()),
+        Constraint::XPOS(pos) => tree.string_pool.compare_bytes(word.xpos, pos.as_bytes()),
+        Constraint::Form(form) => tree.string_pool.compare_bytes(word.form, form.as_bytes()),
+        Constraint::DepRel(deprel) => tree.string_pool.compare_bytes(word.deprel, deprel.as_bytes()),
         Constraint::Feature(key, value) => word.feats.iter().any(|(feat_key, feat_val)| {
-            *tree.string_pool.resolve(*feat_key) == *key.as_bytes()
-                && *tree.string_pool.resolve(*feat_val) == *value.as_bytes()
+            tree.string_pool.compare_bytes(*feat_key, key.as_bytes())
+                && tree.string_pool.compare_bytes(*feat_val, value.as_bytes())
         }),
         Constraint::And(constraints) => constraints
             .iter()
@@ -50,7 +50,7 @@ fn satisfies_var_constraint(tree: &Tree, word: &Word, constraint: &Constraint) -
                 RelationType::Child => {
                     if let Some(required_label) = label {
                         word.head.is_some()
-                            && *tree.string_pool.resolve(word.deprel) == *required_label.as_bytes()
+                            && tree.string_pool.compare_bytes(word.deprel, required_label.as_bytes())
                     } else {
                         word.head.is_some()
                     }
@@ -105,7 +105,7 @@ fn satisfies_arc_constraint(
         // For Child relations, check the deprel of the target word
         if matches!(edge_constraint.relation, RelationType::Child) {
             let actual_deprel = tree.get_word(to_word_id).unwrap().deprel;
-            *tree.string_pool.resolve(actual_deprel) == *expected_label.as_bytes()
+            tree.string_pool.compare_bytes(actual_deprel, expected_label.as_bytes())
         } else {
             true // No label check for non-Child relations
         }
