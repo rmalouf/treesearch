@@ -21,7 +21,9 @@ def test_pattern_creation():
     """Test that we can create a pattern from a query."""
     print("Testing pattern creation...")
     pattern = treesearch.parse_query("""
-        V [upos="VERB"];
+        MATCH {
+            V [upos="VERB"];
+        }
     """)
     print(f"  Created pattern with {pattern.n_vars} variable(s)")
     assert pattern.n_vars == 1
@@ -33,7 +35,7 @@ def test_simple_search():
     print("\nTesting simple search...")
 
     # Create pattern for verb
-    pattern = treesearch.parse_query('V [upos="VERB"];')
+    pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
 
     # Write sample to temp file
     with tempfile.NamedTemporaryFile(mode="w", suffix=".conllu", delete=False) as f:
@@ -65,9 +67,11 @@ def test_edge_constraint():
 
     # Pattern: verb with an xcomp child
     pattern = treesearch.parse_query("""
-        V1 [upos="VERB"];
-        V2 [upos="VERB"];
-        V1 -[xcomp]-> V2;
+        MATCH {
+            V1 [upos="VERB"];
+            V2 [upos="VERB"];
+            V1 -[xcomp]-> V2;
+        }
     """)
 
     # Write sample to temp file
@@ -94,7 +98,7 @@ def test_word_properties():
     """Test accessing word properties."""
     print("\nTesting word properties...")
 
-    pattern = treesearch.parse_query('V [lemma="help"];')
+    pattern = treesearch.parse_query('MATCH { V [lemma="help"]; }')
 
     # Write sample to temp file
     with tempfile.NamedTemporaryFile(mode="w", suffix=".conllu", delete=False) as f:
@@ -137,7 +141,7 @@ def test_tree_properties():
     """Test accessing tree properties."""
     print("\nTesting tree properties...")
 
-    pattern = treesearch.parse_query('V [upos="VERB"];')
+    pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
 
     # Write sample to temp file
     with tempfile.NamedTemporaryFile(mode="w", suffix=".conllu", delete=False) as f:
