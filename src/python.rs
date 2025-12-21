@@ -212,9 +212,29 @@ impl PyTreebank {
     /// Returns:
     ///     Treebank instance
     #[classmethod]
-    fn from_file(_cls: &Bound<'_, pyo3::types::PyType>, path: &str) -> Self {
+    fn from_file(_cls: &Bound<'_, pyo3::types::PyType>, file_path: &str) -> Self {
         PyTreebank {
-            inner: Treebank::from_file(&PathBuf::from(path)),
+            inner: Treebank::from_path(&PathBuf::from(file_path)),
+        }
+    }
+
+    /// Create a Treebank from multiple file paths.
+    ///
+    /// Args:
+    ///     paths: List of paths to CoNLL-U files
+    ///
+    /// Returns:
+    ///     Treebank instance
+    ///
+    /// Example:
+    ///     >>> tb = Treebank.from_paths(["file1.conllu", "file2.conllu"])
+    ///     >>> for tree in tb.trees():
+    ///     ...     print(tree)
+    #[classmethod]
+    fn from_files(_cls: &Bound<'_, pyo3::types::PyType>, file_paths: Vec<String>) -> Self {
+        let path_bufs: Vec<PathBuf> = file_paths.iter().map(PathBuf::from).collect();
+        PyTreebank {
+            inner: Treebank::from_paths(path_bufs),
         }
     }
 
@@ -230,12 +250,12 @@ impl PyTreebank {
     ///
     /// Raises:
     ///     ValueError: If glob pattern is invalid
-    #[classmethod]
-    fn from_glob(_cls: &Bound<'_, pyo3::types::PyType>, pattern: &str) -> PyResult<Self> {
-        Treebank::from_glob(pattern)
-            .map(|inner| PyTreebank { inner })
-            .map_err(|e| PyValueError::new_err(format!("Glob pattern error: {}", e)))
-    }
+    // #[classmethod]
+    // fn from_glob(_cls: &Bound<'_, pyo3::types::PyType>, pattern: &str) -> PyResult<Self> {
+    //     Treebank::from_glob(pattern)
+    //         .map(|inner| PyTreebank { inner })
+    //         .map_err(|e| PyValueError::new_err(format!("Glob pattern error: {}", e)))
+    // }
 
     /// Iterate over all trees in the treebank.
     ///
@@ -371,7 +391,7 @@ fn py_search(tree: &PyTree, pattern: &PyPattern) -> Vec<std::collections::HashMa
 #[pyfunction]
 #[pyo3(signature = (path, ordered=true))]
 fn read_trees(path: &str, ordered: bool) -> PyTreeIterator {
-    let treebank = Treebank::from_file(&PathBuf::from(path));
+    let treebank = Treebank::from_path(&PathBuf::from(path));
     PyTreeIterator {
         inner: Box::new(treebank.tree_iter(ordered).map(Arc::new)),
     }
@@ -392,7 +412,7 @@ fn read_trees(path: &str, ordered: bool) -> PyTreeIterator {
 #[pyfunction]
 #[pyo3(signature = (path, pattern, ordered=true))]
 fn search_file(path: &str, pattern: &PyPattern, ordered: bool) -> PyMatchIterator {
-    let treebank = Treebank::from_file(&PathBuf::from(path));
+    let treebank = Treebank::from_path(&PathBuf::from(path));
     PyMatchIterator {
         inner: Box::new(
             treebank
