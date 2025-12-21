@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "treesearch"
-version = "0.1.0"
+dynamic = ["version"]
 description = "High-performance toolkit for querying linguistic dependency parses"
 authors = [
     {name = "Rob Malouf", email = "rmalouf@sdsu.edu"}
@@ -46,6 +46,7 @@ docs = [
 features = ["pyo3/extension-module"]
 module-name = "treesearch"
 python-source = "python"
+bindings = "pyo3"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
