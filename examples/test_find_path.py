@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Test find_path in Python bindings"""
+"""Test find_path in Python bindings
+
+NOTE: This test is for the find_path functionality which exists in Rust
+but is not yet exposed in the Python bindings. This script will fail until
+find_path is added to the PyTree class.
+"""
 
 import tempfile
 import os
