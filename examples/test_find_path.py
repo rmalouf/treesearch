@@ -34,7 +34,7 @@ def test_find_path():
 
     try:
         # Read the tree
-        trees = treesearch.read_trees(temp_file)
+        trees = treesearch.Treebank.from_file(temp_file).trees()
         tree = next(trees)
 
         print(f"Loaded tree with {len(tree)} words")
