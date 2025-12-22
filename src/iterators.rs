@@ -5,7 +5,7 @@
 //! - Searching patterns across trees from a string, file, or glob pattern
 //! - Sequential and parallel iteration via standard traits
 
-use crate::conllu::TreeIterator;
+use crate::conllu::{ParseError, TreeIterator};
 use crate::pattern::Pattern;
 use crate::searcher::{Match, search};
 use crate::tree::Tree;
@@ -13,6 +13,26 @@ use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::sync_channel;
 use std::thread;
+use thiserror::Error;
+
+/// Errors that can occur during treebank iteration
+#[derive(Debug, Error)]
+pub enum TreebankError {
+    /// IO error when opening or reading files
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    /// Parse error when reading CoNLL-U content
+    #[error("Parse error: {0}")]
+    Parse(#[from] ParseError),
+
+    /// Error opening file at specific path
+    #[error("Failed to open file {path}: {source}")]
+    FileOpen {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+}
 
 /// Batch size for sending matches through channels
 const MATCH_BATCH_SIZE: usize = 500;
@@ -31,7 +51,7 @@ enum TreeSource {
 
 ///
 /// Provides iterator-based access to trees with parallel processing.
-/// Errors (file open, parse errors) are logged to stderr and skipped.
+/// Errors (file open, parse errors) are returned in the iterator for proper handling.
 ///
 /// # Examples
 ///
@@ -40,14 +60,18 @@ enum TreeSource {
 ///
 /// // Iterate over trees from a file
 /// let trees = Treebank::from_path("data.conllu");
-/// for tree in trees.tree_iter(true) {
-///     println!("Tree with {} words", tree.words.len());
+/// for result in trees.tree_iter(true) {
+///     match result {
+///         Ok(tree) => println!("Tree with {} words", tree.words.len()),
+///         Err(e) => eprintln!("Error: {}", e),
+///     }
 /// }
 ///
 /// // Count trees from multiple files (parallel processing handled internally)
 /// let count = Treebank::from_glob("data/*.conllu")
 ///     .unwrap()
 ///     .tree_iter(true)
+///     .filter_map(Result::ok)
 ///     .count();
 /// ```
 #[derive(Clone)]
@@ -87,6 +111,9 @@ impl Treebank {
 
     /// Iterate over trees with optional ordering.
     ///
+    /// Returns an iterator over `Result<Tree, TreebankError>`. Errors from file I/O
+    /// or parsing are returned in the iterator rather than being silently logged.
+    ///
     /// # Arguments
     /// * `ordered` - If true (default), maintains file and tree order for deterministic results.
     ///               If false, trees may arrive in any order for better performance.
@@ -98,16 +125,19 @@ impl Treebank {
     /// let treebank = Treebank::from_glob("data/*.conllu").unwrap();
     ///
     /// // Ordered iteration (deterministic)
-    /// for tree in treebank.clone().tree_iter(true) {
-    ///     println!("Tree: {}", tree.words.len());
+    /// for result in treebank.clone().tree_iter(true) {
+    ///     match result {
+    ///         Ok(tree) => println!("Tree: {}", tree.words.len()),
+    ///         Err(e) => eprintln!("Error: {}", e),
+    ///     }
     /// }
     ///
-    /// // Unordered iteration (faster for large corpora)
-    /// for tree in treebank.tree_iter(false) {
+    /// // Unordered iteration (faster for large corpora), ignoring errors
+    /// for tree in treebank.tree_iter(false).filter_map(Result::ok) {
     ///     println!("Tree: {}", tree.words.len());
     /// }
     /// ```
-    pub fn tree_iter(self, ordered: bool) -> impl Iterator<Item = Tree> {
+    pub fn tree_iter(self, ordered: bool) -> impl Iterator<Item = Result<Tree, TreebankError>> {
         if ordered {
             // Ordered mode: maintain deterministic ordering via chunking
             // Smaller chunks (2 files) improve load balancing for heterogeneous file sizes
@@ -115,8 +145,9 @@ impl Treebank {
 
             thread::spawn(move || match self.source {
                 TreeSource::String(text) => {
-                    for tree in TreeIterator::from_string(&text).filter_map(|result| result.ok()) {
-                        if tx.send(tree).is_err() {
+                    for result in TreeIterator::from_string(&text) {
+                        let result = result.map_err(TreebankError::from);
+                        if tx.send(result).is_err() {
                             return;
                         }
                     }
@@ -126,17 +157,18 @@ impl Treebank {
                         let results: Vec<_> = chunk
                             .par_iter()
                             .flat_map_iter(|path| {
-                                TreeIterator::from_file(path)
-                                    .map_err(|e| {
-                                        eprintln!("Error: {:?}", e);
-                                    })
-                                    .ok()
-                                    .into_iter()
-                                    .flatten()
+                                let file_results: Vec<Result<Tree, TreebankError>> = match TreeIterator::from_file(path) {
+                                    Ok(iter) => iter.map(|r| r.map_err(TreebankError::from)).collect(),
+                                    Err(e) => vec![Err(TreebankError::FileOpen {
+                                        path: path.clone(),
+                                        source: e,
+                                    })],
+                                };
+                                file_results.into_iter()
                             })
                             .collect();
-                        for item in results {
-                            if tx.send(item.unwrap()).is_err() {
+                        for result in results {
+                            if tx.send(result).is_err() {
                                 return;
                             }
                         }
@@ -150,8 +182,9 @@ impl Treebank {
 
             thread::spawn(move || match self.source {
                 TreeSource::String(text) => {
-                    for tree in TreeIterator::from_string(&text).filter_map(|result| result.ok()) {
-                        if tx.send(tree).is_err() {
+                    for result in TreeIterator::from_string(&text) {
+                        let result = result.map_err(TreebankError::from);
+                        if tx.send(result).is_err() {
                             return;
                         }
                     }
@@ -159,21 +192,21 @@ impl Treebank {
                 TreeSource::Files(paths) => {
                     paths.par_iter().for_each(|path| {
                         let tx = tx.clone(); // Clone sender for each parallel thread
-                        if let Ok(reader) = TreeIterator::from_file(path) {
-                            for result in reader {
-                                match result {
-                                    Ok(tree) => {
-                                        if tx.send(tree).is_err() {
-                                            return;
-                                        }
-                                    }
-                                    Err(e) => {
-                                        eprintln!("Error: {:?}", e);
+                        match TreeIterator::from_file(path) {
+                            Ok(reader) => {
+                                for result in reader {
+                                    let result = result.map_err(TreebankError::from);
+                                    if tx.send(result).is_err() {
+                                        return;
                                     }
                                 }
                             }
-                        } else {
-                            eprintln!("Failed to open file: {:?}", path);
+                            Err(e) => {
+                                let _ = tx.send(Err(TreebankError::FileOpen {
+                                    path: path.clone(),
+                                    source: e,
+                                }));
+                            }
                         }
                     });
                 }
@@ -183,6 +216,9 @@ impl Treebank {
     }
 
     /// Search for pattern matches with optional ordering.
+    ///
+    /// Returns an iterator over `Result<Match, TreebankError>`. Errors from file I/O
+    /// or parsing are returned in the iterator rather than being silently logged.
     ///
     /// # Arguments
     /// * `pattern` - The pattern to search for
@@ -197,16 +233,19 @@ impl Treebank {
     /// let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
     ///
     /// // Ordered iteration (deterministic)
-    /// for m in treebank.clone().match_iter(pattern.clone(), true) {
-    ///     println!("Match found");
+    /// for result in treebank.clone().match_iter(pattern.clone(), true) {
+    ///     match result {
+    ///         Ok(m) => println!("Match found"),
+    ///         Err(e) => eprintln!("Error: {}", e),
+    ///     }
     /// }
     ///
-    /// // Unordered iteration (faster for large corpora)
-    /// for m in treebank.match_iter(pattern, false) {
+    /// // Unordered iteration (faster for large corpora), ignoring errors
+    /// for m in treebank.match_iter(pattern, false).filter_map(Result::ok) {
     ///     println!("Match found");
     /// }
     /// ```
-    pub fn match_iter(self, pattern: Pattern, ordered: bool) -> impl Iterator<Item = Match> {
+    pub fn match_iter(self, pattern: Pattern, ordered: bool) -> impl Iterator<Item = Result<Match, TreebankError>> {
         if ordered {
             // Ordered mode: maintain deterministic ordering via chunking
             // Smaller chunks (2 files) improve load balancing for heterogeneous file sizes
@@ -215,14 +254,27 @@ impl Treebank {
             thread::spawn(move || match self.source {
                 TreeSource::String(text) => {
                     let mut batch = Vec::with_capacity(MATCH_BATCH_SIZE);
-                    for tree in TreeIterator::from_string(&text).filter_map(|result| result.ok()) {
-                        for m in search(tree, &pattern) {
-                            batch.push(m);
-                            if batch.len() >= MATCH_BATCH_SIZE {
-                                if tx.send(batch).is_err() {
-                                    return;
+                    for result in TreeIterator::from_string(&text) {
+                        match result {
+                            Ok(tree) => {
+                                for m in search(tree, &pattern) {
+                                    batch.push(Ok(m));
+                                    if batch.len() >= MATCH_BATCH_SIZE {
+                                        if tx.send(batch).is_err() {
+                                            return;
+                                        }
+                                        batch = Vec::with_capacity(MATCH_BATCH_SIZE);
+                                    }
                                 }
-                                batch = Vec::with_capacity(MATCH_BATCH_SIZE);
+                            }
+                            Err(e) => {
+                                batch.push(Err(TreebankError::from(e)));
+                                if batch.len() >= MATCH_BATCH_SIZE {
+                                    if tx.send(batch).is_err() {
+                                        return;
+                                    }
+                                    batch = Vec::with_capacity(MATCH_BATCH_SIZE);
+                                }
                             }
                         }
                     }
@@ -233,20 +285,29 @@ impl Treebank {
                 TreeSource::Files(paths) => {
                     for chunk in paths.chunks(4) {
                         // 1) compute per-path results in parallel, but keep them grouped by path
-                        let per_path: Vec<Vec<_>> = chunk
+                        let per_path: Vec<Vec<Result<Match, TreebankError>>> = chunk
                             .par_iter()
                             .map(|path| {
                                 let it = match TreeIterator::from_file(path) {
                                     Ok(it) => it,
                                     Err(e) => {
-                                        eprintln!("Error: {:?}", e);
-                                        return Vec::new();
+                                        return vec![Err(TreebankError::FileOpen {
+                                            path: path.clone(),
+                                            source: e,
+                                        })];
                                     }
                                 };
 
-                                it.filter_map(Result::ok) // drop bad trees, keep order
-                                    .flat_map(|tree| search(tree, &pattern)) // search yields matches in order
-                                    .collect::<Vec<_>>() // per-file ordered vec
+                                it.flat_map(|result| {
+                                    match result {
+                                        Ok(tree) => {
+                                            // search yields matches in order, wrap each in Ok
+                                            search(tree, &pattern).into_iter().map(Ok).collect::<Vec<_>>()
+                                        }
+                                        Err(e) => vec![Err(TreebankError::from(e))],
+                                    }
+                                })
+                                .collect::<Vec<_>>() // per-file ordered vec
                             })
                             .collect(); // for slices, Rayon collects in the original order of `chunk`
 
@@ -267,14 +328,27 @@ impl Treebank {
             thread::spawn(move || match self.source {
                 TreeSource::String(text) => {
                     let mut batch = Vec::with_capacity(MATCH_BATCH_SIZE);
-                    for tree in TreeIterator::from_string(&text).filter_map(|result| result.ok()) {
-                        for m in search(tree, &pattern) {
-                            batch.push(m);
-                            if batch.len() >= MATCH_BATCH_SIZE {
-                                if tx.send(batch).is_err() {
-                                    return;
+                    for result in TreeIterator::from_string(&text) {
+                        match result {
+                            Ok(tree) => {
+                                for m in search(tree, &pattern) {
+                                    batch.push(Ok(m));
+                                    if batch.len() >= MATCH_BATCH_SIZE {
+                                        if tx.send(batch).is_err() {
+                                            return;
+                                        }
+                                        batch = Vec::with_capacity(MATCH_BATCH_SIZE);
+                                    }
                                 }
-                                batch = Vec::with_capacity(MATCH_BATCH_SIZE);
+                            }
+                            Err(e) => {
+                                batch.push(Err(TreebankError::from(e)));
+                                if batch.len() >= MATCH_BATCH_SIZE {
+                                    if tx.send(batch).is_err() {
+                                        return;
+                                    }
+                                    batch = Vec::with_capacity(MATCH_BATCH_SIZE);
+                                }
                             }
                         }
                     }
@@ -285,13 +359,24 @@ impl Treebank {
                 TreeSource::Files(paths) => {
                     paths.par_iter().for_each(|path| {
                         let tx = tx.clone();
-                        if let Ok(reader) = TreeIterator::from_file(path) {
-                            let mut batch = Vec::with_capacity(MATCH_BATCH_SIZE);
-                            for result in reader {
-                                match result {
-                                    Ok(tree) => {
-                                        for m in search(tree, &pattern) {
-                                            batch.push(m);
+                        match TreeIterator::from_file(path) {
+                            Ok(reader) => {
+                                let mut batch = Vec::with_capacity(MATCH_BATCH_SIZE);
+                                for result in reader {
+                                    match result {
+                                        Ok(tree) => {
+                                            for m in search(tree, &pattern) {
+                                                batch.push(Ok(m));
+                                                if batch.len() >= MATCH_BATCH_SIZE {
+                                                    if tx.send(batch).is_err() {
+                                                        return;
+                                                    }
+                                                    batch = Vec::with_capacity(MATCH_BATCH_SIZE);
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            batch.push(Err(TreebankError::from(e)));
                                             if batch.len() >= MATCH_BATCH_SIZE {
                                                 if tx.send(batch).is_err() {
                                                     return;
@@ -300,14 +385,17 @@ impl Treebank {
                                             }
                                         }
                                     }
-                                    Err(e) => eprintln!("Error: {:?}", e),
+                                }
+                                if !batch.is_empty() {
+                                    let _ = tx.send(batch);
                                 }
                             }
-                            if !batch.is_empty() {
-                                let _ = tx.send(batch);
+                            Err(e) => {
+                                let _ = tx.send(vec![Err(TreebankError::FileOpen {
+                                    path: path.clone(),
+                                    source: e,
+                                })]);
                             }
-                        } else {
-                            eprintln!("Failed to open file: {:?}", path);
                         }
                     });
                 }
@@ -347,6 +435,7 @@ mod tests {
     fn test_treebank_from_string() {
         let trees: Vec<_> = Treebank::from_string(TWO_TREE_CONLLU)
             .tree_iter(true)
+            .filter_map(Result::ok)
             .collect();
 
         assert_eq!(trees.len(), 2);
@@ -358,7 +447,7 @@ mod tests {
     fn test_match_set_from_string() {
         let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
         let tree_set = Treebank::from_string(THREE_VERB_CONLLU);
-        let matches: Vec<_> = tree_set.match_iter(pattern, true).collect();
+        let matches: Vec<_> = tree_set.match_iter(pattern, true).filter_map(Result::ok).collect();
 
         assert_eq!(matches.len(), 3);
     }
@@ -371,7 +460,7 @@ mod tests {
 
         let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
         let tree_set = Treebank::from_string(conllu);
-        let matches: Vec<_> = tree_set.match_iter(pattern, true).collect();
+        let matches: Vec<_> = tree_set.match_iter(pattern, true).filter_map(Result::ok).collect();
 
         assert_eq!(matches.len(), 2);
     }
@@ -383,7 +472,7 @@ mod tests {
 
         let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
         let tree_set = Treebank::from_string(conllu);
-        let matches: Vec<_> = tree_set.match_iter(pattern, true).collect();
+        let matches: Vec<_> = tree_set.match_iter(pattern, true).filter_map(Result::ok).collect();
 
         assert_eq!(matches.len(), 0);
     }
@@ -398,7 +487,7 @@ mod tests {
         let pattern =
             parse_query("MATCH { V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 -> V2; }").unwrap();
         let tree_set = Treebank::from_string(conllu);
-        let matches: Vec<_> = tree_set.match_iter(pattern, true).collect();
+        let matches: Vec<_> = tree_set.match_iter(pattern, true).filter_map(Result::ok).collect();
 
         assert_eq!(matches.len(), 1);
     }
@@ -439,7 +528,7 @@ mod tests {
                 ),
             ]);
 
-            let results: Vec<_> = Treebank::from_paths(paths).tree_iter(true).collect();
+            let results: Vec<_> = Treebank::from_paths(paths).tree_iter(true).filter_map(Result::ok).collect();
 
             assert_eq!(results.len(), 2);
             assert_eq!(results[0].words.len(), 2);
@@ -464,6 +553,7 @@ mod tests {
             let results: Vec<_> = Treebank::from_glob(&pattern)
                 .unwrap()
                 .tree_iter(true)
+                .filter_map(Result::ok)
                 .collect();
 
             assert_eq!(results.len(), 2);
@@ -484,7 +574,7 @@ mod tests {
 
             let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
             let tree_set = Treebank::from_paths(paths);
-            let results: Vec<_> = tree_set.match_iter(pattern, true).collect();
+            let results: Vec<_> = tree_set.match_iter(pattern, true).filter_map(Result::ok).collect();
 
             assert_eq!(results.len(), 2);
         }
@@ -502,13 +592,13 @@ mod tests {
             let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
             let glob_pattern = format!("{}/*.conllu", dir.path().display());
             let tree_set = Treebank::from_glob(&glob_pattern).unwrap();
-            let results: Vec<_> = tree_set.match_iter(pattern, true).collect();
+            let results: Vec<_> = tree_set.match_iter(pattern, true).filter_map(Result::ok).collect();
 
             assert_eq!(results.len(), 2);
         }
 
         #[test]
-        fn test_skips_bad_files() {
+        fn test_reports_bad_files() {
             let (dir, mut paths) = create_test_files(&[(
                 "good.conllu",
                 "1\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n",
@@ -520,7 +610,10 @@ mod tests {
 
             let results: Vec<_> = Treebank::from_paths(paths).tree_iter(true).collect();
 
-            assert_eq!(results.len(), 2);
+            // Should get 2 Ok results and 1 Err result
+            assert_eq!(results.len(), 3);
+            assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 2);
+            assert_eq!(results.iter().filter(|r| r.is_err()).count(), 1);
         }
 
         #[test]
@@ -536,8 +629,8 @@ mod tests {
 
             // Multiple iterations should produce same order
             let treebank = Treebank::from_paths(paths.clone());
-            let run1: Vec<_> = treebank.clone().tree_iter(true).collect();
-            let run2: Vec<_> = treebank.clone().tree_iter(true).collect();
+            let run1: Vec<_> = treebank.clone().tree_iter(true).filter_map(Result::ok).collect();
+            let run2: Vec<_> = treebank.clone().tree_iter(true).filter_map(Result::ok).collect();
 
             assert_eq!(run1.len(), 3);
             assert_eq!(run2.len(), 3);
@@ -563,7 +656,7 @@ mod tests {
             ]);
 
             let treebank = Treebank::from_paths(paths);
-            let results: Vec<_> = treebank.tree_iter(false).collect();
+            let results: Vec<_> = treebank.tree_iter(false).filter_map(Result::ok).collect();
 
             // Should still get all trees, just possibly in different order
             assert_eq!(results.len(), 3);
@@ -591,7 +684,7 @@ mod tests {
 
             let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
             let treebank = Treebank::from_paths(paths);
-            let results: Vec<_> = treebank.match_iter(pattern, true).collect();
+            let results: Vec<_> = treebank.match_iter(pattern, true).filter_map(Result::ok).collect();
 
             assert_eq!(results.len(), 2);
         }
@@ -608,7 +701,7 @@ mod tests {
 
             let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
             let treebank = Treebank::from_paths(paths);
-            let results: Vec<_> = treebank.match_iter(pattern, false).collect();
+            let results: Vec<_> = treebank.match_iter(pattern, false).filter_map(Result::ok).collect();
 
             // Should get all matches, order doesn't matter
             assert_eq!(results.len(), 2);
