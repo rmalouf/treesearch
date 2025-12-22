@@ -21,8 +21,8 @@ Parsing query strings into reusable pattern objects:
 Finding pattern matches in trees:
 
 - [search()](functions.md#search) - Search single tree
-- [search_file()](functions.md#search_file) - Search single file
-- [search_files()](functions.md#search_files) - Search multiple files
+- [get_matches()](functions.md#search_file) - Search single file
+- [get_matches()](functions.md#search_files) - Search multiple files
 
 ### Tree and Word access
 
@@ -35,8 +35,8 @@ Navigating dependency structures and accessing word properties:
 
 Reading trees without searching:
 
-- [read_trees()](functions.md#read_trees) - Read single file
-- [read_trees_glob()](functions.md#read_trees_glob) - Read multiple files
+- [get_trees()](functions.md#read_trees) - Read single file
+- [get_trees()](functions.md#read_trees_glob) - Read multiple files
 
 ## Quick reference
 
@@ -55,7 +55,7 @@ pattern = treesearch.parse_query("""
 """)
 
 # Search multiple files
-for tree, match in treesearch.search_files("data/*.conllu", pattern):
+for tree, match in treesearch.get_matches("data/*.conllu", pattern):
     verb = tree.get_word(match["V"])
     noun = tree.get_word(match["N"])
     print(f"{verb.form} -> {noun.form}")
@@ -67,7 +67,7 @@ for tree, match in treesearch.search_files("data/*.conllu", pattern):
 import treesearch
 
 # Create treebank
-tb = treesearch.Treebank.from_glob("data/*.conllu")
+tb = treesearch.Treebank.from_files("data/*.conllu")
 
 # Iterate over trees
 for tree in tb.trees():
@@ -86,11 +86,11 @@ for tree, match in tb.matches(pattern):
 
 ```python
 # Read trees
-for tree in treesearch.read_trees("corpus.conllu"):
+for tree in treesearch.get_trees("corpus.conllu"):
     print(tree.sentence_text)
 
 # Search file
-for tree, match in treesearch.search_file("corpus.conllu", pattern):
+for tree, match in treesearch.get_matches("corpus.conllu", pattern):
     process(match)
 ```
 
@@ -98,18 +98,18 @@ for tree, match in treesearch.search_file("corpus.conllu", pattern):
 
 ```python
 # Read from multiple files (automatic parallel processing)
-for tree in treesearch.read_trees_glob("data/*.conllu"):
+for tree in treesearch.get_trees("data/*.conllu"):
     analyze(tree)
 
 # Search multiple files (automatic parallel processing)
-for tree, match in treesearch.search_files("data/*.conllu", pattern):
+for tree, match in treesearch.get_matches("data/*.conllu", pattern):
     process(match)
 ```
 
 ### Working with matches
 
 ```python
-for tree, match in treesearch.search_file("corpus.conllu", pattern):
+for tree, match in treesearch.get_matches("corpus.conllu", pattern):
     # Match is dict mapping variable names to word IDs
     verb_id = match["V"]
     noun_id = match["N"]

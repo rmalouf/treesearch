@@ -11,7 +11,7 @@ import treesearch
 
 pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
 
-for tree in treesearch.read_trees("corpus.conllu"):
+for tree in treesearch.get_trees("corpus.conllu"):
     for match in treesearch.search(tree, pattern):
         verb = tree.get_word(match["V"])
         print(verb.form)
@@ -24,7 +24,7 @@ More efficient than reading and searching separately:
 ```python
 pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
 
-for tree, match in treesearch.search_file("corpus.conllu", pattern):
+for tree, match in treesearch.get_matches("corpus.conllu", pattern):
     verb = tree.get_word(match["V"])
     print(f"{verb.form}: {tree.sentence_text}")
 ```
@@ -36,7 +36,7 @@ Best for large corpora:
 ```python
 pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
 
-for tree, match in treesearch.search_files("data/*.conllu", pattern):
+for tree, match in treesearch.get_matches("data/*.conllu", pattern):
     verb = tree.get_word(match["V"])
     print(f"{verb.form}: {tree.sentence_text}")
 ```
@@ -71,7 +71,7 @@ MATCH {
 
 # This will find ALL parent-child pairs in every tree
 pattern = treesearch.parse_query(query)
-for tree, match in treesearch.search_file("corpus.conllu", pattern):
+for tree, match in treesearch.get_matches("corpus.conllu", pattern):
     # Many matches per tree
     pass
 ```
@@ -83,11 +83,11 @@ for tree, match in treesearch.search_file("corpus.conllu", pattern):
 ```python
 # Good
 pattern = treesearch.parse_query(query)
-for tree, match in treesearch.search_files("*.conllu", pattern):
+for tree, match in treesearch.get_matches("*.conllu", pattern):
     pass
 
 # Bad: re-parsing
-for tree, match in treesearch.search_files("*.conllu", treesearch.parse_query(query)):
+for tree, match in treesearch.get_matches("*.conllu", treesearch.parse_query(query)):
     pass
 ```
 
@@ -95,11 +95,11 @@ for tree, match in treesearch.search_files("*.conllu", treesearch.parse_query(qu
 
 ```python
 # Fast: parallel (default)
-for tree, match in treesearch.search_files("*.conllu", pattern):
+for tree, match in treesearch.get_matches("*.conllu", pattern):
     pass
 
 # Slower: sequential
-for tree, match in treesearch.search_files("*.conllu", pattern, parallel=False):
+for tree, match in treesearch.get_matches("*.conllu", pattern, parallel=False):
     pass
 ```
 

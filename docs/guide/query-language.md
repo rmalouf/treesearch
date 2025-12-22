@@ -330,11 +330,11 @@ Test on small data first:
 
 ```python
 # Search one file first
-for tree, match in treesearch.search_file("sample.conllu", pattern):
+for tree, match in treesearch.get_matches("sample.conllu", pattern):
     print(match)
 
 # Then scale to full corpus
-for tree, match in treesearch.search_files("corpus/*.conllu", pattern):
+for tree, match in treesearch.get_matches("corpus/*.conllu", pattern):
     print(match)
 ```
 

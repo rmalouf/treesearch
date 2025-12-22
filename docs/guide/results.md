@@ -7,7 +7,7 @@ Guide to navigating trees and extracting data from search results.
 Matches map variable names to word IDs:
 
 ```python
-for tree, match in treesearch.search_file("corpus.conllu", pattern):
+for tree, match in treesearch.get_matches("corpus.conllu", pattern):
     print(match)
     # {"V": 3, "N": 7}
 ```
@@ -17,7 +17,7 @@ for tree, match in treesearch.search_file("corpus.conllu", pattern):
 Use `tree.get_word()` with match IDs:
 
 ```python
-for tree, match in treesearch.search_file("corpus.conllu", pattern):
+for tree, match in treesearch.get_matches("corpus.conllu", pattern):
     verb = tree.get_word(match["V"])
     noun = tree.get_word(match["N"])
 
@@ -121,7 +121,7 @@ print()
 ### By Word Properties
 
 ```python
-for tree, match in treesearch.search_files("*.conllu", pattern):
+for tree, match in treesearch.get_matches("*.conllu", pattern):
     verb = tree.get_word(match["V"])
 
     # Filter by tense
@@ -132,7 +132,7 @@ for tree, match in treesearch.search_files("*.conllu", pattern):
 ### By Tree Properties
 
 ```python
-for tree, match in treesearch.search_files("*.conllu", pattern):
+for tree, match in treesearch.get_matches("*.conllu", pattern):
     # Filter by sentence length
     if len(tree) > 20:
         process(tree, match)
@@ -146,7 +146,7 @@ for tree, match in treesearch.search_files("*.conllu", pattern):
 ### By Context
 
 ```python
-for tree, match in treesearch.search_files("*.conllu", pattern):
+for tree, match in treesearch.get_matches("*.conllu", pattern):
     verb = tree.get_word(match["V"])
 
     # Filter by parent
@@ -169,7 +169,7 @@ from collections import Counter
 
 lemma_counts = Counter()
 
-for tree, match in treesearch.search_files("*.conllu", pattern):
+for tree, match in treesearch.get_matches("*.conllu", pattern):
     verb = tree.get_word(match["V"])
     lemma_counts[verb.lemma] += 1
 
@@ -182,7 +182,7 @@ for lemma, count in lemma_counts.most_common(10):
 ```python
 examples = []
 
-for tree, match in treesearch.search_files("*.conllu", pattern):
+for tree, match in treesearch.get_matches("*.conllu", pattern):
     example = {
         "sentence": tree.sentence_text,
         "match": {var: tree.get_word(id).form for var, id in match.items()}

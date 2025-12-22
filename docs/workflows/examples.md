@@ -10,7 +10,7 @@ import treesearch
 pattern = treesearch.parse_query("MATCH { V [upos="VERB"]; }")
 
 examples = []
-for tree, match in treesearch.search_files("corpus/*.conllu", pattern):
+for tree, match in treesearch.get_matches("corpus/*.conllu", pattern):
     examples.append(tree.sentence_text)
 
     if len(examples) >= 10:
@@ -35,7 +35,7 @@ MATCH {
 
 examples = []
 
-for tree, match in treesearch.search_files("corpus/*.conllu", pattern):
+for tree, match in treesearch.get_matches("corpus/*.conllu", pattern):
     verb = tree.get_word(match["V"])
 
     # Filter for past tense
@@ -60,7 +60,7 @@ from collections import defaultdict
 pattern = treesearch.parse_query("MATCH { V [upos="VERB"]; }")
 examples_by_lemma = defaultdict(list)
 
-for tree, match in treesearch.search_files("corpus/*.conllu", pattern):
+for tree, match in treesearch.get_matches("corpus/*.conllu", pattern):
     verb = tree.get_word(match["V"])
 
     if len(examples_by_lemma[verb.lemma]) < 3:
@@ -81,7 +81,7 @@ import json
 pattern = treesearch.parse_query(query)
 examples = []
 
-for tree, match in treesearch.search_files("corpus/*.conllu", pattern):
+for tree, match in treesearch.get_matches("corpus/*.conllu", pattern):
     example = {
         "sentence": tree.sentence_text,
         "metadata": tree.metadata,

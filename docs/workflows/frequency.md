@@ -10,7 +10,7 @@ import treesearch
 pattern = treesearch.parse_query("MATCH { V [upos="VERB"]; }")
 
 count = 0
-for tree, match in treesearch.search_files("corpus/*.conllu", pattern):
+for tree, match in treesearch.get_matches("corpus/*.conllu", pattern):
     count += 1
 
 print(f"Total verbs: {count}")
@@ -24,7 +24,7 @@ from collections import Counter
 pattern = treesearch.parse_query("MATCH { V [upos="VERB"]; }")
 verb_counts = Counter()
 
-for tree, match in treesearch.search_files("corpus/*.conllu", pattern):
+for tree, match in treesearch.get_matches("corpus/*.conllu", pattern):
     verb = tree.get_word(match["V"])
     verb_counts[verb.lemma] += 1
 
@@ -53,7 +53,7 @@ MATCH {
 pattern = treesearch.parse_query(query)
 verb_counts = Counter()
 
-for tree, match in treesearch.search_files("corpus/*.conllu", pattern):
+for tree, match in treesearch.get_matches("corpus/*.conllu", pattern):
     verb = tree.get_word(match["V"])
     verb_counts[verb.lemma] += 1
 
@@ -74,7 +74,7 @@ pattern = treesearch.parse_query("MATCH { V [upos="VERB"]; }")
 # Count by genre
 genre_counts = defaultdict(Counter)
 
-for tree, match in treesearch.search_files("corpus/*.conllu", pattern):
+for tree, match in treesearch.get_matches("corpus/*.conllu", pattern):
     verb = tree.get_word(match["V"])
     genre = tree.metadata.get('genre', 'unknown')
 

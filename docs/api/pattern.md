@@ -93,7 +93,7 @@ for tree, match in treesearch.get_matchess("data/*.conllu", pattern):
 Search a treebank using the object-oriented API.
 
 ```python
-tb = treesearch.Treebank.from_glob("data/*.conllu")
+tb = treesearch.Treebank.from_files("data/*.conllu")
 for tree, match in tb.matches(pattern):
     # Process match
     verb = tree.get_word(match["V"])
@@ -228,7 +228,7 @@ relative = treesearch.parse_query("""
     }
 """)
 
-tb = treesearch.Treebank.from_glob("data/*.conllu")
+tb = treesearch.Treebank.from_files("data/*.conllu")
 for tree, match in tb.matches(relative):
     head = tree.get_word(match["Head"])
     rel = tree.get_word(match["Rel"])
