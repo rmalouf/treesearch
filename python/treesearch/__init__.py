@@ -17,8 +17,8 @@ try:
         Treebank,
         TreeIterator,
         MatchIterator,
-        parse_query,
-        search,
+        compile_query,
+        py_search_trees,
     )
 except ImportError:
     import sys
@@ -38,16 +38,17 @@ __all__ = [
     "Treebank",
     "TreeIterator",
     "MatchIterator",
-    "parse_query",
+    "compile_query",
     "search",
-    "open",
+    "load",
     "from_string",
-    "get_trees",
-    "get_matches",
+    "trees",
+    "search",
+    "search_trees",
 ]
 
 
-def open(source: str | Path | Iterable[str | Path]) -> Treebank:
+def load(source: str | Path | Iterable[str | Path]) -> Treebank:
     """Open a treebank from a file or glob pattern.
 
     Automatically detects whether the path is a glob pattern (contains * or ?)
@@ -64,9 +65,9 @@ def open(source: str | Path | Iterable[str | Path]) -> Treebank:
         ValueError: If glob pattern is invalid
 
     Example:
-        >>> tb = treesearch.open("corpus.conllu")
-        >>> tb = treesearch.open(Path("corpus.conllu"))
-        >>> tb = treesearch.open("data/*.conllu")
+        >>> tb = treesearch.load("corpus.conllu")
+        >>> tb = treesearch.load(Path("corpus.conllu"))
+        >>> tb = treesearch.load("data/*.conllu")
         >>> for tree in tb.trees():
         ...     print(tree.sentence_text)
     """
@@ -105,7 +106,7 @@ def from_string(text: str) -> Treebank:
     return Treebank.from_string(text)
 
 
-def get_trees(source: str | Path | Iterable[str | Path], ordered: bool = True) -> TreeIterator:
+def trees(source: str | Path | Iterable[str | Path], ordered: bool = True) -> TreeIterator:
     """Read trees from one or more CoNLL-U files.
 
     Args:
@@ -115,11 +116,11 @@ def get_trees(source: str | Path | Iterable[str | Path], ordered: bool = True) -
     Returns:
         Iterator over Tree objects
     """
-    treebank = open(source)
+    treebank = load(source)
     return treebank.trees(ordered=ordered)
 
 
-def get_matches(
+def search(
     source: str | Path | Iterable[str | Path],
     query: str | Pattern,
     ordered: bool = True,
@@ -134,7 +135,30 @@ def get_matches(
     Returns:
         Iterator over (Tree, match_dict) tuples
     """
-    treebank = open(source)
     if isinstance(query, str):
-        query = parse_query(query)
-    return treebank.matches(query, ordered=ordered)
+        query = compile_query(query)
+    treebank = load(source)
+    if isinstance(query, str):
+        query = compile_query(query)
+    return treebank.search(query, ordered=ordered)
+
+
+def search_trees(
+    source: Tree | Iterable[Tree],
+    query: str | Pattern,
+) -> MatchIterator:
+    """Search one or more files for pattern matches.
+
+    Args:
+        source: Path to a single file or glob pattern
+        query: Query string or compiled Pattern
+        ordered: If True (default), return matches in deterministic order
+
+    Returns:
+        Iterator over (Tree, match_dict) tuples
+    """
+    if isinstance(query, str):
+        query = compile_query(query)
+    if isinstance(source, Tree):
+        source = [source]
+    return py_search_trees(source, query)

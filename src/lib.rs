@@ -6,19 +6,19 @@
 //! Core implementation in Rust with Python bindings.
 
 // Core modules
+pub mod bytes;
 pub mod conllu; // CoNLL-U file parsing
 pub mod iterators; // Iterator interfaces for trees and matches
 pub mod pattern; // Pattern AST
+pub mod python;
 pub mod query; // Query language parser
 pub mod searcher;
 pub mod tree; // Tree data structures with full CoNLL-U support
-pub mod python;
-pub mod bytes;
 
 // Re-exports for convenience
 pub use conllu::TreeIterator;
 pub use iterators::{Treebank, TreebankError};
 pub use pattern::{Constraint, EdgeConstraint, Pattern, PatternVar, RelationType, VarId};
-pub use query::parse_query;
-pub use searcher::{Match, search, search_query};
+pub use query::compile_query;
+pub use searcher::{Match, search_tree, search_tree_query};
 pub use tree::{Features, TokenId, Tree, Word, WordId};

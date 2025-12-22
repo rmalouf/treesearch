@@ -29,7 +29,7 @@ pub enum QueryError {
     NoMATCH,
 }
 
-pub fn parse_query(input: &str) -> Result<Pattern, QueryError> {
+pub fn compile_query(input: &str) -> Result<Pattern, QueryError> {
     let mut match_pattern: Option<Pattern> = None;
     let mut option_patterns: Vec<Pattern> = vec![];
 
@@ -38,8 +38,8 @@ pub fn parse_query(input: &str) -> Result<Pattern, QueryError> {
 
     for item in query_pair.into_inner() {
         match item.as_rule() {
-            Rule::match_block => match_pattern = Some(parse_query_block(item)?),
-            Rule::option_block => option_patterns.push(parse_query_block(item)?),
+            Rule::match_block => match_pattern = Some(compile_query_block(item)?),
+            Rule::option_block => option_patterns.push(compile_query_block(item)?),
             Rule::EOI => {}
             _ => unreachable!(),
         }
@@ -52,7 +52,7 @@ pub fn parse_query(input: &str) -> Result<Pattern, QueryError> {
     }
 }
 
-pub fn parse_query_block(item: Pair<Rule>) -> Result<Pattern, QueryError> {
+pub fn compile_query_block(item: Pair<Rule>) -> Result<Pattern, QueryError> {
     let mut vars: HashMap<String, PatternVar> = HashMap::new();
     let mut edges: Vec<EdgeConstraint> = Vec::new();
 
@@ -62,18 +62,18 @@ pub fn parse_query_block(item: Pair<Rule>) -> Result<Pattern, QueryError> {
                 let inner = statement.into_inner().next().unwrap();
                 match inner.as_rule() {
                     Rule::node_decl => {
-                        let var = parse_var_decl(inner)?;
+                        let var = compile_var_decl(inner)?;
                         if vars.contains_key(&var.var_name) {
                             return Err(QueryError::DuplicateVariable(var.var_name));
                         };
                         vars.insert(var.var_name.to_string(), var);
                     }
                     Rule::edge_decl => {
-                        let edge_constraint = parse_edge_decl(inner)?;
+                        let edge_constraint = compile_edge_decl(inner)?;
                         edges.push(edge_constraint);
                     }
                     Rule::precedence_decl => {
-                        let edge_constraint = parse_precedence_decl(inner)?;
+                        let edge_constraint = compile_precedence_constraint(inner)?;
                         edges.push(edge_constraint);
                     }
                     _ => unreachable!(),
@@ -86,21 +86,21 @@ pub fn parse_query_block(item: Pair<Rule>) -> Result<Pattern, QueryError> {
     Ok(Pattern::with_constraints(vars, edges))
 }
 
-fn parse_var_decl(pair: pest::iterators::Pair<Rule>) -> Result<PatternVar, QueryError> {
+fn compile_var_decl(pair: pest::iterators::Pair<Rule>) -> Result<PatternVar, QueryError> {
     let mut inner = pair.into_inner();
 
     let ident_pair = inner.next().unwrap();
     let var_name = ident_pair.as_str().to_string();
     let constraint_list = inner.next().unwrap();
-    let constraints = parse_constraint_list(constraint_list)?;
+    let constraints = compile_constraint_list(constraint_list)?;
 
     Ok(PatternVar::new(&var_name, constraints))
 }
 
-fn parse_constraint_list(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, QueryError> {
+fn compile_constraint_list(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, QueryError> {
     let constraints: Vec<Constraint> = pair
         .into_inner()
-        .map(parse_constraint)
+        .map(compile_constraint)
         .collect::<Result<Vec<_>, _>>()?;
 
     match constraints.len() {
@@ -110,17 +110,17 @@ fn parse_constraint_list(pair: pest::iterators::Pair<Rule>) -> Result<Constraint
     }
 }
 
-fn parse_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, QueryError> {
+fn compile_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, QueryError> {
     let inner = pair.into_inner().next().unwrap();
 
     match inner.as_rule() {
-        Rule::feature_constraint => parse_feature_constraint(inner),
-        Rule::regular_constraint => parse_regular_constraint(inner),
+        Rule::feature_constraint => compile_feature_constraint(inner),
+        Rule::regular_constraint => compile_regular_constraint(inner),
         _ => unreachable!(),
     }
 }
 
-fn parse_feature_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, QueryError> {
+fn compile_feature_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, QueryError> {
     let mut inner = pair.into_inner();
     let feature_key = inner.next().unwrap().as_str().to_string();
     let operator = inner.next().unwrap().as_str();
@@ -135,7 +135,7 @@ fn parse_feature_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constra
     }
 }
 
-fn parse_regular_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, QueryError> {
+fn compile_regular_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, QueryError> {
     let mut inner = pair.into_inner();
 
     let key = inner.next().unwrap().as_str();
@@ -158,7 +158,7 @@ fn parse_regular_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constra
     }
 }
 
-fn parse_edge_decl(pair: pest::iterators::Pair<Rule>) -> Result<EdgeConstraint, QueryError> {
+fn compile_edge_decl(pair: pest::iterators::Pair<Rule>) -> Result<EdgeConstraint, QueryError> {
     let mut inner = pair.into_inner();
 
     let from = inner.next().unwrap().as_str().to_string();
@@ -193,7 +193,9 @@ fn parse_edge_decl(pair: pest::iterators::Pair<Rule>) -> Result<EdgeConstraint, 
     })
 }
 
-fn parse_precedence_decl(pair: pest::iterators::Pair<Rule>) -> Result<EdgeConstraint, QueryError> {
+fn compile_precedence_constraint(
+    pair: pest::iterators::Pair<Rule>,
+) -> Result<EdgeConstraint, QueryError> {
     let mut inner = pair.into_inner();
 
     let from = inner.next().unwrap().as_str().to_string();
@@ -222,14 +224,14 @@ mod tests {
     #[test]
     fn test_parse_constraints() {
         let query = "MATCH { Node []; }";
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         assert_eq!(pattern.var_constraints.len(), 1);
         assert_eq!(*pattern.var_ids.get("Node").unwrap(), 0);
         assert!(pattern.var_constraints[0].is_any());
 
         let query = r#"MATCH { Verb [upos="VERB"]; }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         assert_eq!(pattern.var_constraints.len(), 1);
         assert_eq!(*pattern.var_ids.get("Verb").unwrap(), 0);
@@ -239,7 +241,7 @@ mod tests {
         );
 
         let query = r#"MATCH { Help [lemma="help", upos="VERB"]; }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         assert_eq!(pattern.var_constraints.len(), 1);
         assert_eq!(*pattern.var_ids.get("Help").unwrap(), 0);
@@ -260,7 +262,7 @@ mod tests {
             To [lemma="to"];
             Help -[xcomp]-> To;
         }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         assert_eq!(pattern.var_constraints.len(), 2);
         assert_eq!(pattern.edge_constraints.len(), 1);
@@ -279,7 +281,7 @@ mod tests {
             Child [];
             Parent -> Child;
         }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         assert_eq!(pattern.var_constraints.len(), 2);
         assert_eq!(pattern.edge_constraints.len(), 1);
@@ -298,7 +300,7 @@ mod tests {
             To [];
             Help !-> To;
         }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         assert_eq!(pattern.edge_constraints.len(), 1);
 
@@ -317,7 +319,7 @@ mod tests {
             To [lemma="to"];
             Help !-[xcomp]-> To;
         }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         assert_eq!(pattern.edge_constraints.len(), 1);
 
@@ -337,7 +339,7 @@ mod tests {
             To [];
             Help -[xcomp]-> To;
         }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         let edge_constraint = &pattern.edge_constraints[0];
         assert_eq!(edge_constraint.negated, false);
@@ -354,7 +356,7 @@ mod tests {
             Help -[xcomp]-> To;
             To -[obj]-> YHead;
         }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         assert_eq!(pattern.var_constraints.len(), 3);
         assert!(pattern.var_ids.contains_key("Help"));
@@ -376,7 +378,7 @@ mod tests {
             N3 [form="running"];
             N4 [deprel="nsubj"];
         }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         assert_eq!(pattern.var_constraints.len(), 4);
         assert!(
@@ -409,7 +411,7 @@ mod tests {
             Help -> To;
             To [lemma="to"];
         }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         // Parser accepts this, but should validate that all variables exist
         assert_eq!(pattern.var_constraints.len(), 2);
@@ -425,7 +427,7 @@ mod tests {
             Node [upos="NOUN"];
             Foo -> Bar;
         }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         assert_eq!(pattern.var_constraints.len(), 3);
         assert_eq!(pattern.edge_constraints.len(), 1);
@@ -440,7 +442,7 @@ mod tests {
             Node [upos="NOUN"];
             Node -> Node;
         }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         // This is likely invalid but parser should accept it
         assert_eq!(pattern.var_constraints.len(), 1);
@@ -457,7 +459,7 @@ mod tests {
             Node [upos="VERB"];
             Node -> Node;
         }"#;
-        let pattern = parse_query(query);
+        let pattern = compile_query(query);
         assert!(matches!(pattern, Err(QueryError::DuplicateVariable(_))));
     }
 
@@ -469,7 +471,7 @@ mod tests {
             Second [upos="VERB"];
             First << Second;
         }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         assert_eq!(pattern.var_constraints.len(), 2);
         assert_eq!(pattern.edge_constraints.len(), 1);
@@ -489,7 +491,7 @@ mod tests {
             Noun [upos="NOUN"];
             Adj < Noun;
         }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         assert_eq!(pattern.var_constraints.len(), 2);
         assert_eq!(pattern.edge_constraints.len(), 1);
@@ -515,7 +517,7 @@ MATCH {
             Verb << Obj;
         
 }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         assert_eq!(pattern.var_constraints.len(), 3);
         assert_eq!(pattern.edge_constraints.len(), 4);
@@ -546,7 +548,7 @@ MATCH {
             B << C;
         
 }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         assert_eq!(pattern.var_constraints.len(), 3);
         assert_eq!(pattern.edge_constraints.len(), 2);
@@ -573,7 +575,7 @@ MATCH {
     #[test]
     fn test_parse_feature_constraint() {
         let query = r#"MATCH { V [feats.Tense="Past"]; }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         assert_eq!(pattern.var_constraints.len(), 1);
         assert_eq!(*pattern.var_ids.get("V").unwrap(), 0);
@@ -589,7 +591,7 @@ MATCH {
     #[test]
     fn test_parse_multiple_features() {
         let query = r#"MATCH { N [feats.Number="Plur", feats.Case="Nom"]; }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         match &pattern.var_constraints[0] {
             Constraint::And(constraints) => {
@@ -608,7 +610,7 @@ MATCH {
     #[test]
     fn test_parse_mixed_constraints() {
         let query = r#"MATCH { V [lemma="be", feats.Tense="Past"]; }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         match &pattern.var_constraints[0] {
             Constraint::And(constraints) => {
@@ -624,7 +626,7 @@ MATCH {
     #[test]
     fn test_parse_negative_constraint() {
         let query = r#"MATCH { V [lemma!="help"]; }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         match &pattern.var_constraints[0] {
             Constraint::Not(inner) => match inner.as_ref() {
@@ -638,7 +640,7 @@ MATCH {
     #[test]
     fn test_parse_negative_feature() {
         let query = r#"MATCH { V [feats.Tense!="Past"]; }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         match &pattern.var_constraints[0] {
             Constraint::Not(inner) => match inner.as_ref() {
@@ -655,7 +657,7 @@ MATCH {
     #[test]
     fn test_parse_mixed_positive_negative() {
         let query = r#"MATCH { V [lemma="run", upos!="NOUN"]; }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         match &pattern.var_constraints[0] {
             Constraint::And(constraints) => {
@@ -676,7 +678,7 @@ MATCH {
             X [upos="NOUN"];
             _ -[obj]-> X;
         }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         assert_eq!(pattern.var_constraints.len(), 1);
         assert_eq!(pattern.edge_constraints.len(), 0); // Anonymous edges don't create edge constraints
@@ -702,7 +704,7 @@ MATCH {
             X [upos="VERB"];
             X -[nsubj]-> _;
         }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         assert_eq!(pattern.var_constraints.len(), 1);
         assert_eq!(pattern.edge_constraints.len(), 0);
@@ -726,7 +728,7 @@ MATCH {
         let query = r#"MATCH {
             _ -> _;
         }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         assert_eq!(pattern.var_constraints.len(), 0);
         assert_eq!(pattern.edge_constraints.len(), 0);
@@ -740,7 +742,7 @@ MATCH {
             _ -[obj]-> X;
             _ -[nsubj]-> X;
         }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         assert_eq!(pattern.var_constraints.len(), 1);
 
@@ -771,7 +773,7 @@ MATCH {
             X [];
             _ -> X;
         }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         assert_eq!(pattern.var_constraints.len(), 1);
 
@@ -793,7 +795,7 @@ MATCH {
             X -[nsubj]-> Y;
         
 }"#;
-        let pattern = parse_query(query).unwrap();
+        let pattern = compile_query(query).unwrap();
 
         assert_eq!(pattern.var_constraints.len(), 2);
         assert_eq!(pattern.edge_constraints.len(), 1); // Only X -> Y creates edge constraint

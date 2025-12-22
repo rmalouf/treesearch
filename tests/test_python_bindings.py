@@ -106,21 +106,21 @@ def temp_multi_files(multi_tree_conllu, tmp_path):
 class TestPattern:
     """Tests for pattern creation and query parsing."""
 
-    def test_parse_query(self):
-        """Test that Python can parse queries and create patterns."""
-        pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
+    def test_compile_query(self):
+        """Test that Python can compile queries and create patterns."""
+        pattern = treesearch.compile_query('MATCH { V [upos="VERB"]; }')
         assert pattern is not None
         assert "Pattern" in repr(pattern)
 
     def test_invalid_query_raises_error(self):
         """Test that invalid queries raise errors."""
         with pytest.raises(Exception):
-            treesearch.parse_query("INVALID SYNTAX [[[")
+            treesearch.compile_query("INVALID SYNTAX [[[")
 
     def test_empty_query(self):
         """Test that empty queries raise an error."""
         with pytest.raises(Exception):
-            treesearch.parse_query("")
+            treesearch.compile_query("")
 
 
 # Test Tree reading and iteration
@@ -161,8 +161,7 @@ class TestTreeReading:
 
         assert tree.sentence_text == "He helped us to win."
         assert len(tree) == 6
-        assert "Tree" in repr(tree)
-        assert "6 words" in repr(tree)
+        assert repr(tree) == "<Tree len=6 words='He helped us ...'>"
 
     def test_tree_metadata(self, temp_complex_file):
         """Test tree metadata property."""
@@ -176,23 +175,28 @@ class TestTreeReading:
         assert "source" in metadata
         assert metadata["source"] == "test"
 
-    def test_tree_get_word(self, temp_conllu_file):
+    def test_tree_word(self, temp_conllu_file):
         """Test getting words from a tree by ID."""
         trees = list(treesearch.Treebank.from_file(temp_conllu_file).trees())
         tree = trees[0]
 
         # Get first word (id=0)
-        word = tree.get_word(0)
+        word = tree.word(0)
         assert word is not None
         assert word.form == "He"
 
         # Get last word
-        last_word = tree.get_word(5)
+        last_word = tree.word(5)
         assert last_word is not None
         assert last_word.form == "."
 
-        # Test out of bounds
-        assert tree.get_word(999) is None
+        # Test out of bounds - should raise IndexError
+        with pytest.raises(IndexError, match="word index out of range: 999"):
+            tree.word(999)
+
+        # Test __getitem__ also raises IndexError
+        with pytest.raises(IndexError):
+            tree[999]
 
     def test_read_nonexistent_file(self):
         """Test reading a nonexistent file.
@@ -217,44 +221,44 @@ class TestWord:
         return trees[0]
 
     def test_word_basic_properties(self, sample_tree):
-        """Test basic word properties (id, form, lemma, pos, deprel)."""
-        word = sample_tree.get_word(1)  # "helped"
+        """Test basic word properties (id, form, lemma, upos, deprel)."""
+        word = sample_tree.word(1)  # "helped"
         assert word.id == 1
         assert word.token_id == 2  # 1-based in CoNLL-U
         assert word.form == "helped"
         assert word.lemma == "help"
-        assert word.pos == "VERB"
+        assert word.upos == "VERB"
         assert word.deprel == "root"
 
     def test_word_xpos(self, sample_tree):
         """Test xpos property (language-specific POS tag)."""
-        word = sample_tree.get_word(1)
+        word = sample_tree.word(1)
         xpos = word.xpos
         # xpos might be None if not provided (underscore in CoNLL-U)
         assert xpos is None or isinstance(xpos, str)
 
     def test_word_head_property(self, sample_tree):
         """Test word head property."""
-        word = sample_tree.get_word(0)  # "He"
+        word = sample_tree.word(0)  # "He"
         assert word.head == 1  # Head is "helped" (id=1)
 
-        root = sample_tree.get_word(1)  # "helped"
+        root = sample_tree.word(1)  # "helped"
         assert root.head is None  # Root has head=0 in CoNLL-U, None in API
 
     def test_word_parent_method(self, sample_tree):
         """Test getting parent word."""
-        word = sample_tree.get_word(0)  # "He"
+        word = sample_tree.word(0)  # "He"
         parent = word.parent()
         assert parent is not None
         assert parent.form == "helped"
 
         # Root word has no parent
-        root = sample_tree.get_word(1)
+        root = sample_tree.word(1)
         assert root.parent() is None
 
     def test_word_children_method(self, sample_tree):
         """Test getting all children words."""
-        verb = sample_tree.get_word(1)  # "helped"
+        verb = sample_tree.word(1)  # "helped"
         children = verb.children()
         assert len(children) > 0
 
@@ -267,7 +271,7 @@ class TestWord:
 
     def test_word_children_ids_property(self, sample_tree):
         """Test getting children IDs."""
-        verb = sample_tree.get_word(1)  # "helped"
+        verb = sample_tree.word(1)  # "helped"
         child_ids = verb.children_ids
         assert isinstance(child_ids, list)
         assert len(child_ids) == 4  # He, us, win, .
@@ -275,7 +279,7 @@ class TestWord:
 
     def test_word_children_by_deprel(self, sample_tree):
         """Test getting children filtered by dependency relation."""
-        verb = sample_tree.get_word(1)  # "helped"
+        verb = sample_tree.word(1)  # "helped"
 
         # Get nsubj children (should be "He")
         nsubj_children = verb.children_by_deprel("nsubj")
@@ -303,7 +307,7 @@ class TestWord:
 
     def test_word_repr(self, sample_tree):
         """Test word string representation."""
-        word = sample_tree.get_word(1)
+        word = sample_tree.word(1)
         repr_str = repr(word)
         assert "Word" in repr_str
         assert "helped" in repr_str
@@ -326,8 +330,8 @@ class TestWord:
 #
 #     def test_find_path_direct_child(self, complex_tree):
 #         """Test finding path from parent to direct child."""
-#         runs = complex_tree.get_word(3)  # "runs"
-#         dog = complex_tree.get_word(2)  # "dog"
+#         runs = complex_tree.word(3)  # "runs"
+#         dog = complex_tree.word(2)  # "dog"
 #
 #         path = complex_tree.find_path(runs, dog)
 #         assert path is not None
@@ -337,8 +341,8 @@ class TestWord:
 #
 #     def test_find_path_multi_level(self, complex_tree):
 #         """Test finding path through multiple levels."""
-#         runs = complex_tree.get_word(3)  # "runs"
-#         big = complex_tree.get_word(1)  # "big"
+#         runs = complex_tree.word(3)  # "runs"
+#         big = complex_tree.word(1)  # "big"
 #
 #         path = complex_tree.find_path(runs, big)
 #         assert path is not None
@@ -349,8 +353,8 @@ class TestWord:
 #
 #     def test_find_path_different_branch(self, complex_tree):
 #         """Test finding path to different branch."""
-#         runs = complex_tree.get_word(3)  # "runs"
-#         park = complex_tree.get_word(6)  # "park"
+#         runs = complex_tree.word(3)  # "runs"
+#         park = complex_tree.word(6)  # "park"
 #
 #         path = complex_tree.find_path(runs, park)
 #         assert path is not None
@@ -360,23 +364,23 @@ class TestWord:
 #
 #     def test_find_path_no_path_siblings(self, complex_tree):
 #         """Test that no path exists between siblings."""
-#         dog = complex_tree.get_word(2)  # "dog" (child of runs)
-#         park = complex_tree.get_word(6)  # "park" (child of runs)
+#         dog = complex_tree.word(2)  # "dog" (child of runs)
+#         park = complex_tree.word(6)  # "park" (child of runs)
 #
 #         path = complex_tree.find_path(dog, park)
 #         assert path is None
 #
 #     def test_find_path_no_path_reverse(self, complex_tree):
 #         """Test that no path exists in reverse direction (child to parent)."""
-#         dog = complex_tree.get_word(2)  # "dog"
-#         runs = complex_tree.get_word(3)  # "runs"
+#         dog = complex_tree.word(2)  # "dog"
+#         runs = complex_tree.word(3)  # "runs"
 #
 #         path = complex_tree.find_path(dog, runs)
 #         assert path is None
 #
 #     def test_find_path_same_node(self, complex_tree):
 #         """Test that no path exists for same node."""
-#         runs = complex_tree.get_word(3)
+#         runs = complex_tree.word(3)
 #
 #         path = complex_tree.find_path(runs, runs)
 #         assert path is None
@@ -394,8 +398,8 @@ class TestSearch:
 
     def test_search_simple_pattern(self, sample_tree):
         """Test searching a tree with a simple pattern."""
-        pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
-        matches = treesearch.search(sample_tree, pattern)
+        pattern = treesearch.compile_query('MATCH { V [upos="VERB"]; }')
+        matches = treesearch.search_trees(sample_tree, pattern)
 
         # Convert to list to check length
         matches = list(matches)
@@ -409,35 +413,35 @@ class TestSearch:
 
     def test_search_with_lemma_constraint(self, sample_tree):
         """Test searching with lemma constraint."""
-        pattern = treesearch.parse_query('MATCH { V [lemma="help"]; }')
-        matches = list(treesearch.search(sample_tree, pattern))
+        pattern = treesearch.compile_query('MATCH { V [lemma="help"]; }')
+        matches = list(treesearch.search_trees(sample_tree, pattern))
 
         assert len(matches) == 1
         word_id = matches[0]["V"]
-        word = sample_tree.get_word(word_id)
+        word = sample_tree.word(word_id)
         assert word.lemma == "help"
         assert word.form == "helped"
 
     def test_search_with_form_constraint(self, sample_tree):
         """Test searching with form constraint."""
-        pattern = treesearch.parse_query('MATCH { Word [form="He"]; }')
-        matches = list(treesearch.search(sample_tree, pattern))
+        pattern = treesearch.compile_query('MATCH { Word [form="He"]; }')
+        matches = list(treesearch.search_trees(sample_tree, pattern))
 
         assert len(matches) == 1
         word_id = matches[0]["Word"]
-        word = sample_tree.get_word(word_id)
+        word = sample_tree.word(word_id)
         assert word.form == "He"
 
     def test_search_with_edge_constraint(self, sample_tree):
         """Test searching with edge constraints."""
-        pattern = treesearch.parse_query("""
+        pattern = treesearch.compile_query("""
             MATCH {
                 V1 [upos="VERB"];
                 V2 [upos="VERB"];
                 V1 -[xcomp]-> V2;
             }
         """)
-        matches = list(treesearch.search(sample_tree, pattern))
+        matches = list(treesearch.search_trees(sample_tree, pattern))
 
         assert len(matches) == 1
         match = matches[0]
@@ -445,45 +449,45 @@ class TestSearch:
         assert "V2" in match
 
         # Verify the match
-        v1 = sample_tree.get_word(match["V1"])
-        v2 = sample_tree.get_word(match["V2"])
+        v1 = sample_tree.word(match["V1"])
+        v2 = sample_tree.word(match["V2"])
         assert v1.form == "helped"
         assert v2.form == "win"
 
     def test_search_multiple_edges(self, sample_tree):
         """Test searching with multiple edge constraints."""
-        pattern = treesearch.parse_query("""
+        pattern = treesearch.compile_query("""
             MATCH {
                 Verb [upos="VERB"];
                 Pron [upos="PRON"];
                 Verb -[nsubj]-> Pron;
             }
         """)
-        matches = list(treesearch.search(sample_tree, pattern))
+        matches = list(treesearch.search_trees(sample_tree, pattern))
 
         # Should find "helped" with nsubj "He"
         assert len(matches) == 1
         match = matches[0]
 
-        verb = sample_tree.get_word(match["Verb"])
-        pron = sample_tree.get_word(match["Pron"])
+        verb = sample_tree.word(match["Verb"])
+        pron = sample_tree.word(match["Pron"])
         assert verb.form == "helped"
         assert pron.form == "He"
 
     def test_search_no_matches(self, sample_tree):
         """Test searching for pattern with no matches."""
-        pattern = treesearch.parse_query('MATCH { N [upos="NOUN"]; }')
-        matches = list(treesearch.search(sample_tree, pattern))
+        pattern = treesearch.compile_query('MATCH { N [upos="NOUN"]; }')
+        matches = list(treesearch.search_trees(sample_tree, pattern))
         assert len(matches) == 0
 
     def test_search_multiple_constraints(self, sample_tree):
         """Test searching with multiple constraints on one variable."""
-        pattern = treesearch.parse_query('MATCH { V [upos="VERB", lemma="help"]; }')
-        matches = list(treesearch.search(sample_tree, pattern))
+        pattern = treesearch.compile_query('MATCH { V [upos="VERB", lemma="help"]; }')
+        matches = list(treesearch.search_trees(sample_tree, pattern))
 
         assert len(matches) == 1
-        word = sample_tree.get_word(matches[0]["V"])
-        assert word.pos == "VERB"
+        word = sample_tree.word(matches[0]["V"])
+        assert word.upos == "VERB"
         assert word.lemma == "help"
 
 
@@ -493,34 +497,34 @@ class TestFileSearch:
 
     def test_get_matches(self, temp_conllu_file):
         """Test searching a single file with get_matches."""
-        pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
-        results = list(treesearch.get_matches(temp_conllu_file, pattern))
+        pattern = treesearch.compile_query('MATCH { V [upos="VERB"]; }')
+        results = list(treesearch.search(temp_conllu_file, pattern))
 
         assert len(results) > 0
 
         # Each result should be (tree, match)
         for tree, match in results:
-            assert hasattr(tree, "get_word")
+            assert hasattr(tree, "word")
             assert isinstance(match, dict)
             assert "V" in match
 
     def test_get_matches_complex_pattern(self, temp_conllu_file):
         """Test searching a file with a complex pattern using get_matches."""
-        pattern = treesearch.parse_query("""
+        pattern = treesearch.compile_query("""
             MATCH {
                 Verb [upos="VERB"];
                 Pron [upos="PRON"];
                 Verb -[nsubj]-> Pron;
             }
         """)
-        results = list(treesearch.get_matches(temp_conllu_file, pattern))
+        results = list(treesearch.search(temp_conllu_file, pattern))
 
         # Should find "helped" with nsubj "He"
         assert len(results) == 1
         tree, match = results[0]
 
-        verb = tree.get_word(match["Verb"])
-        pron = tree.get_word(match["Pron"])
+        verb = tree.word(match["Verb"])
+        pron = tree.word(match["Pron"])
         assert verb.form == "helped"
         assert pron.form == "He"
 
@@ -529,16 +533,16 @@ class TestFileSearch:
         path = tmp_path / "multi.conllu"
         path.write_text(multi_tree_conllu)
 
-        pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
-        results = list(treesearch.get_matches(str(path), pattern))
+        pattern = treesearch.compile_query('MATCH { V [upos="VERB"]; }')
+        results = list(treesearch.search(str(path), pattern))
 
         # Should find 1 VERB in each tree (2 total)
         assert len(results) == 2
 
     def test_get_matches_gzipped_file(self, temp_gzip_file):
         """Test searching a gzipped CoNLL-U file using get_matches."""
-        pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
-        results = list(treesearch.get_matches(temp_gzip_file, pattern))
+        pattern = treesearch.compile_query('MATCH { V [upos="VERB"]; }')
+        results = list(treesearch.search(temp_gzip_file, pattern))
 
         assert len(results) == 2  # "helped" and "win"
 
@@ -552,7 +556,7 @@ class TestMultiFile:
         tmpdir, files = temp_multi_files
         pattern = f"{tmpdir}/*.conllu"
 
-        trees = list(treesearch.open(pattern).trees(ordered=False))
+        trees = list(treesearch.load(pattern).trees(ordered=False))
 
         # Should have 6 trees (2 trees per file × 3 files)
         assert len(trees) == 6
@@ -562,7 +566,7 @@ class TestMultiFile:
         tmpdir, files = temp_multi_files
         pattern = f"{tmpdir}/*.conllu"
 
-        trees = list(treesearch.open(pattern).trees(ordered=True))
+        trees = list(treesearch.load(pattern).trees(ordered=True))
 
         # Should have 6 trees (2 trees per file × 3 files)
         assert len(trees) == 6
@@ -572,16 +576,15 @@ class TestMultiFile:
         tmpdir, files = temp_multi_files
         pattern = f"{tmpdir}/*.conllu"
 
-        trees = list(treesearch.open(pattern).trees())
+        trees = list(treesearch.load(pattern).trees())
         assert len(trees) == 6
 
     def test_search_files_glob_parallel(self, temp_multi_files):
         """Test searching multiple files using glob (unordered for performance)."""
         tmpdir, files = temp_multi_files
-        pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
+        pattern = treesearch.compile_query('MATCH { V [upos="VERB"]; }')
         glob_pattern = f"{tmpdir}/*.conllu"
-
-        results = list(treesearch.open(glob_pattern).matches(pattern, ordered=False))
+        results = list(treesearch.load(glob_pattern).search(pattern, ordered=False))
 
         # Each file has 2 trees, each with 1 VERB
         # So we should get 6 matches (2 × 3 files)
@@ -590,10 +593,10 @@ class TestMultiFile:
     def test_search_files_sequential(self, temp_multi_files):
         """Test searching multiple files in order."""
         tmpdir, files = temp_multi_files
-        pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
+        pattern = treesearch.compile_query('MATCH { V [upos="VERB"]; }')
         glob_pattern = f"{tmpdir}/*.conllu"
 
-        results = list(treesearch.open(glob_pattern).matches(pattern, ordered=True))
+        results = list(treesearch.load(glob_pattern).search(pattern, ordered=True))
 
         # Should get same results as parallel
         assert len(results) == 6
@@ -601,18 +604,18 @@ class TestMultiFile:
     def test_search_files_default_ordered(self, temp_multi_files):
         """Test that ordered=True is the default for search_files."""
         tmpdir, files = temp_multi_files
-        pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
+        pattern = treesearch.compile_query('MATCH { V [upos="VERB"]; }')
         glob_pattern = f"{tmpdir}/*.conllu"
 
-        results = list(treesearch.open(glob_pattern).matches(pattern))
+        results = list(treesearch.load(glob_pattern).search(pattern))
         assert len(results) == 6
 
     def test_glob_no_matches(self, tmp_path):
-        """Test glob pattern that matches no files."""
-        pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
+        """Test glob pattern that search no files."""
+        pattern = treesearch.compile_query('MATCH { V [upos="VERB"]; }')
         glob_pattern = f"{tmp_path}/nonexistent/*.conllu"
 
-        results = list(treesearch.open(glob_pattern).matches(pattern))
+        results = list(treesearch.load(glob_pattern).search(pattern))
         assert len(results) == 0
 
 
@@ -622,7 +625,7 @@ class TestIntegration:
 
     def test_full_workflow(self, temp_conllu_file):
         """Test a complete workflow from query to results."""
-        # 1. Parse a query
+        # 1. compile a query
         query = """
             MATCH {
                 Verb [upos="VERB", lemma="help"];
@@ -630,20 +633,20 @@ class TestIntegration:
                 Verb -[obj]-> Noun;
             }
         """
-        pattern = treesearch.parse_query(query)
+        pattern = treesearch.compile_query(query)
 
         # 2. Search a file
-        results = list(treesearch.get_matches(temp_conllu_file, pattern))
+        results = list(treesearch.search(temp_conllu_file, pattern))
         assert len(results) == 1
 
         # 3. Extract and verify results
         tree, match = results[0]
-        verb = tree.get_word(match["Verb"])
-        noun = tree.get_word(match["Noun"])
+        verb = tree.word(match["Verb"])
+        noun = tree.word(match["Noun"])
 
         assert verb.lemma == "help"
-        assert verb.pos == "VERB"
-        assert noun.pos == "PRON"
+        assert verb.upos == "VERB"
+        assert noun.upos == "PRON"
         assert noun.form == "us"
 
         # 4. Verify tree structure
@@ -661,9 +664,9 @@ class TestIntegration:
         tree = trees[0]
 
         # Find the verb "helped"
-        pattern = treesearch.parse_query('MATCH { V [lemma="help"]; }')
-        matches = list(treesearch.search(tree, pattern))
-        verb = tree.get_word(matches[0]["V"])
+        pattern = treesearch.compile_query('MATCH { V [lemma="help"]; }')
+        matches = list(treesearch.search_trees(tree, pattern))
+        verb = tree.word(matches[0]["V"])
 
         # Use children_by_deprel to find various dependents
         nsubj = verb.children_by_deprel("nsubj")
@@ -688,14 +691,14 @@ class TestIntegration:
     #     tree = trees[0]
     #
     #     # Find root verb and a deeply nested word
-    #     pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
+    #     pattern = treesearch.compile_query('MATCH { V [upos="VERB"]; }')
     #     matches = list(treesearch.search(tree, pattern))
-    #     root = tree.get_word(matches[0]["V"])
+    #     root = tree.word(matches[0]["V"])
     #
     #     # Find a determiner deep in the tree
-    #     det_pattern = treesearch.parse_query('MATCH { Det [form="big"]; }')
+    #     det_pattern = treesearch.compile_query('MATCH { Det [form="big"]; }')
     #     det_matches = list(treesearch.search(tree, det_pattern))
-    #     det = tree.get_word(det_matches[0]["Det"])
+    #     det = tree.word(det_matches[0]["Det"])
     #
     #     # Find path from root to determiner
     #     path = tree.find_path(root, det)
@@ -707,8 +710,8 @@ class TestIntegration:
         """Test complete workflow with multiple files."""
         tmpdir, files = temp_multi_files
 
-        # Parse a query
-        pattern = treesearch.parse_query("""
+        # compile a query
+        pattern = treesearch.compile_query("""
             MATCH {
                 Noun [upos="NOUN"];
                 Verb [upos="VERB"];
@@ -717,15 +720,15 @@ class TestIntegration:
         """)
 
         # Search all files
-        results = list(treesearch.open(f"{tmpdir}/*.conllu").matches(pattern))
+        results = list(treesearch.load(f"{tmpdir}/*.conllu").search(pattern))
 
         # Should find pattern in each tree
         assert len(results) == 6  # 2 trees × 3 files
 
         # Verify each result
         for tree, match in results:
-            noun = tree.get_word(match["Noun"])
-            verb = tree.get_word(match["Verb"])
+            noun = tree.word(match["Noun"])
+            verb = tree.word(match["Verb"])
 
             # Verify edge
             parent = noun.parent()

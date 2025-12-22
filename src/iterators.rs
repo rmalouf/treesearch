@@ -7,7 +7,7 @@
 
 use crate::conllu::{ParseError, TreeIterator};
 use crate::pattern::Pattern;
-use crate::searcher::{Match, search};
+use crate::searcher::{Match, search_tree};
 use crate::tree::Tree;
 use rayon::prelude::*;
 use std::path::{Path, PathBuf};
@@ -157,13 +157,16 @@ impl Treebank {
                         let results: Vec<_> = chunk
                             .par_iter()
                             .flat_map_iter(|path| {
-                                let file_results: Vec<Result<Tree, TreebankError>> = match TreeIterator::from_file(path) {
-                                    Ok(iter) => iter.map(|r| r.map_err(TreebankError::from)).collect(),
-                                    Err(e) => vec![Err(TreebankError::FileOpen {
-                                        path: path.clone(),
-                                        source: e,
-                                    })],
-                                };
+                                let file_results: Vec<Result<Tree, TreebankError>> =
+                                    match TreeIterator::from_file(path) {
+                                        Ok(iter) => {
+                                            iter.map(|r| r.map_err(TreebankError::from)).collect()
+                                        }
+                                        Err(e) => vec![Err(TreebankError::FileOpen {
+                                            path: path.clone(),
+                                            source: e,
+                                        })],
+                                    };
                                 file_results.into_iter()
                             })
                             .collect();
@@ -227,10 +230,10 @@ impl Treebank {
     ///
     /// # Examples
     /// ```no_run
-    /// use treesearch::{Treebank, parse_query};
+    /// use treesearch::{Treebank, compile_query};
     ///
     /// let treebank = Treebank::from_glob("data/*.conllu").unwrap();
-    /// let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
+    /// let pattern = compile_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
     ///
     /// // Ordered iteration (deterministic)
     /// for result in treebank.clone().match_iter(pattern.clone(), true) {
@@ -245,7 +248,11 @@ impl Treebank {
     ///     println!("Match found");
     /// }
     /// ```
-    pub fn match_iter(self, pattern: Pattern, ordered: bool) -> impl Iterator<Item = Result<Match, TreebankError>> {
+    pub fn match_iter(
+        self,
+        pattern: Pattern,
+        ordered: bool,
+    ) -> impl Iterator<Item = Result<Match, TreebankError>> {
         if ordered {
             // Ordered mode: maintain deterministic ordering via chunking
             // Smaller chunks (2 files) improve load balancing for heterogeneous file sizes
@@ -257,7 +264,7 @@ impl Treebank {
                     for result in TreeIterator::from_string(&text) {
                         match result {
                             Ok(tree) => {
-                                for m in search(tree, &pattern) {
+                                for m in search_tree(tree, &pattern) {
                                     batch.push(Ok(m));
                                     if batch.len() >= MATCH_BATCH_SIZE {
                                         if tx.send(batch).is_err() {
@@ -302,7 +309,10 @@ impl Treebank {
                                     match result {
                                         Ok(tree) => {
                                             // search yields matches in order, wrap each in Ok
-                                            search(tree, &pattern).into_iter().map(Ok).collect::<Vec<_>>()
+                                            search_tree(tree, &pattern)
+                                                .into_iter()
+                                                .map(Ok)
+                                                .collect::<Vec<_>>()
                                         }
                                         Err(e) => vec![Err(TreebankError::from(e))],
                                     }
@@ -331,7 +341,7 @@ impl Treebank {
                     for result in TreeIterator::from_string(&text) {
                         match result {
                             Ok(tree) => {
-                                for m in search(tree, &pattern) {
+                                for m in search_tree(tree, &pattern) {
                                     batch.push(Ok(m));
                                     if batch.len() >= MATCH_BATCH_SIZE {
                                         if tx.send(batch).is_err() {
@@ -365,7 +375,7 @@ impl Treebank {
                                 for result in reader {
                                     match result {
                                         Ok(tree) => {
-                                            for m in search(tree, &pattern) {
+                                            for m in search_tree(tree, &pattern) {
                                                 batch.push(Ok(m));
                                                 if batch.len() >= MATCH_BATCH_SIZE {
                                                     if tx.send(batch).is_err() {
@@ -408,7 +418,7 @@ impl Treebank {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parse_query;
+    use crate::compile_query;
 
     const TWO_TREE_CONLLU: &str = r#"# text = The dog runs.
 1	The	the	DET	DT	_	2	det	_	_
@@ -445,9 +455,12 @@ mod tests {
 
     #[test]
     fn test_match_set_from_string() {
-        let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
+        let pattern = compile_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
         let tree_set = Treebank::from_string(THREE_VERB_CONLLU);
-        let matches: Vec<_> = tree_set.match_iter(pattern, true).filter_map(Result::ok).collect();
+        let matches: Vec<_> = tree_set
+            .match_iter(pattern, true)
+            .filter_map(Result::ok)
+            .collect();
 
         assert_eq!(matches.len(), 3);
     }
@@ -458,9 +471,12 @@ mod tests {
                       2\tJohn\tJohn\tPROPN\tNNP\t_\t1\tobj\t_\t_\n\
                       3\trunning\trun\tVERB\tVBG\t_\t1\txcomp\t_\t_\n";
 
-        let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
+        let pattern = compile_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
         let tree_set = Treebank::from_string(conllu);
-        let matches: Vec<_> = tree_set.match_iter(pattern, true).filter_map(Result::ok).collect();
+        let matches: Vec<_> = tree_set
+            .match_iter(pattern, true)
+            .filter_map(Result::ok)
+            .collect();
 
         assert_eq!(matches.len(), 2);
     }
@@ -470,9 +486,12 @@ mod tests {
         let conllu = "1\tThe\tthe\tDET\tDT\t_\t2\tdet\t_\t_\n\
                       2\tdog\tdog\tNOUN\tNN\t_\t0\troot\t_\t_\n";
 
-        let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
+        let pattern = compile_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
         let tree_set = Treebank::from_string(conllu);
-        let matches: Vec<_> = tree_set.match_iter(pattern, true).filter_map(Result::ok).collect();
+        let matches: Vec<_> = tree_set
+            .match_iter(pattern, true)
+            .filter_map(Result::ok)
+            .collect();
 
         assert_eq!(matches.len(), 0);
     }
@@ -485,9 +504,12 @@ mod tests {
                       4\twin\twin\tVERB\tVB\t_\t1\txcomp\t_\t_\n";
 
         let pattern =
-            parse_query("MATCH { V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 -> V2; }").unwrap();
+            compile_query("MATCH { V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 -> V2; }").unwrap();
         let tree_set = Treebank::from_string(conllu);
-        let matches: Vec<_> = tree_set.match_iter(pattern, true).filter_map(Result::ok).collect();
+        let matches: Vec<_> = tree_set
+            .match_iter(pattern, true)
+            .filter_map(Result::ok)
+            .collect();
 
         assert_eq!(matches.len(), 1);
     }
@@ -528,7 +550,10 @@ mod tests {
                 ),
             ]);
 
-            let results: Vec<_> = Treebank::from_paths(paths).tree_iter(true).filter_map(Result::ok).collect();
+            let results: Vec<_> = Treebank::from_paths(paths)
+                .tree_iter(true)
+                .filter_map(Result::ok)
+                .collect();
 
             assert_eq!(results.len(), 2);
             assert_eq!(results[0].words.len(), 2);
@@ -572,9 +597,12 @@ mod tests {
                 ),
             ]);
 
-            let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
+            let pattern = compile_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
             let tree_set = Treebank::from_paths(paths);
-            let results: Vec<_> = tree_set.match_iter(pattern, true).filter_map(Result::ok).collect();
+            let results: Vec<_> = tree_set
+                .match_iter(pattern, true)
+                .filter_map(Result::ok)
+                .collect();
 
             assert_eq!(results.len(), 2);
         }
@@ -589,10 +617,13 @@ mod tests {
                 ),
             ]);
 
-            let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
+            let pattern = compile_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
             let glob_pattern = format!("{}/*.conllu", dir.path().display());
             let tree_set = Treebank::from_glob(&glob_pattern).unwrap();
-            let results: Vec<_> = tree_set.match_iter(pattern, true).filter_map(Result::ok).collect();
+            let results: Vec<_> = tree_set
+                .match_iter(pattern, true)
+                .filter_map(Result::ok)
+                .collect();
 
             assert_eq!(results.len(), 2);
         }
@@ -629,8 +660,16 @@ mod tests {
 
             // Multiple iterations should produce same order
             let treebank = Treebank::from_paths(paths.clone());
-            let run1: Vec<_> = treebank.clone().tree_iter(true).filter_map(Result::ok).collect();
-            let run2: Vec<_> = treebank.clone().tree_iter(true).filter_map(Result::ok).collect();
+            let run1: Vec<_> = treebank
+                .clone()
+                .tree_iter(true)
+                .filter_map(Result::ok)
+                .collect();
+            let run2: Vec<_> = treebank
+                .clone()
+                .tree_iter(true)
+                .filter_map(Result::ok)
+                .collect();
 
             assert_eq!(run1.len(), 3);
             assert_eq!(run2.len(), 3);
@@ -682,9 +721,12 @@ mod tests {
                 ),
             ]);
 
-            let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
+            let pattern = compile_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
             let treebank = Treebank::from_paths(paths);
-            let results: Vec<_> = treebank.match_iter(pattern, true).filter_map(Result::ok).collect();
+            let results: Vec<_> = treebank
+                .match_iter(pattern, true)
+                .filter_map(Result::ok)
+                .collect();
 
             assert_eq!(results.len(), 2);
         }
@@ -699,9 +741,12 @@ mod tests {
                 ),
             ]);
 
-            let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
+            let pattern = compile_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
             let treebank = Treebank::from_paths(paths);
-            let results: Vec<_> = treebank.match_iter(pattern, false).filter_map(Result::ok).collect();
+            let results: Vec<_> = treebank
+                .match_iter(pattern, false)
+                .filter_map(Result::ok)
+                .collect();
 
             // Should get all matches, order doesn't matter
             assert_eq!(results.len(), 2);
@@ -760,7 +805,7 @@ mod tests {
                 ("c.conllu", "1\twalks\twalk\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
             ]);
 
-            let pattern = parse_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
+            let pattern = compile_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
             let tree_set = Treebank::from_paths(paths);
             let results: Vec<_> = tree_set.par_match_iter(pattern).collect();
 

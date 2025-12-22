@@ -201,7 +201,7 @@ impl Tree {
         }
     }
 
-    pub fn get_word(&self, id: WordId) -> Result<&Word, String> {
+    pub fn word(&self, id: WordId) -> Result<&Word, String> {
         let Some(word) = self.words.get(id) else {
             return Err(format!(
                 "Word with id {} does not exist (tree has {} words)",
@@ -234,11 +234,11 @@ impl Tree {
     */
 
     pub fn head_id(&self, word_id: WordId) -> Result<Option<WordId>, String> {
-        Ok(self.get_word(word_id)?.head)
+        Ok(self.word(word_id)?.head)
     }
 
     pub fn children_ids(&self, word_id: WordId) -> Result<Vec<WordId>, String> {
-        Ok(self.get_word(word_id)?.children.clone())
+        Ok(self.word(word_id)?.children.clone())
     }
 
     pub fn check_rel(&self, from_id: WordId, to_id: WordId) -> bool {
@@ -345,7 +345,7 @@ mod tests {
         tree.add_minimal_word(3, b"birds", b"bird", b"NOUN", b"_", Some(0), b"conj");
         tree.compile_tree();
 
-        let coord = tree.get_word(0).unwrap();
+        let coord = tree.word(0).unwrap();
         let conjuncts = coord.children_by_deprel(&tree, "conj");
         assert_eq!(conjuncts.len(), 3);
 
@@ -356,7 +356,7 @@ mod tests {
         tree.add_minimal_word(2, b"quickly", b"quickly", b"ADV", b"_", Some(0), b"advmod");
         tree.compile_tree();
 
-        let verb = tree.get_word(0).unwrap();
+        let verb = tree.word(0).unwrap();
         let subjects = verb.children_by_deprel(&tree, "nsubj");
         assert_eq!(subjects.len(), 1);
 
@@ -373,7 +373,7 @@ mod tests {
         tree.add_minimal_word(4, b"quickly", b"quickly", b"ADV", b"_", Some(0), b"advmod");
         tree.compile_tree();
 
-        let verb = tree.get_word(0).unwrap();
+        let verb = tree.word(0).unwrap();
         let obliques = verb.children_by_deprel(&tree, "obl");
         assert_eq!(obliques.len(), 2);
     }

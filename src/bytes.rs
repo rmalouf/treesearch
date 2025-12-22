@@ -236,7 +236,7 @@ mod tests {
         // Mismatches
         assert!(!pool.compare_bytes(sym1, b"world"));
         assert!(!pool.compare_bytes(sym1, b"Hello")); // Case sensitive
-        assert!(!pool.compare_bytes(sym1, b"hell"));  // Prefix
+        assert!(!pool.compare_bytes(sym1, b"hell")); // Prefix
         assert!(!pool.compare_bytes(sym1, b"helloo")); // Longer
         assert!(!pool.compare_bytes(sym3, b"x"));
 
