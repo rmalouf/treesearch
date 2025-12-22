@@ -17,7 +17,7 @@ pub mod bytes;
 
 // Re-exports for convenience
 pub use conllu::TreeIterator;
-pub use iterators::Treebank;
+pub use iterators::{Treebank, TreebankError};
 pub use pattern::{Constraint, EdgeConstraint, Pattern, PatternVar, RelationType, VarId};
 pub use query::parse_query;
 pub use searcher::{Match, search, search_query};

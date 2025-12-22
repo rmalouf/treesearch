@@ -2,16 +2,29 @@
 //!
 //! This module provides PyO3-based Python bindings for the Rust core.
 
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::iterators::Treebank;
+use crate::iterators::{Treebank, TreebankError};
 use crate::pattern::Pattern as RustPattern;
 use crate::query::parse_query;
 use crate::searcher::search;
 use crate::tree::{Tree as RustTree, Word as RustWord};
+
+/// Convert TreebankError to Python exception
+impl From<TreebankError> for PyErr {
+    fn from(err: TreebankError) -> PyErr {
+        match err {
+            TreebankError::Io(e) => PyIOError::new_err(e.to_string()),
+            TreebankError::Parse(e) => PyValueError::new_err(format!("Parse error: {}", e)),
+            TreebankError::FileOpen { path, source } => {
+                PyIOError::new_err(format!("Failed to open file {}: {}", path.display(), source))
+            }
+        }
+    }
+}
 
 #[pyclass(name = "Tree")]
 #[derive(Clone)]
@@ -273,7 +286,12 @@ impl PyTreebank {
     #[pyo3(signature = (ordered=true))]
     fn trees(&self, ordered: bool) -> PyTreeIterator {
         PyTreeIterator {
-            inner: Box::new(self.inner.clone().tree_iter(ordered).map(Arc::new)),
+            inner: Box::new(
+                self.inner
+                    .clone()
+                    .tree_iter(ordered)
+                    .map(|result| result.map(Arc::new)),
+            ),
         }
     }
 
@@ -302,7 +320,7 @@ impl PyTreebank {
                 self.inner
                     .clone()
                     .match_iter(pattern.inner.clone(), ordered)
-                    .map(|m| (m.tree, m.bindings)),
+                    .map(|result| result.map(|m| (m.tree, m.bindings))),
             ),
         }
     }
@@ -315,7 +333,7 @@ impl PyTreebank {
 /// Iterator over trees from a treebank.
 #[pyclass(name = "TreeIterator", unsendable)]
 struct PyTreeIterator {
-    inner: Box<dyn Iterator<Item = Arc<RustTree>> + Send>,
+    inner: Box<dyn Iterator<Item = Result<Arc<RustTree>, TreebankError>> + Send>,
 }
 
 #[pymethods]
@@ -324,16 +342,23 @@ impl PyTreeIterator {
         slf
     }
 
-    fn __next__(&mut self) -> Option<PyTree> {
-        self.inner.next().map(|tree| PyTree { inner: tree })
+    fn __next__(&mut self) -> PyResult<Option<PyTree>> {
+        match self.inner.next() {
+            Some(Ok(tree)) => Ok(Some(PyTree { inner: tree })),
+            Some(Err(e)) => Err(e.into()),
+            None => Ok(None),
+        }
     }
 }
 
 /// Iterator over (tree, match) tuples from a pattern search.
 #[pyclass(name = "MatchIterator", unsendable)]
 struct PyMatchIterator {
-    inner:
-        Box<dyn Iterator<Item = (Arc<RustTree>, std::collections::HashMap<String, usize>)> + Send>,
+    inner: Box<
+        dyn Iterator<
+                Item = Result<(Arc<RustTree>, std::collections::HashMap<String, usize>), TreebankError>,
+            > + Send,
+    >,
 }
 
 #[pymethods]
@@ -342,10 +367,14 @@ impl PyMatchIterator {
         slf
     }
 
-    fn __next__(&mut self) -> Option<(PyTree, std::collections::HashMap<String, usize>)> {
-        self.inner
-            .next()
-            .map(|(tree, bindings)| (PyTree { inner: tree }, bindings))
+    fn __next__(
+        &mut self,
+    ) -> PyResult<Option<(PyTree, std::collections::HashMap<String, usize>)>> {
+        match self.inner.next() {
+            Some(Ok((tree, bindings))) => Ok(Some((PyTree { inner: tree }, bindings))),
+            Some(Err(e)) => Err(e.into()),
+            None => Ok(None),
+        }
     }
 }
 
@@ -392,7 +421,7 @@ fn search_file(path: &str, pattern: &PyPattern, ordered: bool) -> PyMatchIterato
         inner: Box::new(
             treebank
                 .match_iter(pattern.inner.clone(), ordered)
-                .map(|m| (m.tree, m.bindings)),
+                .map(|result| result.map(|m| (m.tree, m.bindings))),
         ),
     }
 }
@@ -418,7 +447,7 @@ fn read_trees_glob(glob_pattern: &str, ordered: bool) -> PyResult<PyTreeIterator
     let treebank = Treebank::from_glob(glob_pattern)
         .map_err(|e| PyValueError::new_err(format!("Glob pattern error: {}", e)))?;
     Ok(PyTreeIterator {
-        inner: Box::new(treebank.tree_iter(ordered).map(Arc::new)),
+        inner: Box::new(treebank.tree_iter(ordered).map(|result| result.map(Arc::new))),
     })
 }
 
@@ -451,7 +480,7 @@ fn search_files(
         inner: Box::new(
             treebank
                 .match_iter(pattern.inner.clone(), ordered)
-                .map(|m| (m.tree, m.bindings)),
+                .map(|result| result.map(|m| (m.tree, m.bindings))),
         ),
     })
 }

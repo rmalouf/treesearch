@@ -197,14 +197,13 @@ class TestTreeReading:
     def test_read_nonexistent_file(self):
         """Test reading a nonexistent file.
 
-        NOTE: Currently errors during iteration are printed to stderr but don't
-        raise Python exceptions. This should be improved in a future version.
+        Errors during iteration now raise Python exceptions as expected.
         """
-        # Creating the treebank doesn't fail, but iteration will print error to stderr
+        # Creating the treebank doesn't fail, but iteration will raise an exception
         trees = treesearch.Treebank.from_file("/nonexistent/path/file.conllu").trees()
-        # The iterator will return no trees when file doesn't exist
-        result = list(trees)
-        assert len(result) == 0
+        # The iterator will raise an OSError when the file doesn't exist
+        with pytest.raises(OSError, match="Failed to open file"):
+            list(trees)
 
 
 # Test Word properties and methods
