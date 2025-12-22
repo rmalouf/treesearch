@@ -17,13 +17,18 @@ Treesearch is a high-performance toolkit for querying linguistic dependency pars
 The core pattern matching engine is fully implemented using constraint satisfaction with automatic parallel file processing. Python bindings provide both object-oriented and functional APIs and are fully working.
 
 ### Recent Changes (Dec 2025)
+- **Streamlined Python API** (Dec 2025)
+  - Removed redundant functional API functions (`read_trees`, `search_file`, `read_trees_glob`, `search_files`)
+  - Added clean convenience wrappers: `get_trees(source, ordered)` and `get_matches(source, query, ordered)`
+  - Removed `Pattern.n_vars` property from Python API (internal only)
+  - Simplified functional API to just: `parse_query()`, `search()`, `get_trees()`, `get_matches()`
+  - All 40 Python tests updated and passing
 - **Added object-oriented Python API** with Treebank class (Dec 2025)
-  - Exposed `Treebank` class with `from_file()`, `from_glob()`, `from_string()` class methods
-  - Instance methods: `trees()` and `matches(pattern)` for iteration
+  - Exposed `Treebank` class with `from_file()`, `from_files()`, `from_string()` class methods
+  - Instance methods: `trees(ordered)` and `matches(pattern, ordered)` for iteration
   - Internal cloning allows multiple iterations over same treebank
   - Added convenience functions: `open(path)` and `from_string(text)`
   - Simplified from 4 iterator types to 2 (TreeIterator, MatchIterator)
-  - Kept functional API for backwards compatibility
 - **Completed Python bindings migration** to new iteration API
   - Removed `MatchSet` abstraction for simpler API
   - Automatic parallel processing via channel-based iteration
@@ -50,8 +55,7 @@ The core pattern matching engine is fully implemented using constraint satisfact
 - ✅ CSP solver with DFS + forward checking
 - ✅ Iterator-based API for trees and matches (`iterators.rs`)
 - ✅ Automatic parallel file processing (rayon + channels)
-- ✅ 87 tests passing
-- ✅ **Python bindings** (object-oriented + functional APIs, fully working)
+- ✅ **Python bindings** (streamlined OO + functional APIs, 40 tests passing)
 - ✅ **Performance benchmarks** (basic benchmarks exist)
 
 ## Architecture
@@ -110,21 +114,19 @@ The core pattern matching engine is fully implemented using constraint satisfact
 - **Object-oriented API** (primary):
   - `Treebank` class with class methods:
     - `Treebank.from_file(path)` - Single file
-    - `Treebank.from_glob(pattern)` - Multiple files
+    - `Treebank.from_files(paths)` - Multiple files
     - `Treebank.from_string(text)` - From CoNLL-U string
   - Instance methods:
-    - `treebank.trees()` - Iterate over trees (reusable, multiple iterations)
-    - `treebank.matches(pattern)` - Search for pattern matches (reusable)
+    - `treebank.trees(ordered=True)` - Iterate over trees (reusable, multiple iterations)
+    - `treebank.matches(pattern, ordered=True)` - Search for pattern matches (reusable)
   - Convenience functions:
-    - `open(path)` - Auto-detects file vs glob pattern
+    - `open(source)` - Auto-detects file vs glob pattern, returns Treebank
     - `from_string(text)` - Wrapper for Treebank.from_string()
-- **Functional API** (backwards compatible):
+- **Functional API** (streamlined):
   - `parse_query(query: str) -> Pattern` - Parse query strings
-  - `search(tree, pattern) -> list[dict]` - Search single tree
-  - `read_trees(path) -> Iterator[Tree]` - Read from CoNLL-U file
-  - `search_file(path, pattern) -> Iterator[tuple[Tree, dict]]` - Search single file
-  - `read_trees_glob(pattern) -> Iterator[Tree]` - Read multiple files (automatic parallelism)
-  - `search_files(pattern, pattern) -> Iterator[tuple[Tree, dict]]` - Search multiple files (automatic parallelism)
+  - `search(tree, pattern) -> Iterator[dict]` - Search single tree
+  - `get_trees(source, ordered=True) -> Iterator[Tree]` - Read from file(s), supports glob
+  - `get_matches(source, query, ordered=True) -> Iterator[tuple[Tree, dict]]` - Search file(s), supports glob
 - Data classes: `Tree`, `Word`, `Pattern`, `Treebank`
 - Iterator classes: `TreeIterator`, `MatchIterator`
 - All functions working, automatic parallel processing for multi-file operations
