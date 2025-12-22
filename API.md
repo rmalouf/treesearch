@@ -56,15 +56,16 @@ import treesearch as ts
 pattern = ts.parse_query(query)
 
 # Search a single file
-for tree, match in ts.search_file("corpus.conllu", pattern):
+for tree, match in ts.get_matches("corpus.conllu", pattern):
     verb = tree.get_word(match["Verb"])
     noun = tree.get_word(match["Noun"])
     print(f"Match: {verb.form} ← {noun.form}")
 
-# Or work with individual trees
-for tree in ts.read_trees("corpus.conllu"):
+# Or iterate over trees
+for tree in ts.get_trees("corpus.conllu"):
     for match in ts.search(tree, pattern):
         verb = tree.get_word(match["Verb"])
+        noun = tree.get_word(match["Noun"])
         print(f"{verb.form} ← {noun.form}")
 ```
 
@@ -172,12 +173,12 @@ Create a treebank from a single CoNLL-U file (supports gzip).
 treebank = ts.Treebank.from_file("corpus.conllu")
 ```
 
-##### `Treebank.from_glob(pattern: str) -> Treebank`
+##### `Treebank.from_files(paths: list[str]) -> Treebank`
 
-Create a treebank from multiple files matching a glob pattern. Files are processed in sorted order for deterministic results.
+Create a treebank from multiple CoNLL-U files.
 
 ```python
-treebank = ts.Treebank.from_glob("data/*.conllu")
+treebank = ts.Treebank.from_files(["file1.conllu", "file2.conllu"])
 ```
 
 ##### `Treebank.from_string(text: str) -> Treebank`
@@ -194,23 +195,42 @@ treebank = ts.Treebank.from_string(conllu_text)
 
 **Instance Methods:**
 
-##### `trees() -> Iterator[Tree]`
+##### `trees(ordered: bool = True) -> Iterator[Tree]`
 
 Iterate over all trees in the treebank. Can be called multiple times. Uses automatic parallel processing for multi-file treebanks.
 
+**Parameters:**
+- `ordered` (bool): If True (default), trees are returned in deterministic order. If False, trees may arrive in any order for better performance.
+
 ```python
+# Ordered iteration (default)
 for tree in treebank.trees():
     print(f"Tree has {len(tree)} words")
     print(f"Sentence: {tree.sentence_text}")
+
+# Unordered for better performance
+for tree in treebank.trees(ordered=False):
+    print(f"Tree: {tree.sentence_text}")
 ```
 
-##### `matches(pattern: Pattern) -> Iterator[tuple[Tree, dict[str, int]]]`
+##### `matches(pattern: Pattern, ordered: bool = True) -> Iterator[tuple[Tree, dict[str, int]]]`
 
 Search for pattern matches across all trees. Returns an iterator of (tree, match) tuples. Can be called multiple times. Uses automatic parallel processing for multi-file treebanks.
 
+**Parameters:**
+- `pattern` (Pattern): Compiled pattern from `parse_query()`
+- `ordered` (bool): If True (default), matches are returned in deterministic order. If False, matches may arrive in any order for better performance.
+
 ```python
 pattern = ts.parse_query("MATCH { Verb [upos=\"VERB\"]; }")
+
+# Ordered iteration (default)
 for tree, match in treebank.matches(pattern):
+    verb = tree.get_word(match["Verb"])
+    print(f"Found: {verb.form}")
+
+# Unordered for better performance
+for tree, match in treebank.matches(pattern, ordered=False):
     verb = tree.get_word(match["Verb"])
     print(f"Found: {verb.form}")
 ```
@@ -272,49 +292,53 @@ for match in ts.search(tree, pattern):
     print(f"{verb.form} ← {noun.form}")
 ```
 
-#### `read_trees(path: str) -> Iterator[Tree]`
+#### `get_trees(source: str, ordered: bool = True) -> Iterator[Tree]`
 
-Read trees from a CoNLL-U file (supports gzip).
+Read trees from one or more CoNLL-U files. Convenience wrapper for `open(source).trees(ordered)`.
+
+**Parameters:**
+- `source` (str): Path to a single file or glob pattern (e.g., "data/*.conllu")
+- `ordered` (bool): If True (default), trees are returned in deterministic order
 
 ```python
-for tree in ts.read_trees("corpus.conllu"):
+# Single file
+for tree in ts.get_trees("corpus.conllu"):
     print(f"Tree has {len(tree)} words")
+
+# Multiple files with glob pattern
+for tree in ts.get_trees("data/*.conllu"):
     print(f"Sentence: {tree.sentence_text}")
+
+# Unordered for better performance
+for tree in ts.get_trees("data/*.conllu", ordered=False):
+    print(f"Tree: {tree.sentence_text}")
 ```
 
-#### `search_file(path: str, pattern: Pattern) -> Iterator[tuple[Tree, dict[str, int]]]`
+#### `get_matches(source: str, query: str | Pattern, ordered: bool = True) -> Iterator[tuple[Tree, dict[str, int]]]`
 
-Search a single file for pattern matches. Returns an iterator of (tree, match) tuples.
+Search one or more files for pattern matches. Convenience wrapper for `open(source).matches(pattern, ordered)`.
 
-```python
-for tree, match in ts.search_file("corpus.conllu", pattern):
-    # match is a dictionary: {"Verb": 3, "Noun": 5}
-    verb = tree.get_word(match["Verb"])
-    print(f"Found: {verb.form} in '{tree.sentence_text}'")
-```
-
-#### `read_trees_glob(pattern: str) -> Iterator[Tree]`
-
-Read trees from multiple files matching a glob pattern. Automatically processes files in parallel for better performance.
+**Parameters:**
+- `source` (str): Path to a single file or glob pattern (e.g., "data/*.conllu")
+- `query` (str | Pattern): Query string or compiled Pattern
+- `ordered` (bool): If True (default), matches are returned in deterministic order
 
 ```python
-# Automatic parallel processing
-for tree in ts.read_trees_glob("data/*.conllu"):
-    # Trees from multiple files processed in parallel automatically
-    pass
-```
+# Single file with query string
+for tree, match in ts.get_matches("corpus.conllu", 'MATCH { V [upos="VERB"]; }'):
+    verb = tree.get_word(match["V"])
+    print(f"Found: {verb.form}")
 
-#### `search_files(glob_pattern: str, query_pattern: Pattern) -> Iterator[tuple[Tree, dict[str, int]]]`
-
-Search multiple files matching a glob pattern. Returns an iterator of (tree, match) tuples. Automatically processes files in parallel for better performance.
-
-```python
+# Multiple files with compiled pattern
 pattern = ts.parse_query("MATCH { Verb [upos=\"VERB\"]; }")
-
-# Parallel search across all files
-for tree, match in ts.search_files("data/*.conllu", pattern):
+for tree, match in ts.get_matches("data/*.conllu", pattern):
     verb = tree.get_word(match["Verb"])
     print(f"{verb.form}: {tree.sentence_text}")
+
+# Unordered for better performance
+for tree, match in ts.get_matches("data/*.conllu", pattern, ordered=False):
+    verb = tree.get_word(match["Verb"])
+    print(verb.form)
 ```
 
 ### Data Classes
@@ -382,16 +406,13 @@ for child in word.children():
 
 Represents a parsed query pattern. Created by `parse_query()`. Opaque object that can be reused across multiple searches.
 
-**Properties:**
-- `n_vars: int` - Number of variables in the pattern
-
 ```python
 pattern = ts.parse_query("MATCH { Verb [upos=\"VERB\"]; }")
-print(f"Pattern has {pattern.n_vars} variables")
+
 # Reuse pattern across multiple searches
-for tree, match in ts.search_files("data/*.conllu", pattern):
-    # ...process matches...
-    pass
+for tree, match in ts.get_matches("data/*.conllu", pattern):
+    verb = tree.get_word(match["Verb"])
+    print(f"Found: {verb.form}")
 ```
 
 ## Complete Example
@@ -422,7 +443,7 @@ for tree, match in treebank.matches(pattern):
     print()
 
 # Or use functional API
-for tree, match in ts.search_file("corpus.conllu", pattern):
+for tree, match in ts.get_matches("corpus.conllu", pattern):
     main = tree.get_word(match["Main"])
     comp = tree.get_word(match["Comp"])
     print(f"Match: {main.form} -[xcomp]-> {comp.form}")
@@ -448,14 +469,14 @@ except Exception as e:
 
 try:
     # File not found
-    for tree in ts.read_trees("nonexistent.conllu"):
+    for tree in ts.get_trees("nonexistent.conllu"):
         pass
 except Exception as e:
     print(f"File error: {e}")
 
 try:
     # Malformed CoNLL-U
-    for tree in ts.read_trees("bad_format.conllu"):
+    for tree in ts.get_trees("bad_format.conllu"):
         pass
 except Exception as e:
     print(f"Parse error: {e}")
@@ -468,21 +489,28 @@ except Exception as e:
 - **Automatic parallel processing**: Multi-file operations automatically process files in parallel for better performance
 - **Memory efficient**: Iterator-based API streams results without loading entire corpus
 - **Use gzipped files**: Store CoNLL-U files as `.conllu.gz` to reduce I/O time and disk usage (decompression is automatic)
+- **Unordered iteration**: Use `ordered=False` for better performance when order doesn't matter
 
 ### Parallel Processing
 
-Multi-file operations (`read_trees_glob` and `search_files`) automatically process files in parallel using bounded channels and rayon for optimal throughput.
+Multi-file operations (via `open()` with glob patterns, or `get_trees()`/`get_matches()`) automatically process files in parallel using bounded channels and rayon for optimal throughput.
 
 ```python
 # Automatic parallel file reading
-for tree in ts.read_trees_glob("data/*.conllu"):
+for tree in ts.get_trees("data/*.conllu"):
     # Trees from different files processed in parallel automatically
     pass
 
 # Automatic parallel search across files
 pattern = ts.parse_query("MATCH { Verb [upos=\"VERB\"]; }")
-for tree, match in ts.search_files("data/*.conllu", pattern):
+for tree, match in ts.get_matches("data/*.conllu", pattern):
     # Searches run in parallel across files automatically
+    verb = tree.get_word(match["Verb"])
+    print(verb.form)
+
+# Unordered for maximum performance
+for tree, match in ts.get_matches("data/*.conllu", pattern, ordered=False):
+    # Even faster when order doesn't matter
     verb = tree.get_word(match["Verb"])
     print(verb.form)
 ```
@@ -492,23 +520,30 @@ for tree, match in ts.search_files("data/*.conllu", pattern):
 ```python
 # ✅ GOOD: Parse query once, reuse
 pattern = ts.parse_query(query_string)
-for tree in ts.read_trees("corpus.conllu"):
+for tree in ts.get_trees("corpus.conllu"):
     for match in ts.search(tree, pattern):
         # Process match
+        pass
 
 # ❌ BAD: Re-parsing query every iteration
-for tree in ts.read_trees("corpus.conllu"):
+for tree in ts.get_trees("corpus.conllu"):
     pattern = ts.parse_query(query_string)  # Wasteful!
     for match in ts.search(tree, pattern):
         # Process match
+        pass
 
-# ✅ GOOD: Use search_file for simple cases
-for tree, match in ts.search_file("corpus.conllu", pattern):
-    # More efficient than reading trees manually
+# ✅ GOOD: Use get_matches for simple cases
+for tree, match in ts.get_matches("corpus.conllu", pattern):
+    # Convenient and efficient
     verb = tree.get_word(match["Verb"])
 
 # ✅ GOOD: Multi-file operations use automatic parallel processing
-for tree, match in ts.search_files("data/*.conllu", pattern):
+for tree, match in ts.get_matches("data/*.conllu", pattern):
     # Parallel processing happens automatically
+    verb = tree.get_word(match["Verb"])
+
+# ✅ GOOD: Use ordered=False when order doesn't matter
+for tree, match in ts.get_matches("data/*.conllu", pattern, ordered=False):
+    # Maximum performance
     verb = tree.get_word(match["Verb"])
 ```
