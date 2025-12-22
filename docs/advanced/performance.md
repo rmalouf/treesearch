@@ -10,13 +10,13 @@ Optimize treesearch for large-scale corpus linguistics research.
 # Good: compile once
 pattern = treesearch.parse_query(query)
 for file in files:
-    for tree, match in treesearch.search_file(file, pattern):
+    for tree, match in treesearch.get_matches(file, pattern):
         process(match)
 
 # Bad: re-compile every time
 for file in files:
     pattern = treesearch.parse_query(query)  # Wasteful!
-    for tree, match in treesearch.search_file(file, pattern):
+    for tree, match in treesearch.get_matches(file, pattern):
         process(match)
 ```
 
@@ -37,17 +37,17 @@ query = 'MATCH { V [upos="VERB", lemma="run"]; }'
 
 ## File Processing
 
-### Use search_files()
+### Use get_matches()
 
 Direct searching is more efficient:
 
 ```python
 # Best: direct search with automatic parallelization
-for tree, match in treesearch.search_files("*.conllu", pattern):
+for tree, match in treesearch.get_matches("*.conllu", pattern):
     process(match)
 
 # Slower: manual reading and searching
-for tree in treesearch.read_trees_glob("*.conllu"):
+for tree in treesearch.get_trees("*.conllu"):
     for match in treesearch.search(tree, pattern):
         process(match)
 ```
@@ -58,7 +58,7 @@ Multi-file operations automatically use parallel processing for optimal performa
 
 ```python
 # Automatic parallel processing
-for tree, match in treesearch.search_files("*.conllu", pattern):
+for tree, match in treesearch.get_matches("*.conllu", pattern):
     process(match)
 ```
 
@@ -68,7 +68,7 @@ Compressed files are often faster due to reduced I/O:
 
 ```python
 # .conllu.gz files are automatically decompressed
-for tree in treesearch.read_trees("corpus.conllu.gz"):
+for tree in treesearch.get_trees("corpus.conllu.gz"):
     process(tree)
 ```
 
@@ -80,11 +80,11 @@ Don't collect all results:
 
 ```python
 # Good: process as you go
-for tree, match in treesearch.search_files("*.conllu", pattern):
+for tree, match in treesearch.get_matches("*.conllu", pattern):
     process(match)
 
 # Bad: collect everything first
-all_matches = list(treesearch.search_files("*.conllu", pattern))  # High memory!
+all_matches = list(treesearch.get_matches("*.conllu", pattern))  # High memory!
 for tree, match in all_matches:
     process(match)
 ```
@@ -95,7 +95,7 @@ Stop early if you don't need all matches:
 
 ```python
 count = 0
-for tree, match in treesearch.search_files("*.conllu", pattern):
+for tree, match in treesearch.get_matches("*.conllu", pattern):
     process(match)
     count += 1
     if count >= 1000:
@@ -163,7 +163,7 @@ import time
 start = time.time()
 count = 0
 
-for tree, match in treesearch.search_files("*.conllu", pattern):
+for tree, match in treesearch.get_matches("*.conllu", pattern):
     count += 1
 
 elapsed = time.time() - start
@@ -186,7 +186,7 @@ for name, query in queries.items():
     pattern = treesearch.parse_query(query)
     start = time.time()
 
-    count = sum(1 for _ in treesearch.search_files("sample.conllu", pattern))
+    count = sum(1 for _ in treesearch.get_matches("sample.conllu", pattern))
 
     elapsed = time.time() - start
     print(f"{name}: {count} matches in {elapsed:.2f}s")

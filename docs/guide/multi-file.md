@@ -10,17 +10,17 @@ Use glob patterns to match multiple files:
 import treesearch
 
 # All .conllu files
-for tree in treesearch.read_trees_glob("data/*.conllu"):
+for tree in treesearch.get_trees("data/*.conllu"):
     print(tree.sentence_text)
 
 # Recursive pattern
-for tree in treesearch.read_trees_glob("data/**/*.conllu"):
+for tree in treesearch.get_trees("data/**/*.conllu"):
     print(tree.sentence_text)
 
 # Multiple patterns: use list comprehension
 patterns = ["data/*.conllu", "corpus/*.conllu.gz"]
 for pattern in patterns:
-    for tree in treesearch.read_trees_glob(pattern):
+    for tree in treesearch.get_trees(pattern):
         print(tree.sentence_text)
 ```
 
@@ -30,7 +30,7 @@ Multi-file operations automatically process files in parallel for better perform
 
 ```python
 # Automatic parallel processing
-for tree, match in treesearch.search_files("*.conllu", pattern):
+for tree, match in treesearch.get_matches("*.conllu", pattern):
     process(tree, match)
 ```
 
@@ -40,12 +40,12 @@ for tree, match in treesearch.search_files("*.conllu", pattern):
 
 1. **Automatic parallelization** - Multi-file operations use all available cores
 2. **Parse queries once** before searching
-3. **Use search_files()** instead of read + search
+3. **Use get_matches()** instead of read + search
 
 ```python
 # Best: direct search with automatic parallelization
 pattern = treesearch.parse_query(query)
-for tree, match in treesearch.search_files("*.conllu", pattern):
+for tree, match in treesearch.get_matches("*.conllu", pattern):
     process(tree, match)
 ```
 

@@ -42,7 +42,7 @@ for tree in tb.trees():
     print(tree.sentence_text)
 ```
 
-**See also:** from_file(), from_glob()
+**See also:** from_file(), from_files()
 
 ---
 
@@ -76,16 +76,16 @@ for tree in tb.trees():
 - File is not loaded into memory until iteration begins
 - Can iterate multiple times
 
-**See also:** from_glob(), from_string()
+**See also:** from_files(), from_string()
 
 ---
 
-### from_glob()
+### from_files()
 
 Create a treebank from multiple files matching a glob pattern.
 
 ```python
-Treebank.from_glob(pattern: str) -> Treebank
+Treebank.from_files(pattern: str) -> Treebank
 ```
 
 **Parameters:**
@@ -104,13 +104,13 @@ Treebank.from_glob(pattern: str) -> Treebank
 
 ```python
 # Single directory
-tb = treesearch.Treebank.from_glob("corpus/*.conllu")
+tb = treesearch.Treebank.from_files("corpus/*.conllu")
 
 # Multiple directories
-tb = treesearch.Treebank.from_glob("data/**/*.conllu")
+tb = treesearch.Treebank.from_files("data/**/*.conllu")
 
 # Compressed files
-tb = treesearch.Treebank.from_glob("corpus/*.conllu.gz")
+tb = treesearch.Treebank.from_files("corpus/*.conllu.gz")
 ```
 
 **Notes:**
@@ -145,7 +145,7 @@ treebank.trees(ordered: bool = True) -> Iterator[Tree]
 **Example:**
 
 ```python
-tb = treesearch.Treebank.from_glob("data/*.conllu")
+tb = treesearch.Treebank.from_files("data/*.conllu")
 
 # Deterministic order (default)
 for tree in tb.trees():
@@ -187,7 +187,7 @@ treebank.matches(pattern: Pattern, ordered: bool = True) -> Iterator[tuple[Tree,
 **Example:**
 
 ```python
-tb = treesearch.Treebank.from_glob("data/*.conllu")
+tb = treesearch.Treebank.from_files("data/*.conllu")
 pattern = treesearch.parse_query("""
     MATCH {
         V [upos="VERB"];
@@ -237,7 +237,7 @@ for tree in tb.trees():
 ### Performance tuning
 
 ```python
-tb = treesearch.Treebank.from_glob("large-corpus/*.conllu")
+tb = treesearch.Treebank.from_files("large-corpus/*.conllu")
 pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
 
 # Deterministic order (slower, reproducible)
@@ -258,7 +258,7 @@ tb1 = treesearch.Treebank.from_string(conllu)
 tb2 = treesearch.Treebank.from_file("corpus.conllu")
 
 # From multiple files
-tb3 = treesearch.Treebank.from_glob("data/*.conllu")
+tb3 = treesearch.Treebank.from_files("data/*.conllu")
 
 # All support same methods
 for tb in [tb1, tb2, tb3]:
@@ -269,7 +269,7 @@ for tb in [tb1, tb2, tb3]:
 ### Combining with pattern search
 
 ```python
-tb = treesearch.Treebank.from_glob("data/*.conllu")
+tb = treesearch.Treebank.from_files("data/*.conllu")
 
 # Find passive constructions
 passive_pattern = treesearch.parse_query("""
@@ -289,5 +289,5 @@ for tree, match in tb.matches(passive_pattern):
 
 - [Tree](tree-word.md#tree) - Tree class for individual dependency trees
 - [Pattern](pattern.md) - Pattern class for compiled queries
-- [search_file()](functions.md#search_file) - Functional interface for single file
-- [search_files()](functions.md#search_files) - Functional interface for multiple files
+- [get_matches()](functions.md#search_file) - Functional interface for single file
+- [get_matches()](functions.md#search_files) - Functional interface for multiple files
