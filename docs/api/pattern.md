@@ -10,40 +10,6 @@ Patterns should be compiled once and reused across multiple searches for best pe
 
 ## Properties
 
-### n_vars
-
-Number of variables in the pattern.
-
-```python
-pattern.n_vars -> int
-```
-
-**Returns:**
-
-- Count of variables defined in the query
-
-**Example:**
-
-```python
-pattern = treesearch.parse_query("""
-    MATCH {
-        V [upos="VERB"];
-        N [upos="NOUN"];
-        Aux [lemma="be"];
-        V -[obj]-> N;
-        V <-[aux]- Aux;
-    }
-""")
-
-print(f"Pattern has {pattern.n_vars} variables")
-# Output: "Pattern has 3 variables"
-```
-
-**Notes:**
-
-- Useful for understanding pattern complexity
-- Each variable must be assigned to a different word during matching
-
 ---
 
 ## Creating patterns
@@ -94,31 +60,31 @@ for match in treesearch.search(tree, pattern):
 
 ---
 
-### With search_file()
+### With get_matches()
 
 Search a single CoNLL-U file.
 
 ```python
-for tree, match in treesearch.search_file("corpus.conllu", pattern):
+for tree, match in treesearch.get_matches("corpus.conllu", pattern):
     # Process match
     verb = tree.get_word(match["V"])
 ```
 
-**See also:** [search_file()](functions.md#search_file)
+**See also:** [get_matches()](functions.md#get_matches)
 
 ---
 
-### With search_files()
+### With get_matchess()
 
 Search multiple CoNLL-U files with automatic parallel processing.
 
 ```python
-for tree, match in treesearch.search_files("data/*.conllu", pattern):
+for tree, match in treesearch.get_matchess("data/*.conllu", pattern):
     # Process match
     verb = tree.get_word(match["V"])
 ```
 
-**See also:** [search_files()](functions.md#search_files)
+**See also:** [get_matchess()](functions.md#get_matchess)
 
 ---
 
@@ -155,7 +121,7 @@ pattern = treesearch.parse_query("""
 
 # Reuse across files
 for file in file_list:
-    for tree, match in treesearch.search_file(file, pattern):
+    for tree, match in treesearch.get_matches(file, pattern):
         process(match)
 ```
 
@@ -165,7 +131,7 @@ for file in file_list:
 # Bad: Re-compiling every iteration
 for file in file_list:
     pattern = treesearch.parse_query(query)  # Wasteful!
-    for tree, match in treesearch.search_file(file, pattern):
+    for tree, match in treesearch.get_matches(file, pattern):
         process(match)
 ```
 
@@ -182,11 +148,11 @@ from concurrent.futures import ThreadPoolExecutor
 
 pattern = treesearch.parse_query(query)
 
-def search_file(path):
-    return list(treesearch.search_file(path, pattern))
+def get_matches(path):
+    return list(treesearch.get_matches(path, pattern))
 
 with ThreadPoolExecutor() as executor:
-    results = executor.map(search_file, file_paths)
+    results = executor.map(get_matches, file_paths)
 ```
 
 ---
@@ -227,9 +193,7 @@ passive = treesearch.parse_query("""
     }
 """)
 
-print(f"Searching for {passive.n_vars} variables")
-
-for tree, match in treesearch.search_file("corpus.conllu", passive):
+for tree, match in treesearch.get_matches("corpus.conllu", passive):
     verb = tree.get_word(match["V"])
     print(f"Passive: {tree.sentence_text}")
 ```
@@ -245,7 +209,7 @@ help_infinitive = treesearch.parse_query("""
     }
 """)
 
-for tree, match in treesearch.search_files("data/*.conllu", help_infinitive):
+for tree, match in treesearch.get_matchess("data/*.conllu", help_infinitive):
     main = tree.get_word(match["Main"])
     inf = tree.get_word(match["Inf"])
     print(f"{main.form} ... {inf.form}: {tree.sentence_text}")
@@ -326,6 +290,6 @@ except ValueError as e:
 - [parse_query()](functions.md#parse_query) - Creating patterns
 - [Query language](../guide/query-language.md) - Query syntax reference
 - [search()](functions.md#search) - Using patterns with single trees
-- [search_file()](functions.md#search_file) - Using patterns with files
-- [search_files()](functions.md#search_files) - Using patterns with multiple files
+- [get_matches()](functions.md#get_matches) - Using patterns with files
+- [get_matchess()](functions.md#get_matchess) - Using patterns with multiple files
 - [Treebank](treebank.md) - Object-oriented pattern search
