@@ -116,7 +116,7 @@ treesearch/
 **Categories**:
 1. **Treebank operations** - Creating and iterating treebanks
 2. **Pattern compilation** - parse_query()
-3. **Searching** - search(), search_file(), search_files()
+3. **Searching** - search(), get_matches()
 4. **Tree/Word access** - Navigating dependency structures
 5. **Helper functions** - Utility functions
 
@@ -131,17 +131,18 @@ treesearch/
 
 **Example format**:
 ```markdown
-### search_file()
+### get_matches()
 
-Search a single CoNLL-U file for pattern matches.
+Search one or more CoNLL-U files for pattern matches.
 
 ```python
-search_file(path: str, pattern: Pattern) -> Iterator[tuple[Tree, dict[str, int]]]
+get_matches(source: str | Path | Iterable[str | Path], query: str | Pattern, ordered: bool = True) -> Iterator[tuple[Tree, dict[str, int]]]
 ```
 
 **Parameters:**
-- `path` (str) - Path to CoNLL-U file (supports gzip)
-- `pattern` (Pattern) - Compiled pattern from parse_query()
+- `source` (str | Path | Iterable) - Path to file, glob pattern, or list of paths
+- `query` (str | Pattern) - Query string or compiled pattern from parse_query()
+- `ordered` (bool) - If True (default), return matches in deterministic order
 
 **Returns:**
 - Iterator of (tree, match) tuples
@@ -149,12 +150,12 @@ search_file(path: str, pattern: Pattern) -> Iterator[tuple[Tree, dict[str, int]]
 **Example:**
 ```python
 pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
-for tree, match in treesearch.search_file("corpus.conllu", pattern):
+for tree, match in treesearch.get_matches("corpus.conllu", pattern):
     verb = tree.get_word(match["V"])
     print(f"{verb.form}: {tree.sentence_text}")
 ```
 
-**See also:** search(), search_files()
+**See also:** search(), get_trees()
 ```
 
 ### README.md
@@ -205,7 +206,7 @@ pattern = treesearch.parse_query("""
     }
 """)
 
-for tree, match in treesearch.search_file("corpus.conllu", pattern):
+for tree, match in treesearch.get_matches("corpus.conllu", pattern):
     verb = tree.get_word(match["V"])
     print(f"{tree.sentence_text}")
 ```
@@ -372,14 +373,14 @@ for match in search(...):
 import treesearch
 
 pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
-for tree, match in treesearch.search_file("corpus.conllu", pattern):
+for tree, match in treesearch.get_matches("corpus.conllu", pattern):
     verb = tree.get_word(match["V"])
     print(f"Found: {verb.form}")
 ```
 
 ### ❌ Over-Explaining Python
 
-**Bad**: "The for loop iterates over each match returned by the search_file() function, which returns an iterator..."
+**Bad**: "The for loop iterates over each match returned by the get_matches() function, which returns an iterator..."
 
 **Good**: "Iterate over matches to process each one..."
 
@@ -420,7 +421,7 @@ pattern = treesearch.parse_query("""
     }
 """)
 
-for tree, match in treesearch.search_file("corpus.conllu", pattern):
+for tree, match in treesearch.get_matches("corpus.conllu", pattern):
     verb = tree.get_word(match["V"])
     print(tree.sentence_text)
 ```
@@ -478,7 +479,7 @@ pattern = treesearch.parse_query("""
 - Pattern objects are reusable and thread-safe
 - Parse once and reuse for better performance
 
-**See also:** search(), search_file(), search_files()
+**See also:** search(), get_matches(), get_trees()
 ```
 
 ---

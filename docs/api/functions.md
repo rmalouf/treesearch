@@ -65,7 +65,7 @@ pattern = treesearch.parse_query("""
 Search a single tree for pattern matches.
 
 ```python
-treesearch.search(tree: Tree, pattern: Pattern) -> Iterator[dict[str, int]]
+treesearch.search(tree: Tree, pattern: Pattern) -> list[dict[str, int]]
 ```
 
 **Parameters:**
@@ -75,7 +75,7 @@ treesearch.search(tree: Tree, pattern: Pattern) -> Iterator[dict[str, int]]
 
 **Returns:**
 
-- Iterator of match dictionaries. Each dictionary maps variable names to word IDs (0-based).
+- List of match dictionaries. Each dictionary maps variable names to word IDs (0-based).
 
 **Example:**
 

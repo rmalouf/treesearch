@@ -67,7 +67,7 @@ The core pattern matching engine is fully implemented using constraint satisfact
 3. **Automatic parallel processing**: Channel-based file-level parallelism with rayon (implemented)
 4. **Hybrid API design**: Support both object-oriented and functional interfaces for Python API flexibility.
    - Object-oriented: Treebank class with `from_*()` methods and `trees()`/`matches()` instance methods
-   - Functional: Standalone functions like `search_file()`, `read_trees()` for convenience
+   - Functional: Standalone functions like `get_trees()`, `get_matches()`, `search()` for convenience
    - Use objects/structs for data storage and encapsulation, not just namespace organization
 5. **Iterator-based design**: Use iterators for memory efficiency and composability
 6. **Error handling strategy**:

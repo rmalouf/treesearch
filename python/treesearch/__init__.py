@@ -1,12 +1,13 @@
 """Treesearch: High-performance dependency tree pattern matching."""
 
+from __future__ import annotations
+
 from importlib.metadata import version
 from pathlib import Path
 import glob
+from typing import Iterable, Iterator, Union
 
 __version__ = version("treesearch")
-
-from typing import Iterable
 
 try:
     from .treesearch import (
@@ -46,7 +47,7 @@ __all__ = [
 ]
 
 
-def open(source):
+def open(source: str | Path | Iterable[str | Path]) -> Treebank:
     """Open a treebank from a file or glob pattern.
 
     Automatically detects whether the path is a glob pattern (contains * or ?)
@@ -76,13 +77,13 @@ def open(source):
     elif isinstance(source, Path):
         return Treebank.from_file(str(source))
     elif isinstance(source, Iterable):
-        source = [str(path) for path in source]
-        return Treebank.from_files(source)
+        source_list = [str(path) for path in source]
+        return Treebank.from_files(source_list)
     else:
-        raise ValueError()
+        raise ValueError("source must be str, Path, or Iterable[str | Path]")
 
 
-def from_string(text):
+def from_string(text: str) -> Treebank:
     """Create a treebank from a CoNLL-U string.
 
     Args:
@@ -104,12 +105,35 @@ def from_string(text):
     return Treebank.from_string(text)
 
 
-def get_trees(source, ordered=True):
+def get_trees(source: str | Path | Iterable[str | Path], ordered: bool = True) -> TreeIterator:
+    """Read trees from one or more CoNLL-U files.
+
+    Args:
+        source: Path to a single file or glob pattern
+        ordered: If True (default), return trees in deterministic order
+
+    Returns:
+        Iterator over Tree objects
+    """
     treebank = open(source)
     return treebank.trees(ordered=ordered)
 
 
-def get_matches(source, query, ordered=True):
+def get_matches(
+    source: str | Path | Iterable[str | Path],
+    query: str | Pattern,
+    ordered: bool = True,
+) -> MatchIterator:
+    """Search one or more files for pattern matches.
+
+    Args:
+        source: Path to a single file or glob pattern
+        query: Query string or compiled Pattern
+        ordered: If True (default), return matches in deterministic order
+
+    Returns:
+        Iterator over (Tree, match_dict) tuples
+    """
     treebank = open(source)
     if isinstance(query, str):
         query = parse_query(query)
