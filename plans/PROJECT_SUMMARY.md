@@ -112,18 +112,18 @@ MATCH {
 pattern = ts.parse_query(query_str)
 
 # Search single file
-for tree, match in ts.search_file("corpus.conllu", pattern):
+for tree, match in ts.get_matches("corpus.conllu", pattern):
     verb = tree.get_word(match["Verb"])
     subj = tree.get_word(match["Subj"])
     print(f"Found match: {verb.form} ← {subj.form}")
 
-# Or search multiple files in parallel
-for tree, match in ts.search_files("data/*.conllu", pattern, parallel=True):
+# Or search multiple files with automatic parallelization
+for tree, match in ts.get_matches("data/*.conllu", pattern):
     verb = tree.get_word(match["Verb"])
     print(f"{verb.form} in: {tree.sentence_text}")
 
 # Or work with individual trees
-for tree in ts.read_trees("corpus.conllu"):
+for tree in ts.get_trees("corpus.conllu"):
     for match in ts.search(tree, pattern):
         verb = tree.get_word(match["Verb"])
         subj = tree.get_word(match["Subj"])

@@ -357,7 +357,7 @@ Represents a dependency tree.
 - `__len__() -> int` - Number of words in tree
 
 ```python
-tree = next(ts.read_trees("corpus.conllu"))
+tree = next(ts.get_trees("corpus.conllu"))
 print(f"Sentence has {len(tree)} words")
 print(f"Text: {tree.sentence_text}")
 

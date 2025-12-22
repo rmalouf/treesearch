@@ -74,17 +74,17 @@ for tree, match in treesearch.get_matches("corpus.conllu", pattern):
 
 ---
 
-### With get_matchess()
+### With get_matches() (multiple files)
 
 Search multiple CoNLL-U files with automatic parallel processing.
 
 ```python
-for tree, match in treesearch.get_matchess("data/*.conllu", pattern):
+for tree, match in treesearch.get_matches("data/*.conllu", pattern):
     # Process match
     verb = tree.get_word(match["V"])
 ```
 
-**See also:** [get_matchess()](functions.md#get_matchess)
+**See also:** [get_matches()](functions.md#get_matches)
 
 ---
 
@@ -209,7 +209,7 @@ help_infinitive = treesearch.parse_query("""
     }
 """)
 
-for tree, match in treesearch.get_matchess("data/*.conllu", help_infinitive):
+for tree, match in treesearch.get_matches("data/*.conllu", help_infinitive):
     main = tree.get_word(match["Main"])
     inf = tree.get_word(match["Inf"])
     print(f"{main.form} ... {inf.form}: {tree.sentence_text}")
@@ -291,5 +291,4 @@ except ValueError as e:
 - [Query language](../guide/query-language.md) - Query syntax reference
 - [search()](functions.md#search) - Using patterns with single trees
 - [get_matches()](functions.md#get_matches) - Using patterns with files
-- [get_matchess()](functions.md#get_matchess) - Using patterns with multiple files
 - [Treebank](treebank.md) - Object-oriented pattern search
