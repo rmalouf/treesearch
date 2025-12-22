@@ -2,15 +2,15 @@
 //!
 //! This module provides PyO3-based Python bindings for the Rust core.
 
-use pyo3::exceptions::{PyIOError, PyValueError};
+use pyo3::exceptions::{PyIndexError, PyIOError, PyValueError};
 use pyo3::prelude::*;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::iterators::{Treebank, TreebankError};
 use crate::pattern::Pattern as RustPattern;
-use crate::query::parse_query;
-use crate::searcher::search;
+use crate::query::compile_query;
+use crate::searcher::search_tree;
 use crate::tree::{Tree as RustTree, Word as RustWord};
 
 /// Convert TreebankError to Python exception
@@ -19,9 +19,11 @@ impl From<TreebankError> for PyErr {
         match err {
             TreebankError::Io(e) => PyIOError::new_err(e.to_string()),
             TreebankError::Parse(e) => PyValueError::new_err(format!("Parse error: {}", e)),
-            TreebankError::FileOpen { path, source } => {
-                PyIOError::new_err(format!("Failed to open file {}: {}", path.display(), source))
-            }
+            TreebankError::FileOpen { path, source } => PyIOError::new_err(format!(
+                "Failed to open file {}: {}",
+                path.display(),
+                source
+            )),
         }
     }
 }
@@ -34,11 +36,24 @@ pub struct PyTree {
 
 #[pymethods]
 impl PyTree {
-    fn get_word(&self, id: usize) -> Option<PyWord> {
-        self.inner.words.get(id).map(|word| PyWord {
-            inner: word.clone(),
-            tree: Arc::clone(&self.inner),
-        })
+    fn word(&self, id: usize) -> PyResult<PyWord> {
+        self.inner
+            .words
+            .get(id)
+            .map(|word| PyWord {
+                inner: word.clone(),
+                tree: Arc::clone(&self.inner),
+            })
+            .ok_or_else(|| {
+                PyIndexError::new_err(format!(
+                    "word index out of range: {}",
+                    id
+                ))
+            })
+    }
+
+    fn __getitem__(&self, id: usize) -> PyResult<PyWord> {
+        self.word(id)
     }
 
     fn __len__(&self) -> usize {
@@ -56,7 +71,22 @@ impl PyTree {
     }
 
     fn __repr__(&self) -> String {
-        format!("Tree({} words)", self.inner.words.len())
+        let n = self.inner.words.len();
+        if n == 0 {
+            return "<Tree (empty)>".to_string();
+        }
+
+        let num_to_show = n.min(3);
+        let words: Vec<String> = self.inner.words.iter()
+            .take(num_to_show)
+            .map(|w| String::from_utf8_lossy(&self.inner.string_pool.resolve(w.form)).to_string())
+            .collect();
+
+        if n > 3 {
+            format!("<Tree len={} words='{} ...'>", n, words.join(" "))
+        } else {
+            format!("<Tree len={} words='{}'>", n, words.join(" "))
+        }
     }
 }
 
@@ -89,7 +119,7 @@ impl PyWord {
     }
 
     #[getter]
-    fn pos(&self) -> String {
+    fn upos(&self) -> String {
         String::from_utf8_lossy(&self.tree.string_pool.resolve(self.inner.upos)).to_string()
     }
 
@@ -147,13 +177,14 @@ impl PyWord {
             .collect()
     }
 
+    // TODO: add xpos and head to these (but they're optional)
     fn __repr__(&self) -> String {
         format!(
-            "Word(id={}, form='{}', lemma='{}', pos='{}', deprel='{}')",
+            "<Word id={} form='{}' lemma='{}' upos='{}' deprel='{}'>",
             self.inner.id,
             self.form(),
             self.lemma(),
-            self.pos(),
+            self.upos(),
             self.deprel()
         )
     }
@@ -177,9 +208,9 @@ impl PyPattern {
 /// Created by parse_query() and used with search functions. Patterns are
 /// reusable and should be compiled once then used across multiple searches
 /// for best performance.
-#[pyfunction(name = "parse_query")]
-fn py_parse_query(query: &str) -> PyResult<PyPattern> {
-    parse_query(query)
+#[pyfunction(name = "compile_query")]
+fn py_compile_query(query: &str) -> PyResult<PyPattern> {
+    compile_query(query)
         .map(|inner| PyPattern { inner })
         .map_err(|e| PyValueError::new_err(format!("Query parse error: {}", e)))
 }
@@ -314,7 +345,7 @@ impl PyTreebank {
     ///     >>> for tree, match in tb.matches(pattern, ordered=True):
     ///     ...     print(match)
     #[pyo3(signature = (pattern, ordered=true))]
-    fn matches(&self, pattern: &PyPattern, ordered: bool) -> PyMatchIterator {
+    fn search(&self, pattern: &PyPattern, ordered: bool) -> PyMatchIterator {
         PyMatchIterator {
             inner: Box::new(
                 self.inner
@@ -325,8 +356,9 @@ impl PyTreebank {
         }
     }
 
+    // TODO: make this more interesting (number of files? start of string?)
     fn __repr__(&self) -> String {
-        "Treebank()".to_string()
+        "<Treebank>".to_string()
     }
 }
 
@@ -356,7 +388,10 @@ impl PyTreeIterator {
 struct PyMatchIterator {
     inner: Box<
         dyn Iterator<
-                Item = Result<(Arc<RustTree>, std::collections::HashMap<String, usize>), TreebankError>,
+                Item = Result<
+                    (Arc<RustTree>, std::collections::HashMap<String, usize>),
+                    TreebankError,
+                >,
             > + Send,
     >,
 }
@@ -367,9 +402,7 @@ impl PyMatchIterator {
         slf
     }
 
-    fn __next__(
-        &mut self,
-    ) -> PyResult<Option<(PyTree, std::collections::HashMap<String, usize>)>> {
+    fn __next__(&mut self) -> PyResult<Option<(PyTree, std::collections::HashMap<String, usize>)>> {
         match self.inner.next() {
             Some(Ok((tree, bindings))) => Ok(Some((PyTree { inner: tree }, bindings))),
             Some(Err(e)) => Err(e.into()),
@@ -378,29 +411,38 @@ impl PyMatchIterator {
     }
 }
 
-/// Search a single tree for pattern matches.
+/// Search a list of trees for pattern matches.
 ///
-/// Returns all matches found in the tree. Each match is a dictionary mapping
-/// variable names from the query to word IDs in the tree.
+/// Returns all matches found across all trees as a flat list. Each match is
+/// a dictionary mapping variable names from the query to word IDs in the tree.
 ///
 /// Args:
-///     tree: Tree to search
+///     trees: List of trees to search
 ///     pattern: Compiled pattern from parse_query()
 ///
 /// Returns:
-///     List of match dictionaries
+///     Flat list of match dictionaries from all trees
 ///
 /// Example:
-///     for match in treesearch.search(tree, pattern):
-///         verb = tree.get_word(match["Verb"])
-#[pyfunction(name = "search")]
-fn py_search(tree: &PyTree, pattern: &PyPattern) -> Vec<std::collections::HashMap<String, usize>> {
-    search((*tree.inner).clone(), &pattern.inner)
+///     matches = treesearch.search([tree1, tree2], pattern)
+///     for match in matches:
+///         print(match)
+#[pyfunction]
+fn py_search_trees(
+    trees: Vec<PyTree>,
+    pattern: &PyPattern,
+) -> Vec<std::collections::HashMap<String, usize>> {
+    trees
         .into_iter()
-        .map(|m| m.bindings)
+        .flat_map(|tree| {
+            search_tree((*tree.inner).clone(), &pattern.inner)
+                .into_iter()
+                .map(|m| m.bindings)
+        })
         .collect()
 }
 
+/*
 /// Search a single CoNLL-U file for pattern matches.
 ///
 /// Convenience function wrapping Treebank.from_file().matches(pattern).
@@ -425,66 +467,66 @@ fn search_file(path: &str, pattern: &PyPattern, ordered: bool) -> PyMatchIterato
         ),
     }
 }
+*/
 
-/// Read trees from multiple CoNLL-U files matching a glob pattern.
-///
-/// Convenience function wrapping Treebank.from_glob(pattern).trees().
-/// Uses automatic parallel processing.
-///
-/// Args:
-///     glob_pattern: Glob pattern (e.g., "data/*.conllu")
-///     ordered: If True (default), trees are returned in deterministic order.
-///              If False, trees may arrive in any order for better performance.
-///
-/// Returns:
-///     Iterator over Tree objects
-///
-/// Raises:
-///     ValueError: If glob pattern is invalid
-#[pyfunction]
-#[pyo3(signature = (glob_pattern, ordered=true))]
-fn read_trees_glob(glob_pattern: &str, ordered: bool) -> PyResult<PyTreeIterator> {
-    let treebank = Treebank::from_glob(glob_pattern)
-        .map_err(|e| PyValueError::new_err(format!("Glob pattern error: {}", e)))?;
-    Ok(PyTreeIterator {
-        inner: Box::new(treebank.tree_iter(ordered).map(|result| result.map(Arc::new))),
-    })
-}
+// /// Read trees from multiple CoNLL-U files matching a glob pattern.
+// ///
+// /// Convenience function wrapping Treebank.from_glob(pattern).trees().
+// /// Uses automatic parallel processing.
+// ///
+// /// Args:
+// ///     glob_pattern: Glob pattern (e.g., "data/*.conllu")
+// ///     ordered: If True (default), trees are returned in deterministic order.
+// ///              If False, trees may arrive in any order for better performance.
+// ///
+// /// Returns:
+// ///     Iterator over Tree objects
+// ///
+// /// Raises:
+// ///     ValueError: If glob pattern is invalid
+// #[pyfunction]
+// #[pyo3(signature = (glob_pattern, ordered=true))]
+// fn read_trees_glob(glob_pattern: &str, ordered: bool) -> PyResult<PyTreeIterator> {
+//     let treebank = Treebank::from_glob(glob_pattern)
+//         .map_err(|e| PyValueError::new_err(format!("Glob pattern error: {}", e)))?;
+//     Ok(PyTreeIterator {
+//         inner: Box::new(treebank.tree_iter(ordered).map(|result| result.map(Arc::new))),
+//     })
+// }
 
-/// Search multiple CoNLL-U files for pattern matches.
-///
-/// Convenience function wrapping Treebank.from_glob(pattern).matches(pattern).
-/// Uses automatic parallel processing.
-///
-/// Args:
-///     glob_pattern: Glob pattern (e.g., "data/*.conllu")
-///     pattern: Compiled pattern from parse_query()
-///     ordered: If True (default), matches are returned in deterministic order.
-///              If False, matches may arrive in any order for better performance.
-///
-/// Returns:
-///     Iterator over (tree, match) tuples
-///
-/// Raises:
-///     ValueError: If glob pattern is invalid
-#[pyfunction]
-#[pyo3(signature = (glob_pattern, pattern, ordered=true))]
-fn search_files(
-    glob_pattern: &str,
-    pattern: &PyPattern,
-    ordered: bool,
-) -> PyResult<PyMatchIterator> {
-    let treebank = Treebank::from_glob(glob_pattern)
-        .map_err(|e| PyValueError::new_err(format!("Glob pattern error: {}", e)))?;
-    Ok(PyMatchIterator {
-        inner: Box::new(
-            treebank
-                .match_iter(pattern.inner.clone(), ordered)
-                .map(|result| result.map(|m| (m.tree, m.bindings))),
-        ),
-    })
-}
-
+// /// Search multiple CoNLL-U files for pattern matches.
+// ///
+// /// Convenience function wrapping Treebank.from_glob(pattern).matches(pattern).
+// /// Uses automatic parallel processing.
+// ///
+// /// Args:
+// ///     glob_pattern: Glob pattern (e.g., "data/*.conllu")
+// ///     pattern: Compiled pattern from parse_query()
+// ///     ordered: If True (default), matches are returned in deterministic order.
+// ///              If False, matches may arrive in any order for better performance.
+// ///
+// /// Returns:
+// ///     Iterator over (tree, match) tuples
+// ///
+// /// Raises:
+// ///     ValueError: If glob pattern is invalid
+// #[pyfunction]
+// #[pyo3(signature = (glob_pattern, pattern, ordered=true))]
+// fn search_files(
+//     glob_pattern: &str,
+//     pattern: &PyPattern,
+//     ordered: bool,
+// ) -> PyResult<PyMatchIterator> {
+//     let treebank = Treebank::from_glob(glob_pattern)
+//         .map_err(|e| PyValueError::new_err(format!("Glob pattern error: {}", e)))?;
+//     Ok(PyMatchIterator {
+//         inner: Box::new(
+//             treebank
+//                 .match_iter(pattern.inner.clone(), ordered)
+//                 .map(|result| result.map(|m| (m.tree, m.bindings))),
+//         ),
+//     })
+// }
 
 #[pyfunction]
 fn __version__() -> &'static str {
@@ -493,7 +535,6 @@ fn __version__() -> &'static str {
 
 #[pymodule]
 fn treesearch(m: &Bound<'_, PyModule>) -> PyResult<()> {
-
     m.add_class::<PyTree>()?;
     m.add_class::<PyWord>()?;
     m.add_class::<PyPattern>()?;
@@ -501,11 +542,11 @@ fn treesearch(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTreeIterator>()?;
     m.add_class::<PyMatchIterator>()?;
 
-    m.add_function(wrap_pyfunction!(py_parse_query, m)?)?;
-    m.add_function(wrap_pyfunction!(py_search, m)?)?;
-    m.add_function(wrap_pyfunction!(search_file, m)?)?;
-    m.add_function(wrap_pyfunction!(read_trees_glob, m)?)?;
-    m.add_function(wrap_pyfunction!(search_files, m)?)?;
+    m.add_function(wrap_pyfunction!(py_compile_query, m)?)?;
+    m.add_function(wrap_pyfunction!(py_search_trees, m)?)?;
+    //m.add_function(wrap_pyfunction!(search_file, m)?)?;
+    //m.add_function(wrap_pyfunction!(read_trees_glob, m)?)?;
+    //m.add_function(wrap_pyfunction!(search_files, m)?)?;
 
     Ok(())
 }

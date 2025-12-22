@@ -8,7 +8,7 @@
 
 use crate::RelationType;
 use crate::pattern::{Constraint, EdgeConstraint, Pattern};
-use crate::query::{QueryError, parse_query};
+use crate::query::{QueryError, compile_query};
 use crate::tree::Word;
 use crate::tree::{Tree, WordId};
 use fastbit::{BitFixed, BitRead, BitWrite};
@@ -29,7 +29,9 @@ fn satisfies_var_constraint(tree: &Tree, word: &Word, constraint: &Constraint) -
         Constraint::UPOS(pos) => tree.string_pool.compare_bytes(word.upos, pos.as_bytes()),
         Constraint::XPOS(pos) => tree.string_pool.compare_bytes(word.xpos, pos.as_bytes()),
         Constraint::Form(form) => tree.string_pool.compare_bytes(word.form, form.as_bytes()),
-        Constraint::DepRel(deprel) => tree.string_pool.compare_bytes(word.deprel, deprel.as_bytes()),
+        Constraint::DepRel(deprel) => tree
+            .string_pool
+            .compare_bytes(word.deprel, deprel.as_bytes()),
         Constraint::Feature(key, value) => word.feats.iter().any(|(feat_key, feat_val)| {
             tree.string_pool.compare_bytes(*feat_key, key.as_bytes())
                 && tree.string_pool.compare_bytes(*feat_val, value.as_bytes())
@@ -50,7 +52,9 @@ fn satisfies_var_constraint(tree: &Tree, word: &Word, constraint: &Constraint) -
                 RelationType::Child => {
                     if let Some(required_label) = label {
                         word.head.is_some()
-                            && tree.string_pool.compare_bytes(word.deprel, required_label.as_bytes())
+                            && tree
+                                .string_pool
+                                .compare_bytes(word.deprel, required_label.as_bytes())
                     } else {
                         word.head.is_some()
                     }
@@ -104,8 +108,9 @@ fn satisfies_arc_constraint(
     let satisfies_label = if let Some(expected_label) = &edge_constraint.label {
         // For Child relations, check the deprel of the target word
         if matches!(edge_constraint.relation, RelationType::Child) {
-            let actual_deprel = tree.get_word(to_word_id).unwrap().deprel;
-            tree.string_pool.compare_bytes(actual_deprel, expected_label.as_bytes())
+            let actual_deprel = tree.word(to_word_id).unwrap().deprel;
+            tree.string_pool
+                .compare_bytes(actual_deprel, expected_label.as_bytes())
         } else {
             true // No label check for non-Child relations
         }
@@ -304,13 +309,13 @@ fn check_arc_consistency(
 }
 
 /// Search a tree with a pre-compiled pattern
-pub fn search(tree: Tree, pattern: &Pattern) -> Vec<Match> {
+pub fn search_tree(tree: Tree, pattern: &Pattern) -> Vec<Match> {
     find_all_matches(tree, pattern)
 }
 
 /// Search a tree with a query string
-pub fn search_query(tree: Tree, query: &str) -> Result<Vec<Match>, QueryError> {
-    let pattern = parse_query(query)?;
+pub fn search_tree_query(tree: Tree, query: &str) -> Result<Vec<Match>, QueryError> {
+    let pattern = compile_query(query)?;
     Ok(find_all_matches(tree, &pattern))
 }
 
@@ -366,33 +371,36 @@ mod tests {
         let tree = build_test_tree();
 
         // Test lemma constraint - should find one match
-        let matches: Vec<_> = search_query(tree.clone(), "MATCH { V [lemma=\"help\"]; }").unwrap();
+        let matches: Vec<_> =
+            search_tree_query(tree.clone(), "MATCH { V [lemma=\"help\"]; }").unwrap();
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].bindings, hashmap! { "V" => 0 });
 
         // Test upos constraint - should match both verbs
-        let matches: Vec<_> = search_query(tree.clone(), "MATCH { V [upos=\"VERB\"]; }").unwrap();
+        let matches: Vec<_> =
+            search_tree_query(tree.clone(), "MATCH { V [upos=\"VERB\"]; }").unwrap();
         assert_eq!(matches.len(), 2);
         assert_eq!(matches[0].bindings, hashmap! { "V" => 0 });
         assert_eq!(matches[1].bindings, hashmap! { "V" => 3 });
 
         // Test form constraint
-        let matches: Vec<_> = search_query(tree.clone(), "MATCH { W [form=\"to\"]; }").unwrap();
+        let matches: Vec<_> =
+            search_tree_query(tree.clone(), "MATCH { W [form=\"to\"]; }").unwrap();
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].bindings, hashmap! { "W" => 2 });
 
         // Test deprel constraint
         let matches: Vec<_> =
-            search_query(tree.clone(), "MATCH { X [deprel=\"xcomp\"]; }").unwrap();
+            search_tree_query(tree.clone(), "MATCH { X [deprel=\"xcomp\"]; }").unwrap();
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].bindings, hashmap! { "X" => 3});
     }
 
     #[test]
-    fn test_search_query_multiple_children() {
+    fn test_search_tree_query_multiple_children() {
         let tree = build_coord_tree();
         // Find word with two conj children
-        let matches: Vec<_> = search_query(
+        let matches: Vec<_> = search_tree_query(
             tree,
             "MATCH { C [upos=\"CCONJ\"]; N1 []; N2 []; C -[conj]-> N1; C -[conj]-> N2; }",
         )
@@ -425,10 +433,10 @@ mod tests {
     }
 
     #[test]
-    fn test_search_query_chain() {
+    fn test_search_tree_query_chain() {
         let tree = build_test_tree();
         // Find chain: helped -> win -> to (tests forward-checking efficiency)
-        let matches: Vec<_> = search_query(
+        let matches: Vec<_> = search_tree_query(
             tree,
             "MATCH { V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; T [lemma=\"to\"]; V1 -> V2; V2 -> T; }",
         )
@@ -441,29 +449,31 @@ mod tests {
     }
 
     #[test]
-    fn test_search_query_basic_constraints() {
+    fn test_search_tree_query_basic_constraints() {
         let tree = build_test_tree();
 
         // No matches - word doesn't exist
-        let matches: Vec<_> = search_query(tree.clone(), "MATCH { N [upos=\"NOUN\"]; }").unwrap();
+        let matches: Vec<_> =
+            search_tree_query(tree.clone(), "MATCH { N [upos=\"NOUN\"]; }").unwrap();
         assert_eq!(matches.len(), 0);
 
         // Multiple constraints (AND)
         let matches: Vec<_> =
-            search_query(tree.clone(), "MATCH { V [lemma=\"help\", upos=\"VERB\"]; }").unwrap();
+            search_tree_query(tree.clone(), "MATCH { V [lemma=\"help\", upos=\"VERB\"]; }")
+                .unwrap();
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].bindings, hashmap! { "V" => 0 });
 
         // Unconstrained variable - matches all words
-        let matches: Vec<_> = search_query(tree.clone(), "MATCH { X []; }").unwrap();
+        let matches: Vec<_> = search_tree_query(tree.clone(), "MATCH { X []; }").unwrap();
         assert_eq!(matches.len(), 4);
     }
 
     #[test]
-    fn test_search_query_exhaustive_matching() {
+    fn test_search_tree_query_exhaustive_matching() {
         let tree = build_coord_tree();
         // Find all nouns (exhaustive search should find both)
-        let matches: Vec<_> = search_query(tree, "MATCH { N [upos=\"NOUN\"]; }").unwrap();
+        let matches: Vec<_> = search_tree_query(tree, "MATCH { N [upos=\"NOUN\"]; }").unwrap();
         // Should find both "cats" and "dogs"
         assert_eq!(matches.len(), 2);
         assert!(
@@ -483,10 +493,10 @@ mod tests {
     }
 
     #[test]
-    fn test_search_query_complex_pattern() {
+    fn test_search_tree_query_complex_pattern() {
         let tree = build_multi_verb_tree();
         // Complex pattern: verb with nsubj and xcomp children
-        let matches: Vec<_> = search_query(
+        let matches: Vec<_> = search_tree_query(
             tree,
             "MATCH { V1 [upos=\"VERB\"]; S []; V2 [upos=\"VERB\"]; V1 -[nsubj]-> S; V1 -> V2; }",
         )
@@ -506,7 +516,7 @@ mod tests {
     fn test_search_empty_pattern() {
         let tree = build_test_tree();
         // Empty pattern has no variables, so returns one empty match
-        let matches: Vec<_> = search_query(tree, "MATCH { }").unwrap();
+        let matches: Vec<_> = search_tree_query(tree, "MATCH { }").unwrap();
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].bindings, hashmap! {});
     }
@@ -517,7 +527,7 @@ mod tests {
         let tree = build_test_tree();
 
         // Precedes (<<): "helped" << "win" should match (non-adjacent OK)
-        let matches: Vec<_> = search_query(
+        let matches: Vec<_> = search_tree_query(
             tree.clone(),
             "MATCH { V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 << V2; }",
         )
@@ -526,7 +536,7 @@ mod tests {
         assert_eq!(matches[0].bindings, hashmap! { "V1" => 0, "V2" => 3 });
 
         // Precedes: wrong order should fail
-        let matches: Vec<_> = search_query(
+        let matches: Vec<_> = search_tree_query(
             tree.clone(),
             "MATCH { V1 [lemma=\"win\"]; V2 [lemma=\"help\"]; V1 << V2; }",
         )
@@ -534,7 +544,7 @@ mod tests {
         assert_eq!(matches.len(), 0);
 
         // Immediately precedes (<): "to" < "win" should match (adjacent)
-        let matches: Vec<_> = search_query(
+        let matches: Vec<_> = search_tree_query(
             tree.clone(),
             "MATCH { T [lemma=\"to\"]; V [lemma=\"win\"]; T < V; }",
         )
@@ -543,7 +553,7 @@ mod tests {
         assert_eq!(matches[0].bindings, hashmap! { "T" => 2, "V" => 3 });
 
         // Immediately precedes: "helped" < "win" should NOT match (not adjacent)
-        let matches: Vec<_> = search_query(
+        let matches: Vec<_> = search_tree_query(
             tree,
             "MATCH { V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 < V2; }",
         )
@@ -559,7 +569,7 @@ mod tests {
         let tree = build_test_tree();
 
         // Find: helped -[xcomp]-> win, AND helped << win (in word order)
-        let matches: Vec<_> = search_query(
+        let matches: Vec<_> = search_tree_query(
             tree,
             "MATCH { V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 -[xcomp]-> V2; V1 << V2; }",
         )
@@ -579,12 +589,12 @@ mod tests {
 
         // Without precedence, dependency edge matches
         let matches_no_precedence: Vec<_> =
-            search_query(tree.clone(), "MATCH { V1 []; V2 []; V1 -[xcomp]-> V2; }").unwrap();
+            search_tree_query(tree.clone(), "MATCH { V1 []; V2 []; V1 -[xcomp]-> V2; }").unwrap();
         assert_eq!(matches_no_precedence.len(), 1);
 
         // But if we add a false precedence constraint (win << helped),
         // the match should fail even though the dependency exists
-        let matches_with_false_precedence: Vec<_> = search_query(
+        let matches_with_false_precedence: Vec<_> = search_tree_query(
             tree.clone(),
             "MATCH { V1 []; V2 []; V1 -[xcomp]-> V2; V2 << V1; }",
         )
@@ -604,7 +614,7 @@ mod tests {
         let tree = build_coord_tree();
 
         // "and" << "cats" should match (0 precedes 1)
-        let matches: Vec<_> = search_query(
+        let matches: Vec<_> = search_tree_query(
             tree,
             "MATCH { C [lemma=\"and\"]; N [lemma=\"cat\"]; C << N; }",
         )
@@ -620,7 +630,7 @@ mod tests {
         let tree = build_test_tree();
 
         // "helped" << "us" << "to" should match
-        let matches: Vec<_> = search_query(
+        let matches: Vec<_> = search_tree_query(
             tree,
             "MATCH { A [lemma=\"help\"]; B [lemma=\"we\"]; C [lemma=\"to\"]; A << B; B << C; }",
         )
@@ -695,12 +705,12 @@ mod tests {
 
         // Single feature constraint
         let matches: Vec<_> =
-            search_query(tree.clone(), r#"MATCH { V [feats.Tense="Past"]; }"#).unwrap();
+            search_tree_query(tree.clone(), r#"MATCH { V [feats.Tense="Past"]; }"#).unwrap();
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].bindings, hashmap! { "V" => 0 }); // "was"
 
         // Multiple feature constraints (AND)
-        let matches: Vec<_> = search_query(
+        let matches: Vec<_> = search_tree_query(
             tree.clone(),
             r#"MATCH { V [feats.Tense="Past", feats.Number="Sing"]; }"#,
         )
@@ -709,7 +719,7 @@ mod tests {
         assert_eq!(matches[0].bindings, hashmap! { "V" => 0 }); // "was"
 
         // Feature combined with other constraints
-        let matches: Vec<_> = search_query(
+        let matches: Vec<_> = search_tree_query(
             tree.clone(),
             r#"MATCH { V [lemma="be", feats.Tense="Past"]; }"#,
         )
@@ -719,11 +729,11 @@ mod tests {
 
         // Non-existent feature value
         let matches: Vec<_> =
-            search_query(tree.clone(), r#"MATCH { V [feats.Tense="Fut"]; }"#).unwrap();
+            search_tree_query(tree.clone(), r#"MATCH { V [feats.Tense="Fut"]; }"#).unwrap();
         assert_eq!(matches.len(), 0); // No future tense verbs
 
         // Word with no features
-        let matches: Vec<_> = search_query(
+        let matches: Vec<_> = search_tree_query(
             tree.clone(),
             r#"MATCH { P [upos="PUNCT", feats.Tense="Past"]; }"#,
         )
@@ -736,15 +746,18 @@ mod tests {
         let tree = build_feature_tree();
 
         // Correct case
-        let matches = search_query(tree.clone(), r#"MATCH { V [feats.Tense="Past"]; }"#).unwrap();
+        let matches =
+            search_tree_query(tree.clone(), r#"MATCH { V [feats.Tense="Past"]; }"#).unwrap();
         assert_eq!(matches.len(), 1);
 
         // Wrong key case
-        let matches = search_query(tree.clone(), r#"MATCH { V [feats.tense="Past"]; }"#).unwrap();
+        let matches =
+            search_tree_query(tree.clone(), r#"MATCH { V [feats.tense="Past"]; }"#).unwrap();
         assert_eq!(matches.len(), 0);
 
         // Wrong value case
-        let matches = search_query(tree.clone(), r#"MATCH { V [feats.Tense="past"]; }"#).unwrap();
+        let matches =
+            search_tree_query(tree.clone(), r#"MATCH { V [feats.Tense="past"]; }"#).unwrap();
         assert_eq!(matches.len(), 0);
     }
 
@@ -754,7 +767,7 @@ mod tests {
         let tree = build_test_tree();
 
         // Find all words that are NOT VERBs
-        let matches: Vec<_> = search_query(tree, r#"MATCH { W [upos!="VERB"]; }"#).unwrap();
+        let matches: Vec<_> = search_tree_query(tree, r#"MATCH { W [upos!="VERB"]; }"#).unwrap();
         assert_eq!(matches.len(), 2); // us (PRON), to (PART)
         assert!(
             matches
@@ -778,7 +791,7 @@ mod tests {
 
         // Find all verbs that are NOT past tense
         let matches: Vec<_> =
-            search_query(tree, r#"MATCH { V [upos="VERB", feats.Tense!="Past"]; }"#).unwrap();
+            search_tree_query(tree, r#"MATCH { V [upos="VERB", feats.Tense!="Past"]; }"#).unwrap();
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].bindings, hashmap! { "V" => 1 }); // "running" has Tense=Pres
     }
@@ -790,7 +803,7 @@ mod tests {
 
         // Find pairs where V does NOT have an edge to T
         // "helped" has edges to "us" and "win", but not "to"
-        let matches: Vec<_> = search_query(
+        let matches: Vec<_> = search_tree_query(
             tree.clone(),
             r#"MATCH { V [upos="VERB"]; T [lemma="to"]; V !-> T; }"#,
         )
@@ -808,7 +821,7 @@ mod tests {
         // "helped" has obj to "us" (1), so pairs with W=1 should be excluded
         // Also, AllDifferent constraint means V != W
         let matches: Vec<_> =
-            search_query(tree, r#"MATCH { V [lemma="help"]; W []; V !-[obj]-> W; }"#).unwrap();
+            search_tree_query(tree, r#"MATCH { V [lemma="help"]; W []; V !-[obj]-> W; }"#).unwrap();
 
         // Should match V=0 with W=2, W=3 (not W=1 which is obj, not W=0 due to AllDifferent)
         assert_eq!(matches.len(), 2);
@@ -842,7 +855,7 @@ mod tests {
 
         // Find: V has xcomp to Y, but NOT obj to W
         // AllDifferent means V, Y, W must all be different
-        let matches: Vec<_> = search_query(
+        let matches: Vec<_> = search_tree_query(
             tree,
             r#"MATCH { V []; Y []; W []; V -[xcomp]-> Y; V !-[obj]-> W; }"#,
         )
@@ -863,7 +876,7 @@ mod tests {
         let tree = build_test_tree();
 
         // Find words that do NOT have any incoming edges (i.e., root words)
-        let matches: Vec<_> = search_query(tree, r#"MATCH { W []; _ !-> W; }"#).unwrap();
+        let matches: Vec<_> = search_tree_query(tree, r#"MATCH { W []; _ !-> W; }"#).unwrap();
 
         // Only word 0 (helped) has no incoming edge (it's the root)
         assert_eq!(matches.len(), 1);
@@ -876,7 +889,7 @@ mod tests {
         let tree = build_test_tree();
 
         // Find words that are NOT anyone's obj (i.e., deprel != "obj")
-        let matches: Vec<_> = search_query(tree, r#"MATCH { W []; _ !-[obj]-> W; }"#).unwrap();
+        let matches: Vec<_> = search_tree_query(tree, r#"MATCH { W []; _ !-[obj]-> W; }"#).unwrap();
 
         // Words 0 (root), 2 (mark), 3 (xcomp) are not obj of anyone
         assert_eq!(matches.len(), 3);
@@ -916,7 +929,7 @@ mod tests {
         let _tree = build_test_tree();
 
         // Parse pattern with negative labeled edge
-        let pattern = parse_query(r#"MATCH { V []; W []; V !-[obj]-> W; }"#).unwrap();
+        let pattern = compile_query(r#"MATCH { V []; W []; V !-[obj]-> W; }"#).unwrap();
 
         // Check that W does not have a DepRel constraint
         let w_id = *pattern.var_ids.get("W").unwrap();

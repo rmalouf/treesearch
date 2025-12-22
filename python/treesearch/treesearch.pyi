@@ -163,7 +163,7 @@ class Treebank:
         """Search for pattern matches across all trees.
 
         Args:
-            pattern: Compiled pattern from parse_query()
+            pattern: Compiled pattern from compile_query()
             ordered: If True (default), return matches in deterministic order.
                     If False, matches may arrive in any order for better performance.
 
@@ -186,8 +186,8 @@ class MatchIterator(Iterator[tuple[Tree, dict[str, int]]]):
     def __iter__(self) -> MatchIterator: ...
     def __next__(self) -> tuple[Tree, dict[str, int]]: ...
 
-def parse_query(query: str) -> Pattern:
-    """Parse query string into Pattern object.
+def compile_query(query: str) -> Pattern:
+    """Compile query string into Pattern object.
 
     Args:
         query: Query string in treesearch query language
@@ -205,7 +205,7 @@ def search(tree: Tree, pattern: Pattern) -> list[dict[str, int]]:
 
     Args:
         tree: Tree to search
-        pattern: Compiled pattern from parse_query()
+        pattern: Compiled pattern from compile_query()
 
     Returns:
         List of match dictionaries mapping variable names to word IDs (0-based)
