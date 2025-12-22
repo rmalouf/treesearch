@@ -106,65 +106,20 @@ def temp_multi_files(multi_tree_conllu, tmp_path):
 class TestPattern:
     """Tests for pattern creation and query parsing."""
 
-    def test_parse_simple_query(self):
-        """Test parsing a simple single-variable query."""
+    def test_parse_query(self):
+        """Test that Python can parse queries and create patterns."""
         pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
-        assert pattern.n_vars == 1
-
-    def test_parse_multi_variable_query(self):
-        """Test parsing a query with multiple variables."""
-        pattern = treesearch.parse_query("""
-            MATCH {
-                V1 [upos="VERB"];
-                V2 [upos="VERB"];
-                V1 -[xcomp]-> V2;
-            }
-        """)
-        assert pattern.n_vars == 2
-
-    def test_parse_complex_query(self):
-        """Test parsing a complex query with multiple constraints."""
-        pattern = treesearch.parse_query("""
-            MATCH {
-                Verb [upos="VERB"];
-                Noun [upos="NOUN"];
-                Pron [upos="PRON"];
-                Verb -[nsubj]-> Pron;
-                Verb -[obj]-> Noun;
-            }
-        """)
-        assert pattern.n_vars == 3
-
-    def test_parse_query_with_lemma(self):
-        """Test parsing query with lemma constraint."""
-        pattern = treesearch.parse_query('MATCH { V [lemma="help"]; }')
-        assert pattern.n_vars == 1
-
-    def test_parse_query_with_form(self):
-        """Test parsing query with form constraint."""
-        pattern = treesearch.parse_query('MATCH { Word [form="the"]; }')
-        assert pattern.n_vars == 1
-
-    def test_parse_query_multiple_constraints(self):
-        """Test parsing query with multiple constraints on single variable."""
-        pattern = treesearch.parse_query('MATCH { V [upos="VERB", lemma="help"]; }')
-        assert pattern.n_vars == 1
-
-    def test_pattern_repr(self):
-        """Test pattern string representation."""
-        pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
-        repr_str = repr(pattern)
-        assert "Pattern" in repr_str
-        assert "1 vars" in repr_str or "var" in repr_str
+        assert pattern is not None
+        assert "Pattern" in repr(pattern)
 
     def test_invalid_query_raises_error(self):
         """Test that invalid queries raise errors."""
-        with pytest.raises(Exception):  # Should raise PyValueError
+        with pytest.raises(Exception):
             treesearch.parse_query("INVALID SYNTAX [[[")
 
     def test_empty_query(self):
-        """Test that empty queries raise an error (MATCH block required)."""
-        with pytest.raises(Exception):  # Should raise QueryError for no MATCH block
+        """Test that empty queries raise an error."""
+        with pytest.raises(Exception):
             treesearch.parse_query("")
 
 
@@ -174,14 +129,14 @@ class TestTreeReading:
 
     def test_read_tree_from_file(self, temp_conllu_file):
         """Test reading a tree from a CoNLL-U file."""
-        trees = list(treesearch.read_trees(temp_conllu_file))
+        trees = list(treesearch.Treebank.from_file(temp_conllu_file).trees())
         assert len(trees) == 1
         tree = trees[0]
         assert len(tree) == 6  # 6 words
 
     def test_read_tree_from_gzip(self, temp_gzip_file):
         """Test reading a tree from a gzipped CoNLL-U file."""
-        trees = list(treesearch.read_trees(temp_gzip_file))
+        trees = list(treesearch.Treebank.from_file(temp_gzip_file).trees())
         assert len(trees) == 1
         tree = trees[0]
         assert len(tree) == 6
@@ -190,18 +145,18 @@ class TestTreeReading:
         """Test reading multiple trees from a single file."""
         path = tmp_path / "multi.conllu"
         path.write_text(multi_tree_conllu)
-        trees = list(treesearch.read_trees(str(path)))
+        trees = list(treesearch.Treebank.from_file(str(path)).trees())
         assert len(trees) == 2
 
     def test_tree_iterator_is_iterator(self, temp_conllu_file):
-        """Test that read_trees returns a proper iterator."""
-        tree_iter = treesearch.read_trees(temp_conllu_file)
+        """Test that .trees() returns a proper iterator."""
+        tree_iter = treesearch.Treebank.from_file(temp_conllu_file).trees()
         assert hasattr(tree_iter, "__iter__")
         assert hasattr(tree_iter, "__next__")
 
     def test_tree_properties(self, temp_conllu_file):
         """Test basic tree properties."""
-        trees = list(treesearch.read_trees(temp_conllu_file))
+        trees = list(treesearch.Treebank.from_file(temp_conllu_file).trees())
         tree = trees[0]
 
         assert tree.sentence_text == "He helped us to win."
@@ -211,7 +166,7 @@ class TestTreeReading:
 
     def test_tree_metadata(self, temp_complex_file):
         """Test tree metadata property."""
-        trees = list(treesearch.read_trees(temp_complex_file))
+        trees = list(treesearch.Treebank.from_file(temp_complex_file).trees())
         tree = trees[0]
 
         metadata = tree.metadata
@@ -223,7 +178,7 @@ class TestTreeReading:
 
     def test_tree_get_word(self, temp_conllu_file):
         """Test getting words from a tree by ID."""
-        trees = list(treesearch.read_trees(temp_conllu_file))
+        trees = list(treesearch.Treebank.from_file(temp_conllu_file).trees())
         tree = trees[0]
 
         # Get first word (id=0)
@@ -245,8 +200,8 @@ class TestTreeReading:
         NOTE: Currently errors during iteration are printed to stderr but don't
         raise Python exceptions. This should be improved in a future version.
         """
-        # Creating the iterator doesn't fail, but iteration will print error to stderr
-        trees = treesearch.read_trees("/nonexistent/path/file.conllu")
+        # Creating the treebank doesn't fail, but iteration will print error to stderr
+        trees = treesearch.Treebank.from_file("/nonexistent/path/file.conllu").trees()
         # The iterator will return no trees when file doesn't exist
         result = list(trees)
         assert len(result) == 0
@@ -259,7 +214,7 @@ class TestWord:
     @pytest.fixture
     def sample_tree(self, temp_conllu_file):
         """Get a sample tree for word tests."""
-        trees = list(treesearch.read_trees(temp_conllu_file))
+        trees = list(treesearch.Treebank.from_file(temp_conllu_file).trees())
         return trees[0]
 
     def test_word_basic_properties(self, sample_tree):
@@ -367,7 +322,7 @@ class TestWord:
 #     @pytest.fixture
 #     def complex_tree(self, temp_complex_file):
 #         """Get a more complex tree for path finding tests."""
-#         trees = list(treesearch.read_trees(temp_complex_file))
+#         trees = list(treesearch.Treebank.from_file(temp_complex_file))
 #         return trees[0]
 #
 #     def test_find_path_direct_child(self, complex_tree):
@@ -435,7 +390,7 @@ class TestSearch:
     @pytest.fixture
     def sample_tree(self, temp_conllu_file):
         """Get a sample tree for search tests."""
-        trees = list(treesearch.read_trees(temp_conllu_file))
+        trees = list(treesearch.Treebank.from_file(temp_conllu_file).trees())
         return trees[0]
 
     def test_search_simple_pattern(self, sample_tree):
@@ -537,10 +492,10 @@ class TestSearch:
 class TestFileSearch:
     """Tests for searching CoNLL-U files."""
 
-    def test_search_file(self, temp_conllu_file):
-        """Test searching a single file."""
+    def test_get_matches(self, temp_conllu_file):
+        """Test searching a single file with get_matches."""
         pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
-        results = list(treesearch.search_file(temp_conllu_file, pattern))
+        results = list(treesearch.get_matches(temp_conllu_file, pattern))
 
         assert len(results) > 0
 
@@ -550,8 +505,8 @@ class TestFileSearch:
             assert isinstance(match, dict)
             assert "V" in match
 
-    def test_search_file_complex_pattern(self, temp_conllu_file):
-        """Test searching a file with a complex pattern."""
+    def test_get_matches_complex_pattern(self, temp_conllu_file):
+        """Test searching a file with a complex pattern using get_matches."""
         pattern = treesearch.parse_query("""
             MATCH {
                 Verb [upos="VERB"];
@@ -559,7 +514,7 @@ class TestFileSearch:
                 Verb -[nsubj]-> Pron;
             }
         """)
-        results = list(treesearch.search_file(temp_conllu_file, pattern))
+        results = list(treesearch.get_matches(temp_conllu_file, pattern))
 
         # Should find "helped" with nsubj "He"
         assert len(results) == 1
@@ -570,21 +525,21 @@ class TestFileSearch:
         assert verb.form == "helped"
         assert pron.form == "He"
 
-    def test_search_file_multiple_matches(self, multi_tree_conllu, tmp_path):
-        """Test searching file with multiple trees."""
+    def test_get_matches_multiple_trees(self, multi_tree_conllu, tmp_path):
+        """Test searching file with multiple trees using get_matches."""
         path = tmp_path / "multi.conllu"
         path.write_text(multi_tree_conllu)
 
         pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
-        results = list(treesearch.search_file(str(path), pattern))
+        results = list(treesearch.get_matches(str(path), pattern))
 
         # Should find 1 VERB in each tree (2 total)
         assert len(results) == 2
 
-    def test_search_gzipped_file(self, temp_gzip_file):
-        """Test searching a gzipped CoNLL-U file."""
+    def test_get_matches_gzipped_file(self, temp_gzip_file):
+        """Test searching a gzipped CoNLL-U file using get_matches."""
         pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
-        results = list(treesearch.search_file(temp_gzip_file, pattern))
+        results = list(treesearch.get_matches(temp_gzip_file, pattern))
 
         assert len(results) == 2  # "helped" and "win"
 
@@ -598,7 +553,7 @@ class TestMultiFile:
         tmpdir, files = temp_multi_files
         pattern = f"{tmpdir}/*.conllu"
 
-        trees = list(treesearch.read_trees_glob(pattern, ordered=False))
+        trees = list(treesearch.open(pattern).trees(ordered=False))
 
         # Should have 6 trees (2 trees per file × 3 files)
         assert len(trees) == 6
@@ -608,7 +563,7 @@ class TestMultiFile:
         tmpdir, files = temp_multi_files
         pattern = f"{tmpdir}/*.conllu"
 
-        trees = list(treesearch.read_trees_glob(pattern, ordered=True))
+        trees = list(treesearch.open(pattern).trees(ordered=True))
 
         # Should have 6 trees (2 trees per file × 3 files)
         assert len(trees) == 6
@@ -618,7 +573,7 @@ class TestMultiFile:
         tmpdir, files = temp_multi_files
         pattern = f"{tmpdir}/*.conllu"
 
-        trees = list(treesearch.read_trees_glob(pattern))
+        trees = list(treesearch.open(pattern).trees())
         assert len(trees) == 6
 
     def test_search_files_glob_parallel(self, temp_multi_files):
@@ -627,7 +582,7 @@ class TestMultiFile:
         pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
         glob_pattern = f"{tmpdir}/*.conllu"
 
-        results = list(treesearch.search_files(glob_pattern, pattern, ordered=False))
+        results = list(treesearch.open(glob_pattern).matches(pattern, ordered=False))
 
         # Each file has 2 trees, each with 1 VERB
         # So we should get 6 matches (2 × 3 files)
@@ -639,7 +594,7 @@ class TestMultiFile:
         pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
         glob_pattern = f"{tmpdir}/*.conllu"
 
-        results = list(treesearch.search_files(glob_pattern, pattern, ordered=True))
+        results = list(treesearch.open(glob_pattern).matches(pattern, ordered=True))
 
         # Should get same results as parallel
         assert len(results) == 6
@@ -650,7 +605,7 @@ class TestMultiFile:
         pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
         glob_pattern = f"{tmpdir}/*.conllu"
 
-        results = list(treesearch.search_files(glob_pattern, pattern))
+        results = list(treesearch.open(glob_pattern).matches(pattern))
         assert len(results) == 6
 
     def test_glob_no_matches(self, tmp_path):
@@ -658,7 +613,7 @@ class TestMultiFile:
         pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
         glob_pattern = f"{tmp_path}/nonexistent/*.conllu"
 
-        results = list(treesearch.search_files(glob_pattern, pattern))
+        results = list(treesearch.open(glob_pattern).matches(pattern))
         assert len(results) == 0
 
 
@@ -677,10 +632,9 @@ class TestIntegration:
             }
         """
         pattern = treesearch.parse_query(query)
-        assert pattern.n_vars == 2
 
         # 2. Search a file
-        results = list(treesearch.search_file(temp_conllu_file, pattern))
+        results = list(treesearch.get_matches(temp_conllu_file, pattern))
         assert len(results) == 1
 
         # 3. Extract and verify results
@@ -704,7 +658,7 @@ class TestIntegration:
     def test_workflow_with_children_by_deprel(self, temp_conllu_file):
         """Test workflow using children_by_deprel API."""
         # Read tree
-        trees = list(treesearch.read_trees(temp_conllu_file))
+        trees = list(treesearch.Treebank.from_file(temp_conllu_file).trees())
         tree = trees[0]
 
         # Find the verb "helped"
@@ -731,7 +685,7 @@ class TestIntegration:
     # def test_workflow_with_find_path(self, temp_complex_file):
     #     """Test workflow using find_path."""
     #     # Read tree
-    #     trees = list(treesearch.read_trees(temp_complex_file))
+    #     trees = list(treesearch.Treebank.from_file(temp_complex_file))
     #     tree = trees[0]
     #
     #     # Find root verb and a deeply nested word
@@ -764,7 +718,7 @@ class TestIntegration:
         """)
 
         # Search all files
-        results = list(treesearch.search_files(f"{tmpdir}/*.conllu", pattern))
+        results = list(treesearch.open(f"{tmpdir}/*.conllu").matches(pattern))
 
         # Should find pattern in each tree
         assert len(results) == 6  # 2 trees × 3 files

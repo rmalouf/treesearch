@@ -154,11 +154,6 @@ pub struct PyPattern {
 
 #[pymethods]
 impl PyPattern {
-    #[getter]
-    fn n_vars(&self) -> usize {
-        self.inner.n_vars
-    }
-
     fn __repr__(&self) -> String {
         format!("Pattern({} vars)", self.inner.n_vars)
     }
@@ -377,26 +372,6 @@ fn py_search(tree: &PyTree, pattern: &PyPattern) -> Vec<std::collections::HashMa
         .collect()
 }
 
-/// Read trees from a CoNLL-U file.
-///
-/// Convenience function wrapping Treebank.from_file().trees().
-///
-/// Args:
-///     path: Path to CoNLL-U file
-///     ordered: If True (default), trees are returned in deterministic order.
-///              If False, trees may arrive in any order for better performance.
-///
-/// Returns:
-///     Iterator over Tree objects
-#[pyfunction]
-#[pyo3(signature = (path, ordered=true))]
-fn read_trees(path: &str, ordered: bool) -> PyTreeIterator {
-    let treebank = Treebank::from_path(&PathBuf::from(path));
-    PyTreeIterator {
-        inner: Box::new(treebank.tree_iter(ordered).map(Arc::new)),
-    }
-}
-
 /// Search a single CoNLL-U file for pattern matches.
 ///
 /// Convenience function wrapping Treebank.from_file().matches(pattern).
@@ -499,7 +474,6 @@ fn treesearch(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     m.add_function(wrap_pyfunction!(py_parse_query, m)?)?;
     m.add_function(wrap_pyfunction!(py_search, m)?)?;
-    m.add_function(wrap_pyfunction!(read_trees, m)?)?;
     m.add_function(wrap_pyfunction!(search_file, m)?)?;
     m.add_function(wrap_pyfunction!(read_trees_glob, m)?)?;
     m.add_function(wrap_pyfunction!(search_files, m)?)?;

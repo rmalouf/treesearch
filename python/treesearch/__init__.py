@@ -1,5 +1,4 @@
-"""Treesearch: High-performance dependency tree pattern matching.
-"""
+"""Treesearch: High-performance dependency tree pattern matching."""
 
 from importlib.metadata import version
 from pathlib import Path
@@ -19,10 +18,6 @@ try:
         MatchIterator,
         parse_query,
         search,
-        read_trees,
-        search_file,
-        read_trees_glob,
-        search_files,
     )
 except ImportError:
     import sys
@@ -44,12 +39,10 @@ __all__ = [
     "MatchIterator",
     "parse_query",
     "search",
-    "read_trees",
-    "search_file",
-    "read_trees_glob",
-    "search_files",
     "open",
     "from_string",
+    "get_trees",
+    "get_matches",
 ]
 
 
@@ -109,3 +102,15 @@ def from_string(text):
         ...     print(tree.sentence_text)
     """
     return Treebank.from_string(text)
+
+
+def get_trees(source, ordered=True):
+    treebank = open(source)
+    return treebank.trees(ordered=ordered)
+
+
+def get_matches(source, query, ordered=True):
+    treebank = open(source)
+    if isinstance(query, str):
+        query = parse_query(query)
+    return treebank.matches(query, ordered=ordered)
