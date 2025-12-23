@@ -55,7 +55,7 @@ pattern = treesearch.parse_query("""
 """)
 
 # Search multiple files
-for tree, match in treesearch.get_matches("data/*.conllu", pattern):
+for tree, match in treesearch.search("data/*.conllu", pattern):
     verb = tree.get_word(match["V"])
     noun = tree.get_word(match["N"])
     print(f"{verb.form} -> {noun.form}")
@@ -86,11 +86,11 @@ for tree, match in tb.matches(pattern):
 
 ```python
 # Read trees
-for tree in treesearch.get_trees("corpus.conllu"):
+for tree in treesearch.trees("corpus.conllu"):
     print(tree.sentence_text)
 
 # Search file
-for tree, match in treesearch.get_matches("corpus.conllu", pattern):
+for tree, match in treesearch.search("corpus.conllu", pattern):
     process(match)
 ```
 
@@ -98,18 +98,18 @@ for tree, match in treesearch.get_matches("corpus.conllu", pattern):
 
 ```python
 # Read from multiple files (automatic parallel processing)
-for tree in treesearch.get_trees("data/*.conllu"):
+for tree in treesearch.trees("data/*.conllu"):
     analyze(tree)
 
 # Search multiple files (automatic parallel processing)
-for tree, match in treesearch.get_matches("data/*.conllu", pattern):
+for tree, match in treesearch.search("data/*.conllu", pattern):
     process(match)
 ```
 
 ### Working with matches
 
 ```python
-for tree, match in treesearch.get_matches("corpus.conllu", pattern):
+for tree, match in treesearch.search("corpus.conllu", pattern):
     # Match is dict mapping variable names to word IDs
     verb_id = match["V"]
     noun_id = match["N"]

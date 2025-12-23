@@ -9,7 +9,7 @@ Use `get_trees()` to read from a single file:
 ```python
 import treesearch
 
-for tree in treesearch.get_trees("corpus.conllu"):
+for tree in treesearch.trees("corpus.conllu"):
     print(f"Sentence: {tree.sentence_text}")
     print(f"Words: {len(tree)}")
 ```
@@ -20,11 +20,11 @@ Use `get_trees()` for multiple files:
 
 ```python
 # Parallel (default)
-for tree in treesearch.get_trees("data/*.conllu"):
+for tree in treesearch.trees("data/*.conllu"):
     print(tree.sentence_text)
 
 # Sequential
-for tree in treesearch.get_trees("data/*.conllu", parallel=False):
+for tree in treesearch.trees("data/*.conllu", parallel=False):
     print(tree.sentence_text)
 ```
 
@@ -34,7 +34,7 @@ Both `.conllu` and `.conllu.gz` files are automatically detected:
 
 ```python
 # Works with both
-for tree in treesearch.get_trees("corpus.conllu.gz"):
+for tree in treesearch.trees("corpus.conllu.gz"):
     print(tree.sentence_text)
 ```
 
@@ -43,7 +43,7 @@ for tree in treesearch.get_trees("corpus.conllu.gz"):
 See [Tree & Word API](../api/tree-word.md) for complete reference.
 
 ```python
-for tree in treesearch.get_trees("corpus.conllu"):
+for tree in treesearch.trees("corpus.conllu"):
     # Sentence text
     print(tree.sentence_text)
 

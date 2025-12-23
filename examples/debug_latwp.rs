@@ -2,7 +2,7 @@
 //!
 //! Run with: cargo run --example debug_latwp
 
-use treesearch::{Treebank, parse_query};
+use treesearch::{Treebank, compile_query};
 
 fn main() {
     let path = "/Volumes/Corpora/Corpora/parsed/NA_NEWS/latwp/1994/**/*.conll.gz";
@@ -19,7 +19,7 @@ fn main() {
     );
 
     let query = r#"N1 [pos="NOUN"]; Of [form="of"]; N2 [pos="NOUN"]; N1 -> Of; Of -> N2;"#;
-    let pattern = parse_query(query).unwrap();
+    let pattern = compile_query(query).unwrap();
 
     println!("\nCounting all matches...");
     let treebank = Treebank::from_glob(path).unwrap();

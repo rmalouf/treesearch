@@ -4,7 +4,7 @@ A collection of dependency trees from files or strings.
 
 ## Overview
 
-The Treebank class represents a collection of dependency trees that can be iterated multiple times. Treebanks are created from CoNLL-U files, glob patterns, or strings, and provide methods for iterating over trees and searching for pattern matches.
+The Treebank class represents a collection of dependency trees. Treebanks are created from CoNLL-U files, glob patterns, or strings, and provide methods for iterating over trees and searching for pattern matches.
 
 Treebanks use automatic parallel processing when working with multiple files for better performance.
 
@@ -29,17 +29,17 @@ Treebank.from_string(text: str) -> Treebank
 **Example:**
 
 ```python
-conllu_data = """
-# sent_id = 1
-# text = She runs.
-1   She    she    PRON   ...
-2   runs   run    VERB   ...
+conllu_data = """# text = The dog runs.
+1	The	the	DET	DT	_	2	det	_	_
+2	dog	dog	NOUN	NN	_	3	nsubj	_	_
+3	runs	run	VERB	VBZ	_	0	root	_	_
+4	.	.	PUNCT	.	_	3	punct	_	_
 
 """
 
 tb = treesearch.Treebank.from_string(conllu_data)
 for tree in tb.trees():
-    print(tree.sentence_text)
+    print([tree.get_word(w).form for w in range(len(tree))])
 ```
 
 **See also:** from_file(), from_files()
@@ -72,9 +72,8 @@ for tree in tb.trees():
 
 **Notes:**
 
-- Automatically detects and handles gzip-compressed files (`.conllu.gz`)
+- Automatically detects and handles gzip-compressed files
 - File is not loaded into memory until iteration begins
-- Can iterate multiple times
 
 **See also:** from_files(), from_string()
 
@@ -115,10 +114,8 @@ tb = treesearch.Treebank.from_files("corpus/*.conllu.gz")
 
 **Notes:**
 
-- Files are processed in sorted order by default
-- Supports both `.conllu` and `.conllu.gz` files
+- Automatically detects and handles gzip-compressed files
 - Uses automatic parallel processing
-- Can iterate multiple times
 
 **See also:** from_file(), from_string()
 
@@ -136,7 +133,7 @@ treebank.trees(ordered: bool = True) -> Iterator[Tree]
 
 **Parameters:**
 
-- `ordered` (bool) - If True (default), return trees in deterministic order. If False, trees may arrive in any order for better performance.
+- `ordered` (bool) - If True (default), return trees in corpus order. If False, trees may arrive in any order for better performance.
 
 **Returns:**
 
@@ -155,13 +152,6 @@ for tree in tb.trees():
 for tree in tb.trees(ordered=False):
     print(tree.sentence_text)
 ```
-
-**Notes:**
-
-- Can be called multiple times on the same treebank
-- For single-file treebanks, `ordered` has no effect
-- For multi-file treebanks, `ordered=True` processes files sequentially
-- For multi-file treebanks, `ordered=False` uses parallel processing with non-deterministic order
 
 **See also:** matches()
 
@@ -206,13 +196,6 @@ for tree, match in tb.matches(pattern):
 for tree, match in tb.matches(pattern, ordered=False):
     process(tree, match)
 ```
-
-**Notes:**
-
-- Can be called multiple times on the same treebank
-- Returns ALL matches (exhaustive search)
-- For multi-file treebanks, uses automatic parallel processing
-- For multi-file treebanks, `ordered=False` provides better performance
 
 **See also:** trees()
 

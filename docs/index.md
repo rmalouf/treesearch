@@ -28,7 +28,7 @@ MATCH {
 """
 
 pattern = treesearch.parse_query(query)
-for tree, match in treesearch.get_matches("corpus/*.conllu", pattern):
+for tree, match in treesearch.search("corpus/*.conllu", pattern):
     help_word = tree.get_word(match["Help"])
     verb = tree.get_word(match["V"])
     print(f"{help_word.form} ... to {verb.form}: {tree.sentence_text}")

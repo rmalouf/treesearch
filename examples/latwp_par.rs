@@ -3,7 +3,7 @@
 //!
 //! Run with: cargo run --example latwp_par --release
 
-use treesearch::{Treebank, parse_query};
+use treesearch::{Treebank, compile_query};
 
 fn main() {
     let query = r#"
@@ -15,7 +15,7 @@ fn main() {
         "#;
 
     let path = "/Volumes/Corpora/COHA/conll/*.conllu.gz";
-    let pattern = parse_query(query).unwrap();
+    let pattern = compile_query(query).unwrap();
     let treebank = Treebank::from_glob(path).unwrap();
     // Note: unordered mode (false) enables maximum parallelism for best performance
     let count = treebank.match_iter(pattern, false).count();

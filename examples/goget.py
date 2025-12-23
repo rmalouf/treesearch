@@ -31,7 +31,7 @@ def main():
     count = Counter()
     examples = dict()
     path = "/Volumes/Corpora/COHA/conll/*.conllu.gz"
-    pattern = treesearch.parse_query(query)
+    pattern = treesearch.compile_query(query)
     # for filename in tqdm(list(Path(path).rglob("*.conllu.gz"))):
     for tree, match in treesearch.search_files(path, pattern):
         dep_path1 = tree.find_path(tree.get_word(match["Help"]), tree.get_word(match["V"]))

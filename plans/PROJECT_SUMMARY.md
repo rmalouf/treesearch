@@ -39,26 +39,31 @@ MATCH {
 - Global constraint: AllDifferent (no two variables bind to same word)
 - Result: ALL valid solutions (exhaustive)
 
-## Current Status (November 2025)
+## Current Status (December 2025)
 
 ### Completed ✅
 
 **Core Implementation** (100% complete)
 - ✅ CSP solver with DFS + forward checking (searcher.rs)
-- ✅ Query language parser using Pest (query.rs, formerly parser.rs)
+- ✅ Query language parser using Pest (query.rs)
 - ✅ Pattern AST with constraints (pattern.rs)
 - ✅ CoNLL-U parser with transparent gzip support (conllu.rs)
-- ✅ Tree data structures with string interning using rustc-hash FxHash + hashbrown (tree.rs)
+- ✅ Tree data structures with string interning using lasso with FxHash (tree.rs)
 - ✅ Iterator-based APIs for trees and matches (iterators.rs)
-- ✅ Parallel file processing with rayon
+- ✅ Channel-based parallel file processing with rayon
 - ✅ Negative edge constraints (`!->`, `!-[label]->`)
-- ✅ 89 tests passing (4378 lines of code)
+- ✅ 95 Rust tests passing (4669 lines of code)
 
 **Python Bindings** (100% complete)
-- ✅ PyO3 bindings with functional API (python.rs)
-- ✅ Full test suite passing (pytest)
-- ✅ Functions: `parse_query`, `search`, `read_trees`, `search_file`, `read_trees_glob`, `search_files`
-- ✅ Data classes: `Tree`, `Word`, `Pattern`
+- ✅ PyO3 bindings with streamlined OO + functional API (python.rs)
+- ✅ Full test suite passing (40 Python tests)
+- ✅ **Object-Oriented API**:
+  - `Treebank` class with `from_file()`, `from_files()`, `from_string()` class methods
+  - Instance methods: `trees(ordered)`, `matches(pattern, ordered)` for iteration
+  - Convenience functions: `open(source)`, `from_string(text)`
+- ✅ **Functional API**: `parse_query()`, `search()`, `get_trees()`, `get_matches()`
+- ✅ Data classes: `Tree`, `Word`, `Pattern`, `Treebank`
+- ✅ Iterator classes: `TreeIterator`, `MatchIterator`
 
 ### In Progress 🔄
 
@@ -111,23 +116,24 @@ MATCH {
 """
 pattern = ts.parse_query(query_str)
 
-# Search single file
-for tree, match in ts.get_matches("corpus.conllu", pattern):
+# Object-oriented API: Create treebank and iterate
+treebank = ts.Treebank.from_file("corpus.conllu")
+for tree, match in treebank.matches(pattern):
+  verb = tree.get_word(match["Verb"])
+  subj = tree.get_word(match["Subj"])
+  print(f"Found match: {verb.form} ← {subj.form}")
+
+# Functional API: Search files directly with automatic parallelization
+for tree, match in ts.search("data/*.conllu", pattern):
+  verb = tree.get_word(match["Verb"])
+  print(f"{verb.form} in: {tree.sentence_text}")
+
+# Work with individual trees
+for tree in ts.trees("corpus.conllu"):
+  for match in ts.search(tree, pattern):
     verb = tree.get_word(match["Verb"])
     subj = tree.get_word(match["Subj"])
-    print(f"Found match: {verb.form} ← {subj.form}")
-
-# Or search multiple files with automatic parallelization
-for tree, match in ts.get_matches("data/*.conllu", pattern):
-    verb = tree.get_word(match["Verb"])
-    print(f"{verb.form} in: {tree.sentence_text}")
-
-# Or work with individual trees
-for tree in ts.get_trees("corpus.conllu"):
-    for match in ts.search(tree, pattern):
-        verb = tree.get_word(match["Verb"])
-        subj = tree.get_word(match["Subj"])
-        print(f"{verb.form} ← {subj.form}")
+    print(f"{verb.form} ← {subj.form}")
 ```
 
 ## References

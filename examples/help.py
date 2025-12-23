@@ -13,12 +13,12 @@ def xcomps():
 
     data = []
     path = "/Volumes/Corpora/CCOHA/conll/*.conllu.gz"
-    pattern = treesearch.parse_query(xcomp_query)
+    pattern = treesearch.compile_query(xcomp_query)
 
-    treebank = treesearch.open(path)
-    for tree, match in treebank.matches(pattern):
-        main = tree.get_word(match["Head"])
-        xcomp = tree.get_word(match["XComp"])
+    treebank = treesearch.load(path)
+    for tree, match in treebank.search(pattern, ordered=False):
+        main = tree[match["Head"]]
+        xcomp = tree[match["XComp"]]
         data.append({"head_lemma": main.lemma, "xcomp_lemma": xcomp.lemma})
     df = pl.DataFrame(data)
     df.write_parquet("xcomps.parquet")
@@ -48,12 +48,12 @@ def helps():
 
     path = "/Volumes/Corpora/CCOHA/conll/*.conllu.gz"
     data = []
-    pattern = treesearch.parse_query(help_query)
+    pattern = treesearch.compile_query(help_query)
 
-    treebank = treesearch.open(path)
-    for tree, match in treebank.matches(pattern):
-        head = tree.get_word(match["Head"])
-        xcomp = tree.get_word(match["XComp"])
+    treebank = treesearch.load(path)
+    for tree, match in treebank.search(pattern, ordered=False):
+        head = tree[match["Head"]]
+        xcomp = tree[match["XComp"]]
         data.append(
             {
                 "head_form": head.form.lower(),

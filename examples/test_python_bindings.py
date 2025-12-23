@@ -20,7 +20,7 @@ SAMPLE_CONLLU = """# text = He helped us to win.
 def test_pattern_creation():
     """Test that we can create a pattern from a query."""
     print("Testing pattern creation...")
-    pattern = treesearch.parse_query("""
+    pattern = treesearch.compile_query("""
         MATCH {
             V [upos="VERB"];
         }
@@ -35,7 +35,7 @@ def test_simple_search():
     print("\nTesting simple search...")
 
     # Create pattern for verb
-    pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
+    pattern = treesearch.compile_query('MATCH { V [upos="VERB"]; }')
 
     # Write sample to temp file
     with tempfile.NamedTemporaryFile(mode="w", suffix=".conllu", delete=False) as f:
@@ -44,7 +44,7 @@ def test_simple_search():
 
     try:
         # Search using search_file
-        matches = list(treesearch.get_matches(temp_path, pattern))
+        matches = list(treesearch.search(temp_path, pattern))
         print(f"  Found {len(matches)} tree(s) with matches")
 
         for tree, match in matches:
@@ -66,7 +66,7 @@ def test_edge_constraint():
     print("\nTesting edge constraint search...")
 
     # Pattern: verb with an xcomp child
-    pattern = treesearch.parse_query("""
+    pattern = treesearch.compile_query("""
         MATCH {
             V1 [upos="VERB"];
             V2 [upos="VERB"];
@@ -80,7 +80,7 @@ def test_edge_constraint():
         temp_path = f.name
 
     try:
-        matches = list(treesearch.get_matches(temp_path, pattern))
+        matches = list(treesearch.search(temp_path, pattern))
         print(f"  Found {len(matches)} match(es)")
 
         for tree, match in matches:
@@ -98,7 +98,7 @@ def test_word_properties():
     """Test accessing word properties."""
     print("\nTesting word properties...")
 
-    pattern = treesearch.parse_query('MATCH { V [lemma="help"]; }')
+    pattern = treesearch.compile_query('MATCH { V [lemma="help"]; }')
 
     # Write sample to temp file
     with tempfile.NamedTemporaryFile(mode="w", suffix=".conllu", delete=False) as f:
@@ -106,7 +106,7 @@ def test_word_properties():
         temp_path = f.name
 
     try:
-        matches = list(treesearch.get_matches(temp_path, pattern))
+        matches = list(treesearch.search(temp_path, pattern))
 
         for tree, match in matches:
             word = tree.get_word(match["V"])
@@ -141,7 +141,7 @@ def test_tree_properties():
     """Test accessing tree properties."""
     print("\nTesting tree properties...")
 
-    pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
+    pattern = treesearch.compile_query('MATCH { V [upos="VERB"]; }')
 
     # Write sample to temp file
     with tempfile.NamedTemporaryFile(mode="w", suffix=".conllu", delete=False) as f:
@@ -149,7 +149,7 @@ def test_tree_properties():
         temp_path = f.name
 
     try:
-        matches = list(treesearch.get_matches(temp_path, pattern))
+        matches = list(treesearch.search(temp_path, pattern))
 
         for tree, match in matches:
             print(f"  Tree length: {len(tree)}")

@@ -2,7 +2,7 @@
 //!
 //! Run with: cargo run --example unconstrained_deprel
 
-//use treesearch::{Tree, Word, parse_query, search};
+//use treesearch::{Tree, Word, compile_query, search};
 
 fn main() {}
 
@@ -19,7 +19,7 @@ fn main() {
     "#;
     println!("Query: {}", query1.trim());
 
-    let pattern1 = parse_query(query1).expect("Failed to parse query 1");
+    let pattern1 = compile_query(query1).expect("Failed to parse query 1");
     println!(
         "Parsed: {} variables, {} edges, edge label: {:?}\n",
         pattern1.vars.len(),
@@ -36,7 +36,7 @@ fn main() {
     "#;
     println!("Query: {}", query2.trim());
 
-    let pattern2 = parse_query(query2).expect("Failed to parse query 2");
+    let pattern2 = compile_query(query2).expect("Failed to parse query 2");
     println!(
         "Parsed: {} variables, {} edges, edge label: {:?}\n",
         pattern2.vars.len(),
@@ -55,7 +55,7 @@ fn main() {
     "#;
     println!("Query: {}", query3.trim());
 
-    let pattern3 = parse_query(query3).expect("Failed to parse query 3");
+    let pattern3 = compile_query(query3).expect("Failed to parse query 3");
     println!(
         "Parsed: {} variables, {} edges",
         pattern3.vars.len(),

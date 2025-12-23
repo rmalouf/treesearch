@@ -84,7 +84,7 @@ import treesearch
 
 pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
 
-for tree in treesearch.get_trees("corpus.conllu"):
+for tree in treesearch.trees("corpus.conllu"):
     for match in treesearch.search(tree, pattern):
         verb = tree.get_word(match["V"])
         print(f"Found: {verb.form}")
@@ -105,10 +105,10 @@ for tree in treesearch.get_trees("corpus.conllu"):
 Search one or more CoNLL-U files for pattern matches.
 
 ```python
-treesearch.get_matches(
+treesearch.search(
     source: str,
-    query: str | Pattern,
-    ordered: bool = True
+query: str | Pattern,
+ordered: bool = True
 ) -> Iterator[tuple[Tree, dict[str, int]]]
 ```
 
@@ -132,7 +132,7 @@ treesearch.get_matches(
 import treesearch
 
 # Single file with query string
-for tree, match in treesearch.get_matches("corpus.conllu", 'MATCH { V [upos="VERB"]; }'):
+for tree, match in treesearch.search("corpus.conllu", 'MATCH { V [upos="VERB"]; }'):
     verb = tree.get_word(match["V"])
     print(f"Found: {verb.form}")
 
@@ -145,13 +145,13 @@ pattern = treesearch.parse_query("""
     }
 """)
 
-for tree, match in treesearch.get_matches("data/*.conllu", pattern):
+for tree, match in treesearch.search("data/*.conllu", pattern):
     verb = tree.get_word(match["V"])
     subj = tree.get_word(match["Subj"])
     print(f"{subj.form} {verb.form}: {tree.sentence_text}")
 
 # Faster, non-deterministic order
-for tree, match in treesearch.get_matches("data/*.conllu", pattern, ordered=False):
+for tree, match in treesearch.search("data/*.conllu", pattern, ordered=False):
     process(tree, match)
 ```
 
@@ -176,9 +176,9 @@ for tree, match in treesearch.get_matches("data/*.conllu", pattern, ordered=Fals
 Read trees from one or more CoNLL-U files.
 
 ```python
-treesearch.get_trees(
+treesearch.trees(
     source: str,
-    ordered: bool = True
+ordered: bool = True
 ) -> Iterator[Tree]
 ```
 
@@ -201,16 +201,16 @@ treesearch.get_trees(
 import treesearch
 
 # Single file
-for tree in treesearch.get_trees("corpus.conllu"):
+for tree in treesearch.trees("corpus.conllu"):
     print(f"Sentence: {tree.sentence_text}")
     print(f"Words: {len(tree)}")
 
 # Multiple files (deterministic order)
-for tree in treesearch.get_trees("corpus/*.conllu"):
+for tree in treesearch.trees("corpus/*.conllu"):
     print(tree.sentence_text)
 
 # Faster, non-deterministic order
-for tree in treesearch.get_trees("corpus/*.conllu", ordered=False):
+for tree in treesearch.trees("corpus/*.conllu", ordered=False):
     process(tree)
 ```
 
@@ -245,7 +245,7 @@ pattern = treesearch.parse_query("""
 """)
 
 # Search files
-for tree, match in treesearch.get_matches("data/*.conllu", pattern):
+for tree, match in treesearch.search("data/*.conllu", pattern):
     verb = tree.get_word(match["V"])
     noun = tree.get_word(match["N"])
     print(f"{verb.form} -> {noun.form}")
@@ -265,7 +265,7 @@ pattern = treesearch.parse_query("""
     }
 """)
 
-for tree, match in treesearch.get_matches("corpus.conllu", pattern):
+for tree, match in treesearch.search("corpus.conllu", pattern):
     main = tree.get_word(match["Main"])
     inf = tree.get_word(match["Inf"])
     print(f"{main.form} ... to {inf.form}: {tree.sentence_text}")
@@ -279,7 +279,7 @@ import treesearch
 # Count POS tags across corpus
 pos_counts = {}
 
-for tree in treesearch.get_trees("data/*.conllu"):
+for tree in treesearch.trees("data/*.conllu"):
     for word_id in range(len(tree)):
         word = tree.get_word(word_id)
         if word:
@@ -298,12 +298,12 @@ pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
 
 # Deterministic, reproducible (slower for multi-file)
 count1 = 0
-for tree, match in treesearch.get_matches("data/*.conllu", pattern, ordered=True):
+for tree, match in treesearch.search("data/*.conllu", pattern, ordered=True):
     count1 += 1
 
 # Non-deterministic, faster parallel processing
 count2 = 0
-for tree, match in treesearch.get_matches("data/*.conllu", pattern, ordered=False):
+for tree, match in treesearch.search("data/*.conllu", pattern, ordered=False):
     count2 += 1
 
 # Both counts are the same, but ordered=False is faster
@@ -321,7 +321,7 @@ except ValueError as e:
     print(f"Query error: {e}")
 
 try:
-    for tree, match in treesearch.get_matches("missing.conllu", pattern):
+    for tree, match in treesearch.search("missing.conllu", pattern):
         pass
 except ValueError as e:
     print(f"File error: {e}")
@@ -338,7 +338,7 @@ pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
 # Reuse across multiple files
 files = ["file1.conllu", "file2.conllu", "file3.conllu"]
 for file_path in files:
-    for tree, match in treesearch.get_matches(file_path, pattern):
+    for tree, match in treesearch.search(file_path, pattern):
         process(match)
 ```
 
@@ -348,14 +348,14 @@ for file_path in files:
 import treesearch
 
 # get_matches() accepts query strings directly
-for tree, match in treesearch.get_matches("corpus.conllu", 'MATCH { V [upos="VERB"]; }'):
+for tree, match in treesearch.search("corpus.conllu", 'MATCH { V [upos="VERB"]; }'):
     verb = tree.get_word(match["V"])
     print(verb.form)
 
 # But compiling once is more efficient for repeated use
 pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
 for file in ["file1.conllu", "file2.conllu"]:
-    for tree, match in treesearch.get_matches(file, pattern):
+    for tree, match in treesearch.search(file, pattern):
         process(match)
 ```
 
@@ -379,17 +379,17 @@ for file in ["file1.conllu", "file2.conllu"]:
 ```python
 # Good: Parse once, reuse many times
 pattern = treesearch.parse_query(query)
-for tree, match in treesearch.get_matches("*.conllu", pattern):
+for tree, match in treesearch.search("*.conllu", pattern):
     process(match)
 
 # Acceptable: Query string auto-compiled (less efficient for repeated use)
-for tree, match in treesearch.get_matches("corpus.conllu", 'MATCH { V [upos="VERB"]; }'):
+for tree, match in treesearch.search("corpus.conllu", 'MATCH { V [upos="VERB"]; }'):
     process(match)
 
 # Bad: Re-parsing explicitly every file
 for file in files:
     pattern = treesearch.parse_query(query)  # Wasteful!
-    for tree, match in treesearch.get_matches(file, pattern):
+    for tree, match in treesearch.search(file, pattern):
         process(match)
 ```
 
@@ -397,11 +397,11 @@ for file in files:
 
 ```python
 # Best: Direct search with automatic parallelization
-for tree, match in treesearch.get_matches("data/*.conllu", pattern):
+for tree, match in treesearch.search("data/*.conllu", pattern):
     process(tree, match)
 
 # Slower: Manual iteration
-for tree in treesearch.get_trees("data/*.conllu"):
+for tree in treesearch.trees("data/*.conllu"):
     for match in treesearch.search(tree, pattern):
         process(tree, match)
 ```
@@ -411,7 +411,7 @@ for tree in treesearch.get_trees("data/*.conllu"):
 ```python
 # When result order doesn't matter
 results = []
-for tree, match in treesearch.get_matches("data/*.conllu", pattern, ordered=False):
+for tree, match in treesearch.search("data/*.conllu", pattern, ordered=False):
     results.append((tree, match))
 ```
 

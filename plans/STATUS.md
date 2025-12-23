@@ -15,20 +15,26 @@ This document tracks the internal development status of Treesearch. For user-fac
 - Query language parser (Pest-based, `query.rs`)
 - Pattern AST representation with constraints
 - CoNLL-U file parsing with transparent gzip support
-- Tree data structures with string interning (rustc-hash FxHash + hashbrown)
+- Tree data structures with string interning (lasso with FxHash)
 - Iterator-based API for trees and matches (`iterators.rs`)
 - Automatic parallel file processing using rayon + channels
 - Negative edge constraints (`!->`, `!-[label]->`)
 - Match struct with Arc<Tree> sharing
-- 87 tests passing
+- 95 tests passing
 
 **Python Bindings**:
 - PyO3 wrapper code in `src/python.rs`
-- Functional API (refactored from OO in commit 137499c)
+- **Streamlined API** with both object-oriented and functional interfaces
 - Full integration with Rust core
-- Functions: `parse_query`, `search`, `read_trees`, `search_file`, `read_trees_glob`, `search_files`
-- Data classes: `Tree`, `Word`, `Pattern`
+- **Object-Oriented API**:
+  - `Treebank` class with `from_file()`, `from_files()`, `from_string()` class methods
+  - Instance methods: `trees(ordered)`, `matches(pattern, ordered)` for iteration
+  - Convenience functions: `open(source)`, `from_string(text)`
+- **Functional API**: `parse_query()`, `search()`, `get_trees()`, `get_matches()`
+- Data classes: `Tree`, `Word`, `Pattern`, `Treebank`
+- Iterator classes: `TreeIterator`, `MatchIterator`
 - Automatic parallel processing for multi-file operations
+- 40 Python tests passing
 
 ### 🔄 In Progress
 
@@ -49,21 +55,25 @@ This document tracks the internal development status of Treesearch. For user-fac
 
 ## Development Roadmap
 
-### Next Priorities
+See `ROADMAP.md` for detailed implementation plans.
 
-1. **Benchmarks** - Expand coverage beyond basic benchmarks to establish performance baseline
-2. **Documentation** - Add comprehensive rustdoc comments for public APIs
-3. **Extended query features** - Add regex support, additional relation types (ancestor, descendant)
-4. **Performance optimization** - Based on benchmark results
-5. **PyPI Publishing** - Package and publish to PyPI for easy installation
+### Planned Features
+
+1. **PyPI Publishing** - Enable `pip install treesearch`
+2. **Regular expressions in node constraints** - `[form=~/.*ing$/]`
+3. **Disjunctions in node constraints** - `[upos="NOUN" | upos="PROPN"]`
+4. **Wildcards in dependency constraints** - `X -[nsubj:*]-> Y`
+5. **Export to CoNLL-U subcorpus** - Save matching trees to files
+6. **DEPS and MISC field support** - Query enhanced dependencies and misc annotations
 
 ### Future Enhancements
 
-- Regex patterns in constraints
-- Ancestor/descendant relation types
-- Optional/alternative patterns (OR constraints)
+- Ancestor/descendant relation types (`X <<- Y`)
+- Sibling relations (`X ~ Y`)
+- Distance constraints (`X <-[2..5]- Y`)
+- Optional matches (`X -[nsubj]->? Y`)
 - Query result caching
-- Incremental parsing for very large files
+- Corpus indexing for faster queries
 
 ## Architecture & Implementation Details
 
@@ -81,7 +91,9 @@ The pattern matching engine uses **constraint satisfaction programming (CSP)**:
 
 ### Key Implementation Details
 
-- **String interning**: lasso + FxHash for memory efficiency
+- **String interning**: lasso with FxHash for memory efficiency
+  - Thread-local string pools (each TreeIterator has its own pool)
+  - Zero contention in parallel processing
 - **File-level parallelization**: rayon + channels for automatic parallel processing
   - Bounded channels (size 8) for backpressure
   - Chunk-based processing (8 files per chunk)
@@ -105,7 +117,7 @@ The pattern matching engine uses **constraint satisfaction programming (CSP)**:
 
 ```
 treesearch/
-├── src/              # Rust core (4378 lines)
+├── src/              # Rust core (4669 lines)
 │   ├── lib.rs        # Module declarations and re-exports
 │   ├── tree.rs       # Tree data structures
 │   ├── pattern.rs    # Pattern AST representation
@@ -115,10 +127,12 @@ treesearch/
 │   ├── iterators.rs  # Iterator interfaces
 │   ├── bytes.rs      # Byte handling utilities
 │   └── python.rs     # Python bindings (PyO3)
-├── tests/            # Integration tests (89 passing)
+├── tests/            # Integration tests (95 Rust tests passing)
+├── python/           # Python package (40 tests passing)
 ├── benches/          # Performance benchmarks
 ├── examples/         # Usage examples
+├── docs/             # User documentation
 └── plans/            # Design documents (this file)
 ```
 
-See `PROJECT_SUMMARY.md` for architectural overview and `PARSING_OPTIMIZATION_PLAN.md` for parsing performance optimizations.
+See `PROJECT_SUMMARY.md` for architectural overview, `PARSING_OPTIMIZATION_PLAN.md` for parsing performance optimizations, and `ROADMAP.md` for planned features.

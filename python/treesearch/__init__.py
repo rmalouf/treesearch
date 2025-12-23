@@ -2,21 +2,21 @@
 
 from __future__ import annotations
 
+import glob
 from importlib.metadata import version
 from pathlib import Path
-import glob
 from typing import Iterable, Iterator, Union
 
 __version__ = version("treesearch")
 
 try:
     from .treesearch import (
-        Tree,
-        Word,
+        MatchIterator,
         Pattern,
+        Tree,
         Treebank,
         TreeIterator,
-        MatchIterator,
+        Word,
         compile_query,
         py_search_trees,
     )
@@ -161,4 +161,6 @@ def search_trees(
         query = compile_query(query)
     if isinstance(source, Tree):
         source = [source]
+    else:
+        source = list(source)
     return py_search_trees(source, query)

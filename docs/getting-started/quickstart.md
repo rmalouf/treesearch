@@ -45,7 +45,7 @@ pattern = treesearch.parse_query(query)
 ### Step 4: Search a File
 
 ```python
-for tree, match in treesearch.get_matches("corpus.conllu", pattern):
+for tree, match in treesearch.search("corpus.conllu", pattern):
     verb = tree.get_word(match["V"])
     print(f"Found verb: {verb.form} (lemma: {verb.lemma})")
 ```
@@ -70,7 +70,7 @@ MATCH {
 pattern = treesearch.parse_query(query)
 
 # Search corpus
-for tree, match in treesearch.get_matches("corpus.conllu", pattern):
+for tree, match in treesearch.search("corpus.conllu", pattern):
     verb = tree.get_word(match["V"])
     noun = tree.get_word(match["N"])
 
@@ -104,7 +104,7 @@ Search across many files in parallel:
 ```python
 pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
 
-for tree, match in treesearch.get_matches("data/*.conllu", pattern):
+for tree, match in treesearch.search("data/*.conllu", pattern):
     verb = tree.get_word(match["V"])
     print(f"{verb.form}: {tree.sentence_text}")
 ```

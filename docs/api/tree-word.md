@@ -23,7 +23,7 @@ tree.sentence_text -> str | None
 **Example:**
 
 ```python
-for tree in treesearch.get_trees("corpus.conllu"):
+for tree in treesearch.trees("corpus.conllu"):
     if tree.sentence_text:
         print(tree.sentence_text)
 ```
@@ -45,7 +45,7 @@ tree.metadata -> dict[str, str]
 **Example:**
 
 ```python
-for tree in treesearch.get_trees("corpus.conllu"):
+for tree in treesearch.trees("corpus.conllu"):
     if 'sent_id' in tree.metadata:
         print(f"Sentence {tree.metadata['sent_id']}: {tree.sentence_text}")
 ```
@@ -73,7 +73,7 @@ tree.get_word(id: int) -> Word | None
 **Example:**
 
 ```python
-for tree, match in treesearch.get_matches("corpus.conllu", pattern):
+for tree, match in treesearch.search("corpus.conllu", pattern):
     verb = tree.get_word(match["V"])
     if verb:
         print(f"{verb.form} ({verb.pos})")
@@ -116,7 +116,7 @@ pattern = treesearch.parse_query("""
     }
 """)
 
-for tree, match in treesearch.get_matches("corpus.conllu", pattern):
+for tree, match in treesearch.search("corpus.conllu", pattern):
     verb = tree.get_word(match["V"])
     noun = tree.get_word(match["N"])
 
@@ -149,7 +149,7 @@ len(tree) -> int
 **Example:**
 
 ```python
-for tree in treesearch.get_trees("corpus.conllu"):
+for tree in treesearch.trees("corpus.conllu"):
     print(f"Sentence has {len(tree)} words: {tree.sentence_text}")
 ```
 
@@ -207,7 +207,7 @@ word.form -> str
 **Example:**
 
 ```python
-for tree, match in treesearch.get_matches("corpus.conllu", pattern):
+for tree, match in treesearch.search("corpus.conllu", pattern):
     verb = tree.get_word(match["V"])
     print(f"Found verb: {verb.form}")
 ```
@@ -225,7 +225,7 @@ word.lemma -> str
 **Example:**
 
 ```python
-for tree, match in treesearch.get_matches("corpus.conllu", pattern):
+for tree, match in treesearch.search("corpus.conllu", pattern):
     verb = tree.get_word(match["V"])
     print(f"{verb.form} -> {verb.lemma}")
     # Output: "running -> run"
@@ -411,7 +411,7 @@ word.children_by_deprel(deprel: str) -> list[Word]
 ```python
 pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
 
-for tree, match in treesearch.get_matches("corpus.conllu", pattern):
+for tree, match in treesearch.search("corpus.conllu", pattern):
     verb = tree.get_word(match["V"])
 
     # Get subjects
@@ -483,7 +483,7 @@ pattern = treesearch.parse_query("""
     }
 """)
 
-for tree, match in treesearch.get_matches("corpus.conllu", pattern):
+for tree, match in treesearch.search("corpus.conllu", pattern):
     verb = tree.get_word(match["V"])
     subj = tree.get_word(match["Subj"])
     obj = tree.get_word(match["Obj"])
@@ -495,7 +495,7 @@ for tree, match in treesearch.get_matches("corpus.conllu", pattern):
 ### Exploring tree structure
 
 ```python
-for tree in treesearch.get_trees("corpus.conllu"):
+for tree in treesearch.trees("corpus.conllu"):
     # Iterate through all words
     for word_id in range(len(tree)):
         word = tree.get_word(word_id)
@@ -513,7 +513,7 @@ for tree in treesearch.get_trees("corpus.conllu"):
 ```python
 pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
 
-for tree, match in treesearch.get_matches("corpus.conllu", pattern):
+for tree, match in treesearch.search("corpus.conllu", pattern):
     verb = tree.get_word(match["V"])
 
     # Get all dependents by type
@@ -541,7 +541,7 @@ pattern = treesearch.parse_query("""
     }
 """)
 
-for tree, match in treesearch.get_matches("corpus.conllu", pattern):
+for tree, match in treesearch.search("corpus.conllu", pattern):
     main = tree.get_word(match["Main"])
     inf = tree.get_word(match["Inf"])
 
@@ -555,7 +555,7 @@ for tree, match in treesearch.get_matches("corpus.conllu", pattern):
 ### Accessing metadata
 
 ```python
-for tree in treesearch.get_trees("corpus.conllu"):
+for tree in treesearch.trees("corpus.conllu"):
     # Get sentence metadata
     sent_id = tree.metadata.get('sent_id', 'unknown')
     text = tree.sentence_text or "no text"

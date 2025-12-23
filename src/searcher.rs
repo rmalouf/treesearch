@@ -234,6 +234,7 @@ fn dfs(
     solutions
 }
 
+#[allow(dead_code)]
 fn forward_check(
     tree: &Tree,
     pattern: &Pattern,
@@ -242,7 +243,7 @@ fn forward_check(
     new_assign: &mut [Option<WordId>],
     new_domains: &mut [BitFixed<u64>],
 ) -> bool {
-    // Forward-check: Propagate along edge constraints touching next_var
+    // Propagate along edge constraints incident to next_var
     for &edge_idx in &pattern.out_edges[next_var] {
         let edge_constraint = &pattern.edge_constraints[edge_idx];
         let target_var_id = pattern.var_ids[&edge_constraint.to];
@@ -266,7 +267,6 @@ fn forward_check(
         if new_assign[source_var_id].is_some() {
             continue;
         }
-        // Remove words from domain that don't satisfy the arc constraint
         for w in new_domains[source_var_id].iter().collect::<Vec<_>>() {
             if !satisfies_arc_constraint(tree, w, word_id, edge_constraint) {
                 new_domains[source_var_id].reset(w);

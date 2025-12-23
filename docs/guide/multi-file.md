@@ -10,17 +10,17 @@ Use glob patterns to match multiple files:
 import treesearch
 
 # All .conllu files
-for tree in treesearch.get_trees("data/*.conllu"):
+for tree in treesearch.trees("data/*.conllu"):
     print(tree.sentence_text)
 
 # Recursive pattern
-for tree in treesearch.get_trees("data/**/*.conllu"):
+for tree in treesearch.trees("data/**/*.conllu"):
     print(tree.sentence_text)
 
 # Multiple patterns: use list comprehension
 patterns = ["data/*.conllu", "corpus/*.conllu.gz"]
 for pattern in patterns:
-    for tree in treesearch.get_trees(pattern):
+    for tree in treesearch.trees(pattern):
         print(tree.sentence_text)
 ```
 
@@ -30,7 +30,7 @@ Multi-file operations automatically process files in parallel for better perform
 
 ```python
 # Automatic parallel processing
-for tree, match in treesearch.get_matches("*.conllu", pattern):
+for tree, match in treesearch.search("*.conllu", pattern):
     process(tree, match)
 ```
 
@@ -45,7 +45,7 @@ for tree, match in treesearch.get_matches("*.conllu", pattern):
 ```python
 # Best: direct search with automatic parallelization
 pattern = treesearch.parse_query(query)
-for tree, match in treesearch.get_matches("*.conllu", pattern):
+for tree, match in treesearch.search("*.conllu", pattern):
     process(tree, match)
 ```
 
