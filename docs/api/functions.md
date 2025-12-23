@@ -6,20 +6,14 @@ Functional interface for treesearch operations.
 
 Treesearch provides standalone functions for pattern compilation, searching, and reading treebanks. These functions offer a functional alternative to the object-oriented Treebank API.
 
-Functions are organized into three categories:
-
-- **Pattern compilation** - parse_query()
-- **Searching** - search(), get_matches()
-- **Reading trees** - get_trees()
-
 ## Pattern compilation
 
-### parse_query()
+### compile_query()
 
 Compile a query string into a Pattern object.
 
 ```python
-treesearch.parse_query(query: str) -> Pattern
+treesearch.compile_query(query: str) -> Pattern
 ```
 
 **Parameters:**
@@ -39,7 +33,7 @@ treesearch.parse_query(query: str) -> Pattern
 ```python
 import treesearch
 
-pattern = treesearch.parse_query("""
+pattern = treesearch.compile_query("""
     MATCH {
         V [upos="VERB"];
         N [upos="NOUN"];
@@ -51,7 +45,7 @@ pattern = treesearch.parse_query("""
 **Notes:**
 
 - Patterns are reusable and thread-safe
-- Parse once and reuse for better performance
+- Compile once and reuse for better performance
 - Patterns cannot be modified after creation
 
 **See also:** [Pattern](pattern.md), [Query language guide](../guide/query-language.md)
@@ -60,17 +54,17 @@ pattern = treesearch.parse_query("""
 
 ## Searching functions
 
-### search()
+### search_tree()
 
-Search a single tree for pattern matches.
+Search trees for pattern matches.
 
 ```python
-treesearch.search(tree: Tree, pattern: Pattern) -> list[dict[str, int]]
+treesearch.search(trees: Tree | Iterator[Tree], pattern: Pattern) -> Iterator[Match]
 ```
 
 **Parameters:**
 
-- `tree` (Tree) - Tree to search
+- `trees` (Tree | Iterator[Tree]) - Trees to search
 - `pattern` (Pattern) - Compiled pattern from parse_query()
 
 **Returns:**
@@ -82,25 +76,23 @@ treesearch.search(tree: Tree, pattern: Pattern) -> list[dict[str, int]]
 ```python
 import treesearch
 
-pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
+pattern = treesearch.compile_query('MATCH { V [upos="VERB"]; }')
 
 for tree in treesearch.trees("corpus.conllu"):
-    for match in treesearch.search(tree, pattern):
-        verb = tree.get_word(match["V"])
+    for match in treesearch.search_trees(tree, pattern):
+        verb = tree[match["V"]]
         print(f"Found: {verb.form}")
 ```
 
 **Notes:**
 
-- Returns ALL matches (exhaustive search)
-- Returns iterator of matches
 - Word IDs are 0-based indices
 
-**See also:** get_matches()
+**See also:** search()
 
 ---
 
-### get_matches()
+### search()
 
 Search one or more CoNLL-U files for pattern matches.
 
@@ -171,7 +163,7 @@ for tree, match in treesearch.search("data/*.conllu", pattern, ordered=False):
 
 ## Reading functions
 
-### get_trees()
+### trees()
 
 Read trees from one or more CoNLL-U files.
 
@@ -370,52 +362,6 @@ for file in ["file1.conllu", "file2.conllu"]:
 | `get_matches()` | File/glob + query/pattern | (Tree, match) iterator | **Searching files** |
 | `get_trees()` | File/glob | Tree iterator | Reading files |
 
----
-
-## Performance tips
-
-### Compile patterns once
-
-```python
-# Good: Parse once, reuse many times
-pattern = treesearch.parse_query(query)
-for tree, match in treesearch.search("*.conllu", pattern):
-    process(match)
-
-# Acceptable: Query string auto-compiled (less efficient for repeated use)
-for tree, match in treesearch.search("corpus.conllu", 'MATCH { V [upos="VERB"]; }'):
-    process(match)
-
-# Bad: Re-parsing explicitly every file
-for file in files:
-    pattern = treesearch.parse_query(query)  # Wasteful!
-    for tree, match in treesearch.search(file, pattern):
-        process(match)
-```
-
-### Use get_matches() for large corpora
-
-```python
-# Best: Direct search with automatic parallelization
-for tree, match in treesearch.search("data/*.conllu", pattern):
-    process(tree, match)
-
-# Slower: Manual iteration
-for tree in treesearch.trees("data/*.conllu"):
-    for match in treesearch.search(tree, pattern):
-        process(tree, match)
-```
-
-### Use ordered=False for faster processing
-
-```python
-# When result order doesn't matter
-results = []
-for tree, match in treesearch.search("data/*.conllu", pattern, ordered=False):
-    results.append((tree, match))
-```
-
----
 
 ## See also
 

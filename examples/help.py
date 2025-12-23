@@ -41,6 +41,7 @@ def helps():
         Head !-[aux:pass]-> _;
         _ !-[conj]-> Head;
         Head !-[conj]-> _;
+        _ !-[conj]-> XComp;
         XComp !-[conj]-> _;
         Head << XComp;
     }

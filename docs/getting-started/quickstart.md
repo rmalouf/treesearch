@@ -39,14 +39,14 @@ MATCH {
 ### Step 3: Compile the Pattern
 
 ```python
-pattern = treesearch.parse_query(query)
+pattern = treesearch.compile_query(query)
 ```
 
 ### Step 4: Search a File
 
 ```python
 for tree, match in treesearch.search("corpus.conllu", pattern):
-    verb = tree.get_word(match["V"])
+    verb = tree[match["V"]]
     print(f"Found verb: {verb.form} (lemma: {verb.lemma})")
 ```
 
@@ -67,12 +67,12 @@ MATCH {
 """
 
 # Compile pattern
-pattern = treesearch.parse_query(query)
+pattern = treesearch.compile_query(query)
 
 # Search corpus
 for tree, match in treesearch.search("corpus.conllu", pattern):
-    verb = tree.get_word(match["V"])
-    noun = tree.get_word(match["N"])
+    verb = tree[match["V"]]
+    noun = tree[match["N"]]
 
     print(f"{verb.form} -> {noun.form}")
     print(f"Sentence: {tree.sentence_text}")
@@ -90,7 +90,7 @@ match = {"V": 3, "N": 7}  # Example match
 Use these IDs to retrieve Word objects from the tree:
 
 ```python
-verb = tree.get_word(match["V"])
+verb = tree["V"]
 print(verb.form)      # Surface form
 print(verb.lemma)     # Dictionary form
 print(verb.pos)       # POS tag
@@ -102,10 +102,10 @@ print(verb.deprel)    # Dependency relation
 Search across many files in parallel:
 
 ```python
-pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
+pattern = treesearch.compile_query('MATCH { V [upos="VERB"]; }')
 
 for tree, match in treesearch.search("data/*.conllu", pattern):
-    verb = tree.get_word(match["V"])
+    verb = tree[match["V"]]
     print(f"{verb.form}: {tree.sentence_text}")
 ```
 
