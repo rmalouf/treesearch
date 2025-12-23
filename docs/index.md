@@ -19,19 +19,20 @@ import treesearch
 # Find help-to-infinitive constructions
 query = """
 MATCH {
-    Help [lemma="help"];
+    Help [lemma="help", upos="VERB"];
     To [lemma="to"];
-    V [upos="VERB"];
-    Help -[xcomp]-> To;
-    To < V;
+    XComp [upos="VERB"];
+    Help -[xcomp]-> XComp;
+    XComp -[mark]-> To;
+    Help << XComp;
 }
 """
 
-pattern = treesearch.parse_query(query)
+pattern = treesearch.compile_query(query)
 for tree, match in treesearch.search("corpus/*.conllu", pattern):
-    help_word = tree.get_word(match["Help"])
-    verb = tree.get_word(match["V"])
-    print(f"{help_word.form} ... to {verb.form}: {tree.sentence_text}")
+    help_word = tree[match["Help"]]
+    xcomp_word = tree[match["XComp"]]
+    print(f"{help_word.form} ... to {xcomp.form}: {tree.sentence_text}")
 ```
 
 ## Key Features
@@ -48,9 +49,6 @@ for tree, match in treesearch.search("corpus/*.conllu", pattern):
 - Parallel file processing using Rust's rayon
 - Iterator-based API for memory efficiency
 - Transparent gzip support
-
-### Corpus Linguistics Focus
-Target audience is researchers working with dependency treebanks. Examples and workflows focus on common corpus linguistics tasks like finding syntactic constructions and extracting examples.
 
 ## Get Started
 
