@@ -2,7 +2,7 @@
 //!
 //! This module provides PyO3-based Python bindings for the Rust core.
 
-use pyo3::exceptions::{PyIndexError, PyIOError, PyValueError};
+use pyo3::exceptions::{PyIOError, PyIndexError, PyValueError};
 use pyo3::prelude::*;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -44,12 +44,7 @@ impl PyTree {
                 inner: word.clone(),
                 tree: Arc::clone(&self.inner),
             })
-            .ok_or_else(|| {
-                PyIndexError::new_err(format!(
-                    "word index out of range: {}",
-                    id
-                ))
-            })
+            .ok_or_else(|| PyIndexError::new_err(format!("word index out of range: {}", id)))
     }
 
     fn __getitem__(&self, id: usize) -> PyResult<PyWord> {
@@ -77,7 +72,10 @@ impl PyTree {
         }
 
         let num_to_show = n.min(3);
-        let words: Vec<String> = self.inner.words.iter()
+        let words: Vec<String> = self
+            .inner
+            .words
+            .iter()
             .take(num_to_show)
             .map(|w| String::from_utf8_lossy(&self.inner.string_pool.resolve(w.form)).to_string())
             .collect();
@@ -413,33 +411,35 @@ impl PyMatchIterator {
 
 /// Search a list of trees for pattern matches.
 ///
-/// Returns all matches found across all trees as a flat list. Each match is
-/// a dictionary mapping variable names from the query to word IDs in the tree.
+/// Returns an iterator over (tree, match) tuples for all matches found across
+/// all trees. Each match is a dictionary mapping variable names from the query
+/// to word IDs in the tree.
 ///
 /// Args:
 ///     trees: List of trees to search
 ///     pattern: Compiled pattern from parse_query()
 ///
 /// Returns:
-///     Flat list of match dictionaries from all trees
+///     Iterator over (tree, match) tuples
 ///
 /// Example:
-///     matches = treesearch.search([tree1, tree2], pattern)
-///     for match in matches:
+///     for tree, match in treesearch.search_trees([tree1, tree2], pattern):
 ///         print(match)
 #[pyfunction]
-fn py_search_trees(
-    trees: Vec<PyTree>,
-    pattern: &PyPattern,
-) -> Vec<std::collections::HashMap<String, usize>> {
-    trees
+fn py_search_trees(trees: Vec<PyTree>, pattern: &PyPattern) -> PyMatchIterator {
+    let results: Vec<_> = trees
         .into_iter()
         .flat_map(|tree| {
-            search_tree((*tree.inner).clone(), &pattern.inner)
+            let tree_arc = tree.inner.clone();
+            search_tree((*tree_arc).clone(), &pattern.inner)
                 .into_iter()
-                .map(|m| m.bindings)
+                .map(move |m| Ok((tree_arc.clone(), m.bindings)))
         })
-        .collect()
+        .collect();
+
+    PyMatchIterator {
+        inner: Box::new(results.into_iter()),
+    }
 }
 
 /*

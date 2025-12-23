@@ -17,14 +17,31 @@ class Tree:
         """Tree metadata from CoNLL-U comment lines."""
         ...
 
-    def get_word(self, id: int) -> Optional[Word]:
+    def word(self, id: int) -> Word:
         """Get word by ID (0-based index).
 
         Args:
             id: Word ID (0-based)
 
         Returns:
-            Word object or None if ID is out of bounds
+            Word object
+
+        Raises:
+            IndexError: If ID is out of bounds
+        """
+        ...
+
+    def __getitem__(self, id: int) -> Word:
+        """Get word by ID using indexing syntax.
+
+        Args:
+            id: Word ID (0-based)
+
+        Returns:
+            Word object
+
+        Raises:
+            IndexError: If ID is out of bounds
         """
         ...
 
@@ -58,7 +75,7 @@ class Word:
         ...
 
     @property
-    def pos(self) -> str:
+    def upos(self) -> str:
         """Universal POS tag (upos)."""
         ...
 
@@ -159,7 +176,7 @@ class Treebank:
         """
         ...
 
-    def matches(self, pattern: Pattern, ordered: bool = True) -> MatchIterator:
+    def search(self, pattern: Pattern, ordered: bool = True) -> MatchIterator:
         """Search for pattern matches across all trees.
 
         Args:
@@ -200,39 +217,14 @@ def compile_query(query: str) -> Pattern:
     """
     ...
 
-def search(tree: Tree, pattern: Pattern) -> list[dict[str, int]]:
-    """Search a single tree for pattern matches.
+def py_search_trees(trees: list[Tree], pattern: Pattern) -> MatchIterator:
+    """Search a list of trees for pattern matches.
 
     Args:
-        tree: Tree to search
+        trees: List of trees to search
         pattern: Compiled pattern from compile_query()
 
     Returns:
-        List of match dictionaries mapping variable names to word IDs (0-based)
-    """
-    ...
-
-# Deprecated functions (still exported but not recommended for use)
-def search_file(path: str, pattern: Pattern, ordered: bool = True) -> MatchIterator:
-    """Search single file for matches.
-
-    .. deprecated::
-        Use get_matches() from the main module instead.
-    """
-    ...
-
-def read_trees_glob(glob_pattern: str, ordered: bool = True) -> TreeIterator:
-    """Read trees from multiple files.
-
-    .. deprecated::
-        Use get_trees() from the main module instead.
-    """
-    ...
-
-def search_files(glob_pattern: str, pattern: Pattern, ordered: bool = True) -> MatchIterator:
-    """Search multiple files for matches.
-
-    .. deprecated::
-        Use get_matches() from the main module instead.
+        Iterator over (Tree, match_dict) tuples from all trees
     """
     ...

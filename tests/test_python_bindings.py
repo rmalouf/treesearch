@@ -405,8 +405,8 @@ class TestSearch:
         matches = list(matches)
         assert len(matches) == 2  # "helped" and "win"
 
-        # Each match should be a dict mapping variable names to word IDs
-        for match in matches:
+        # Each match should be a (tree, dict) tuple
+        for tree, match in matches:
             assert isinstance(match, dict)
             assert "V" in match
             assert isinstance(match["V"], int)
@@ -417,8 +417,9 @@ class TestSearch:
         matches = list(treesearch.search_trees(sample_tree, pattern))
 
         assert len(matches) == 1
-        word_id = matches[0]["V"]
-        word = sample_tree.word(word_id)
+        tree, match = matches[0]
+        word_id = match["V"]
+        word = tree.word(word_id)
         assert word.lemma == "help"
         assert word.form == "helped"
 
@@ -428,8 +429,9 @@ class TestSearch:
         matches = list(treesearch.search_trees(sample_tree, pattern))
 
         assert len(matches) == 1
-        word_id = matches[0]["Word"]
-        word = sample_tree.word(word_id)
+        tree, match = matches[0]
+        word_id = match["Word"]
+        word = tree.word(word_id)
         assert word.form == "He"
 
     def test_search_with_edge_constraint(self, sample_tree):
@@ -444,13 +446,13 @@ class TestSearch:
         matches = list(treesearch.search_trees(sample_tree, pattern))
 
         assert len(matches) == 1
-        match = matches[0]
+        tree, match = matches[0]
         assert "V1" in match
         assert "V2" in match
 
         # Verify the match
-        v1 = sample_tree.word(match["V1"])
-        v2 = sample_tree.word(match["V2"])
+        v1 = tree.word(match["V1"])
+        v2 = tree.word(match["V2"])
         assert v1.form == "helped"
         assert v2.form == "win"
 
@@ -467,10 +469,10 @@ class TestSearch:
 
         # Should find "helped" with nsubj "He"
         assert len(matches) == 1
-        match = matches[0]
+        tree, match = matches[0]
 
-        verb = sample_tree.word(match["Verb"])
-        pron = sample_tree.word(match["Pron"])
+        verb = tree.word(match["Verb"])
+        pron = tree.word(match["Pron"])
         assert verb.form == "helped"
         assert pron.form == "He"
 
@@ -486,7 +488,8 @@ class TestSearch:
         matches = list(treesearch.search_trees(sample_tree, pattern))
 
         assert len(matches) == 1
-        word = sample_tree.word(matches[0]["V"])
+        tree, match = matches[0]
+        word = tree.word(match["V"])
         assert word.upos == "VERB"
         assert word.lemma == "help"
 
@@ -666,7 +669,8 @@ class TestIntegration:
         # Find the verb "helped"
         pattern = treesearch.compile_query('MATCH { V [lemma="help"]; }')
         matches = list(treesearch.search_trees(tree, pattern))
-        verb = tree.word(matches[0]["V"])
+        result_tree, match = matches[0]
+        verb = result_tree.word(match["V"])
 
         # Use children_by_deprel to find various dependents
         nsubj = verb.children_by_deprel("nsubj")
