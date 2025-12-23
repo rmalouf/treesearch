@@ -89,7 +89,6 @@ Parent -[deprel]-> Child;
 The arrow direction indicates the dependency:
 
 - `->`: Points from parent to child
-- `<-`: Points from child to parent (same as `->` but reversed)
 
 ### Edge Examples
 
@@ -98,14 +97,8 @@ MATCH {
 # Verb has object child
 V -[obj]-> N;
 
-# Noun has verb parent (equivalent to above)
-N <-[obj]- V;
-
 # Any child relationship
 V -> Child;
-
-# Any parent relationship
-Child <- Parent;
 }
 ```
 
@@ -117,9 +110,6 @@ Omit the relation to match any dependency:
 MATCH {
 # V has any child
 V -> X;
-
-# Y has any parent
-Y <- Z;
 }
 ```
 
@@ -237,7 +227,7 @@ MATCH {
 Verb [upos="VERB"];
 Aux [lemma="be"];
 Subj [];
-Verb <-[aux:pass]- Aux;
+Verb -[aux:pass]-> Aux;
 Verb -[nsubj:pass]-> Subj;
 }
 ```
@@ -255,6 +245,8 @@ Verb -[nsubj]-> RelPron;
 ```
 
 ### Coordination
+
+TODO: Fix this
 
 ```
 MATCH {

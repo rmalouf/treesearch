@@ -54,12 +54,12 @@ for tree in treesearch.trees("corpus.conllu"):
 
 ### Methods
 
-#### get_word()
+#### word()
 
 Get a word by its ID.
 
 ```python
-tree.get_word(id: int) -> Word | None
+tree.word(id: int) -> Word | None
 ```
 
 **Parameters:**
@@ -74,7 +74,7 @@ tree.get_word(id: int) -> Word | None
 
 ```python
 for tree, match in treesearch.search("corpus.conllu", pattern):
-    verb = tree.get_word(match["V"])
+    verb = tree.word(match["V"]))
     if verb:
         print(f"{verb.form} ({verb.pos})")
 ```
@@ -85,52 +85,6 @@ for tree, match in treesearch.search("corpus.conllu", pattern):
 - Returns None if ID is out of range
 
 **See also:** Word properties and methods
-
----
-
-#### find_path()
-
-Find the dependency path between two words.
-
-```python
-tree.find_path(x: Word, y: Word) -> list[Word] | None
-```
-
-**Parameters:**
-
-- `x` (Word) - Starting word
-- `y` (Word) - Target word
-
-**Returns:**
-
-- List of words forming the dependency path from x to y, or None if no path exists
-
-**Example:**
-
-```python
-pattern = treesearch.parse_query("""
-    MATCH {
-        V [upos="VERB"];
-        N [upos="NOUN"];
-        V -[obj]-> N;
-    }
-""")
-
-for tree, match in treesearch.search("corpus.conllu", pattern):
-    verb = tree.get_word(match["V"])
-    noun = tree.get_word(match["N"])
-
-    path = tree.find_path(verb, noun)
-    if path:
-        path_str = " -> ".join(f"{w.form}({w.deprel})" for w in path)
-        print(f"Path: {path_str}")
-```
-
-**Notes:**
-
-- Path includes both start and end words
-- Returns None if words are in disconnected components
-- Path follows dependency edges (not linear word order)
 
 ---
 
@@ -233,19 +187,19 @@ for tree, match in treesearch.search("corpus.conllu", pattern):
 
 ---
 
-#### pos
+#### upos
 
 Universal POS tag (UPOS field in CoNLL-U).
 
 ```python
-word.pos -> str
+word.upos -> str
 ```
 
 **Example:**
 
 ```python
-verb = tree.get_word(match["V"])
-if verb.pos == "VERB":
+verb = tree[match["V"]]
+if verb.upos == "VERB":
     print(f"Confirmed verb: {verb.form}")
 ```
 
@@ -271,7 +225,7 @@ word.xpos -> str | None
 **Example:**
 
 ```python
-verb = tree.get_word(match["V"])
+verb = tree[match["V"]]
 if verb.xpos:
     print(f"{verb.pos} (language-specific: {verb.xpos})")
     # Output: "VERB (language-specific: VBG)"
@@ -323,9 +277,9 @@ word.head -> int | None
 **Example:**
 
 ```python
-word = tree.get_word(5)
+word = tree[5]
 if word.head is not None:
-    parent = tree.get_word(word.head)
+    parent = tree[word.head]
     print(f"{word.form} is child of {parent.form}")
 else:
     print(f"{word.form} is root")
@@ -352,7 +306,7 @@ word.parent() -> Word | None
 **Example:**
 
 ```python
-word = tree.get_word(match["N"])
+word = tree[match["N"]]
 parent = word.parent()
 if parent:
     print(f"{word.form} ({word.deprel}) <- {parent.form}")
@@ -379,7 +333,7 @@ word.children() -> list[Word]
 **Example:**
 
 ```python
-verb = tree.get_word(match["V"])
+verb = tree[match["V"]]
 for child in verb.children():
     print(f"{child.form} ({child.deprel})")
 # Output: "quickly (advmod)"
@@ -409,10 +363,10 @@ word.children_by_deprel(deprel: str) -> list[Word]
 **Example:**
 
 ```python
-pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
+pattern = treesearch.compile_query('MATCH { V [upos="VERB"]; }')
 
 for tree, match in treesearch.search("corpus.conllu", pattern):
-    verb = tree.get_word(match["V"])
+    verb = tree[match["V"]]
 
     # Get subjects
     subjects = verb.children_by_deprel("nsubj")
@@ -454,7 +408,7 @@ word.children_ids -> list[int]
 **Example:**
 
 ```python
-verb = tree.get_word(match["V"])
+verb = tree[match["V"]]
 print(f"Children at positions: {verb.children_ids}")
 # Output: "Children at positions: [3, 7, 9]"
 ```
@@ -473,7 +427,7 @@ print(f"Children at positions: {verb.children_ids}")
 
 ```python
 # Find verbs with subjects and objects
-pattern = treesearch.parse_query("""
+pattern = treesearch.compile_query("""
     MATCH {
         V [upos="VERB"];
         Subj [upos="NOUN"];
@@ -484,9 +438,9 @@ pattern = treesearch.parse_query("""
 """)
 
 for tree, match in treesearch.search("corpus.conllu", pattern):
-    verb = tree.get_word(match["V"])
-    subj = tree.get_word(match["Subj"])
-    obj = tree.get_word(match["Obj"])
+    verb = tree[match["V"]]
+    subj = tree[match["Subj"]]
+    obj = tree[match["Obj"]]
 
     print(f"{subj.form} {verb.form} {obj.form}")
     print(f"Sentence: {tree.sentence_text}")
@@ -498,7 +452,7 @@ for tree, match in treesearch.search("corpus.conllu", pattern):
 for tree in treesearch.trees("corpus.conllu"):
     # Iterate through all words
     for word_id in range(len(tree)):
-        word = tree.get_word(word_id)
+        word = tree[word_id]
         if word:
             # Show word and its parent
             parent = word.parent()
@@ -511,10 +465,10 @@ for tree in treesearch.trees("corpus.conllu"):
 ### Analyzing argument structure
 
 ```python
-pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
+pattern = treesearch.compile_query('MATCH { V [upos="VERB"]; }')
 
 for tree, match in treesearch.search("corpus.conllu", pattern):
-    verb = tree.get_word(match["V"])
+    verb = tree[match["V"]]
 
     # Get all dependents by type
     subjects = verb.children_by_deprel("nsubj")
@@ -529,29 +483,6 @@ for tree, match in treesearch.search("corpus.conllu", pattern):
     print(f"  Clausal complements: {len(clausal_complements)}")
 ```
 
-### Finding paths between words
-
-```python
-# Find control constructions (help + to-infinitive)
-pattern = treesearch.parse_query("""
-    MATCH {
-        Main [lemma="help"];
-        Inf [upos="VERB"];
-        Main -[xcomp]-> Inf;
-    }
-""")
-
-for tree, match in treesearch.search("corpus.conllu", pattern):
-    main = tree.get_word(match["Main"])
-    inf = tree.get_word(match["Inf"])
-
-    # Find path between main verb and infinitive
-    path = tree.find_path(main, inf)
-    if path:
-        path_forms = " -> ".join(w.form for w in path)
-        print(f"Path: {path_forms}")
-```
-
 ### Accessing metadata
 
 ```python
@@ -563,7 +494,7 @@ for tree in treesearch.trees("corpus.conllu"):
     # Count words by POS
     pos_counts = {}
     for word_id in range(len(tree)):
-        word = tree.get_word(word_id)
+        word = tree[word_id]
         if word:
             pos_counts[word.pos] = pos_counts.get(word.pos, 0) + 1
 
