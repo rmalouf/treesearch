@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - '*'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  linux-test-only:
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        python-version: ['3.14']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: mozilla-actions/sccache-action@v0.0.9
+      - name: Build Python package
+        uses: PyO3/maturin-action@v1
+        with:
+          args: --release --out dist
+          sccache: true
+          rust-toolchain: stable
+      - name: Run Rust and Python tests
+        shell: bash
+        run: |
+            set -e
+            # Run Rust tests
+            cargo test
+            # Install uv and set up Python environment
+            pip install uv
+            uv venv
+            source .venv/bin/activate
+            uv pip install treesearch --find-links dist --force-reinstall
+            uv pip install pytest
+            # Run Python tests
+            pytest
