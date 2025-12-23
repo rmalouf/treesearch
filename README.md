@@ -44,7 +44,7 @@ pattern = treesearch.parse_query("""
 """)
 
 # Search a single file
-for tree, match in treesearch.get_matches("corpus.conllu", pattern):
+for tree, match in treesearch.search("corpus.conllu", pattern):
     verb = tree.get_word(match["V"])
     print(f"{verb.form}: {tree.sentence_text}")
 ```
@@ -53,12 +53,12 @@ Search multiple files with automatic parallel processing:
 
 ```python
 # Glob pattern for multiple files
-for tree, match in treesearch.get_matches("data/*.conllu", pattern):
+for tree, match in treesearch.search("data/*.conllu", pattern):
     verb = tree.get_word(match["V"])
     print(f"{verb.form}: {tree.sentence_text}")
 
 # Or use the object-oriented API
-treebank = treesearch.open("data/*.conllu")
+treebank = treesearch.load("data/*.conllu")
 for tree, match in treebank.matches(pattern):
     verb = tree.get_word(match["V"])
     print(f"{verb.form}: {tree.sentence_text}")

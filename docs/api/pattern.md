@@ -65,7 +65,7 @@ for match in treesearch.search(tree, pattern):
 Search a single CoNLL-U file.
 
 ```python
-for tree, match in treesearch.get_matches("corpus.conllu", pattern):
+for tree, match in treesearch.search("corpus.conllu", pattern):
     # Process match
     verb = tree.get_word(match["V"])
 ```
@@ -79,7 +79,7 @@ for tree, match in treesearch.get_matches("corpus.conllu", pattern):
 Search multiple CoNLL-U files with automatic parallel processing.
 
 ```python
-for tree, match in treesearch.get_matches("data/*.conllu", pattern):
+for tree, match in treesearch.search("data/*.conllu", pattern):
     # Process match
     verb = tree.get_word(match["V"])
 ```
@@ -121,7 +121,7 @@ pattern = treesearch.parse_query("""
 
 # Reuse across files
 for file in file_list:
-    for tree, match in treesearch.get_matches(file, pattern):
+    for tree, match in treesearch.search(file, pattern):
         process(match)
 ```
 
@@ -131,7 +131,7 @@ for file in file_list:
 # Bad: Re-compiling every iteration
 for file in file_list:
     pattern = treesearch.parse_query(query)  # Wasteful!
-    for tree, match in treesearch.get_matches(file, pattern):
+    for tree, match in treesearch.search(file, pattern):
         process(match)
 ```
 
@@ -148,8 +148,10 @@ from concurrent.futures import ThreadPoolExecutor
 
 pattern = treesearch.parse_query(query)
 
+
 def get_matches(path):
-    return list(treesearch.get_matches(path, pattern))
+    return list(treesearch.search(path, pattern))
+
 
 with ThreadPoolExecutor() as executor:
     results = executor.map(get_matches, file_paths)
@@ -193,7 +195,7 @@ passive = treesearch.parse_query("""
     }
 """)
 
-for tree, match in treesearch.get_matches("corpus.conllu", passive):
+for tree, match in treesearch.search("corpus.conllu", passive):
     verb = tree.get_word(match["V"])
     print(f"Passive: {tree.sentence_text}")
 ```
@@ -209,7 +211,7 @@ help_infinitive = treesearch.parse_query("""
     }
 """)
 
-for tree, match in treesearch.get_matches("data/*.conllu", help_infinitive):
+for tree, match in treesearch.search("data/*.conllu", help_infinitive):
     main = tree.get_word(match["Main"])
     inf = tree.get_word(match["Inf"])
     print(f"{main.form} ... {inf.form}: {tree.sentence_text}")

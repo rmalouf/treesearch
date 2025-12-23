@@ -9,7 +9,7 @@ Of -> N2;
 """
 
 path = "/Volumes/Corpora/COHA/conll/*.conllu.gz"
-pattern = treesearch.parse_query(query)
+pattern = treesearch.compile_query(query)
 
 count = 0
 for tree, match in treesearch.search_files(path, pattern):

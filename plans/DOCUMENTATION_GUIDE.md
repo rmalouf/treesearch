@@ -148,9 +148,10 @@ get_matches(source: str | Path | Iterable[str | Path], query: str | Pattern, ord
 - Iterator of (tree, match) tuples
 
 **Example:**
+
 ```python
 pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
-for tree, match in treesearch.get_matches("corpus.conllu", pattern):
+for tree, match in treesearch.search("corpus.conllu", pattern):
     verb = tree.get_word(match["V"])
     print(f"{verb.form}: {tree.sentence_text}")
 ```
@@ -369,11 +370,12 @@ for match in search(...):
 ```
 
 **Good**:
+
 ```python
 import treesearch
 
 pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
-for tree, match in treesearch.get_matches("corpus.conllu", pattern):
+for tree, match in treesearch.search("corpus.conllu", pattern):
     verb = tree.get_word(match["V"])
     print(f"Found: {verb.form}")
 ```

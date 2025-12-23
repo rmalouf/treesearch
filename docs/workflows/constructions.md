@@ -50,7 +50,7 @@ pattern = treesearch.parse_query(query)
 ```python
 count = 0
 
-for tree, match in treesearch.get_matches("corpus/*.conllu", pattern):
+for tree, match in treesearch.search("corpus/*.conllu", pattern):
     help_word = tree.get_word(match["Help"])
     to_word = tree.get_word(match["To"])
     verb = tree.get_word(match["V"])
@@ -74,7 +74,7 @@ from collections import Counter
 # Count infinitive verbs
 verb_counts = Counter()
 
-for tree, match in treesearch.get_matches("corpus/*.conllu", pattern):
+for tree, match in treesearch.search("corpus/*.conllu", pattern):
     help_word = tree.get_word(match["Help"])
     verb = tree.get_word(match["V"])
 
@@ -113,7 +113,7 @@ MATCH {
 
 pattern = treesearch.parse_query(query)
 
-for tree, match in treesearch.get_matches("*.conllu", pattern):
+for tree, match in treesearch.search("*.conllu", pattern):
     verb = tree.get_word(match["V"])
     obj1 = tree.get_word(match["Obj1"])
     obj2 = tree.get_word(match["Obj2"])
@@ -139,7 +139,7 @@ MATCH {
 
 pattern = treesearch.parse_query(query)
 
-for tree, match in treesearch.get_matches("*.conllu", pattern):
+for tree, match in treesearch.search("*.conllu", pattern):
     noun = tree.get_word(match["Noun"])
     pron = tree.get_word(match["RelPron"])
     verb = tree.get_word(match["Verb"])
@@ -167,7 +167,7 @@ MATCH {
 
 pattern = treesearch.parse_query(query)
 
-for tree, match in treesearch.get_matches("*.conllu", pattern):
+for tree, match in treesearch.search("*.conllu", pattern):
     obj = tree.get_word(match["Obj"])
     verb = tree.get_word(match["V"])
 
@@ -190,7 +190,7 @@ MATCH {
 
 pattern = treesearch.parse_query(query)
 
-for tree, match in treesearch.get_matches("*.conllu", pattern):
+for tree, match in treesearch.search("*.conllu", pattern):
     verb = tree.get_word(match["V"])
     print(f"{verb.form} (intransitive)")
     print(f"  {tree.sentence_text}\n")
@@ -213,7 +213,7 @@ MATCH {
 
 pattern = treesearch.parse_query(query)
 
-for tree, match in treesearch.get_matches("*.conllu", pattern):
+for tree, match in treesearch.search("*.conllu", pattern):
     verb = tree.get_word(match["V"])
     aux = tree.get_word(match["Aux"])
     print(f"{aux.form} {verb.form} (no agent)")
@@ -286,7 +286,7 @@ MATCH {
 Use Python to filter results:
 
 ```python
-for tree, match in treesearch.get_matches("*.conllu", pattern):
+for tree, match in treesearch.search("*.conllu", pattern):
     word = tree.get_word(match["V"])
 
     # Filter by word properties
@@ -309,7 +309,7 @@ for tree, match in treesearch.get_matches("*.conllu", pattern):
 
 ```python
 count = 0
-for tree, match in treesearch.get_matches("*.conllu", pattern):
+for tree, match in treesearch.search("*.conllu", pattern):
     count += 1
 print(f"Total: {count}")
 ```
@@ -322,7 +322,7 @@ from collections import Counter
 # Verb lemmas
 lemma_counts = Counter()
 
-for tree, match in treesearch.get_matches("*.conllu", pattern):
+for tree, match in treesearch.search("*.conllu", pattern):
     verb = tree.get_word(match["V"])
     lemma_counts[verb.lemma] += 1
 
@@ -337,7 +337,7 @@ import json
 
 examples = []
 
-for tree, match in treesearch.get_matches("*.conllu", pattern):
+for tree, match in treesearch.search("*.conllu", pattern):
     example = {
         "sentence": tree.sentence_text,
         "metadata": tree.metadata,

@@ -28,7 +28,7 @@ def main():
         Verb -[nsubj]-> Noun;
     """
 
-    pattern1 = treesearch.parse_query(query1)
+    pattern1 = treesearch.compile_query(query1)
     match_count = 0
 
     for tree in treesearch.read_trees("examples/lw970831.conll"):
@@ -52,7 +52,7 @@ def main():
         Verb [upos="VERB"];
     """
 
-    pattern2 = treesearch.parse_query(query2)
+    pattern2 = treesearch.compile_query(query2)
     verb_count = 0
 
     for tree in treesearch.read_trees("examples/lw970831.conll"):
@@ -116,7 +116,7 @@ def main():
         Head -> Dep2;
     """
 
-    pattern4 = treesearch.parse_query(query4)
+    pattern4 = treesearch.compile_query(query4)
 
     for tree in treesearch.read_trees("examples/lw970831.conll"):
         for match in treesearch.search(tree, pattern4):

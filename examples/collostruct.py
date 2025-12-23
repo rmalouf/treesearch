@@ -11,7 +11,7 @@ def xcomps():
 
     data = []
     path = "/Volumes/Corpora/CCOHA/conll/*.conllu.gz"
-    pattern = treesearch.parse_query(xcomp_query)
+    pattern = treesearch.compile_query(xcomp_query)
     for tree, match in treesearch.search_files(path, pattern):
         main = tree.get_word(match["Head"])
         xcomp = tree.get_word(match["XComp"])
@@ -42,7 +42,7 @@ def helps():
 
     path = "/Volumes/Corpora/CCOHA/conll/*.conllu.gz"
     data = []
-    pattern = treesearch.parse_query(help_query)
+    pattern = treesearch.compile_query(help_query)
     for tree, match in treesearch.search_files(path, pattern):
         head = tree.get_word(match["Head"])
         xcomp = tree.get_word(match["XComp"])
