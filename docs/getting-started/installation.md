@@ -1,6 +1,6 @@
 # Installation
 
-Treesearch requires Python 3.12+ and is currently installed from source using maturin.
+Treesearch requires Python 3.12+ and can be installed via pip or built from source.
 
 ## Prerequisites
 
@@ -12,7 +12,34 @@ Ensure you have Python 3.12 or later installed:
 python --version
 ```
 
-### Rust Toolchain
+## Installation from PyPI
+
+The easiest way to install treesearch is using pip:
+
+```bash
+pip install treesearch
+```
+
+Or using uv (recommended):
+
+```bash
+uv pip install treesearch
+```
+
+### Verify Installation
+
+```python
+import treesearch
+print(treesearch.__version__)
+```
+
+## Installation from Source
+
+If you need the latest development version or want to contribute to treesearch, you can install from source.
+
+### Prerequisites
+
+#### Rust Toolchain
 
 Since treesearch is built with Rust, you'll need the Rust toolchain installed:
 
@@ -21,8 +48,6 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
 Or visit [rustup.rs](https://rustup.rs/) for installation instructions.
-
-## Installation from Source
 
 ### 1. Clone the Repository
 
@@ -51,13 +76,6 @@ pip install maturin
 
 # Build and install in development mode
 maturin develop --release
-```
-
-### 3. Verify Installation
-
-```python
-import treesearch
-print(treesearch.__doc__)
 ```
 
 ## Installing Documentation Dependencies

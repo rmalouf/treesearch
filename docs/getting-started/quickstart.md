@@ -7,12 +7,17 @@ Get up and running with treesearch in 5 minutes.
 To follow along with these examples, let's download a small sample corpus from Universal Dependencies:
 
 ```python
-import urllib.request
+import shutil
+from urllib.request import urlretrieve
+
 
 url = "https://raw.githubusercontent.com/UniversalDependencies/UD_English-EWT/master/en_ewt-ud-dev.conllu"
 urllib.request.urlretrieve(url, "corpus.conllu")
 print("Downloaded corpus.conllu")
 ```
+
+
+
 
 This downloads a development set with about 2,000 sentences (~25,000 words) from the English Web Treebank, which is perfect for learning and testing.
 
