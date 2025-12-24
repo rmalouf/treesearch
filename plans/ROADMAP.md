@@ -287,18 +287,18 @@ ts.export_trees(trees, output="verbs.conllu")
 
 ---
 
-## Priority 6: Add DEPS and MISC to Query Language
+## Priority 6: Add DEPS to Query Language
 
-**Goal**: Support querying enhanced dependencies (DEPS) and miscellaneous annotations (MISC).
+**Goal**: Support querying enhanced dependencies (DEPS) in the query language.
 
-**Status**: ⏳ Not started
+**Status**: ⏳ Not started (MISC field access already implemented)
 
 ### Background
 CoNLL-U format includes two additional fields:
-- **DEPS**: Enhanced dependencies (graph structure beyond tree)
-- **MISC**: Miscellaneous annotations (SpaceAfter, etc.)
+- **DEPS**: Enhanced dependencies (graph structure beyond tree) - NOT YET queryable
+- **MISC**: Miscellaneous annotations (SpaceAfter, etc.) - ✅ ALREADY ACCESSIBLE via Word.misc property
 
-Currently treesearch parses these but doesn't expose them in queries.
+Currently treesearch parses DEPS but doesn't expose it in queries. MISC is already fully accessible via the Python API.
 
 ### Syntax Design
 
@@ -313,10 +313,19 @@ MATCH {
 }
 ```
 
-**MISC (Miscellaneous Annotations)**:
+**MISC (Miscellaneous Annotations)** - ✅ Already accessible via Word.misc property:
+```python
+# MISC is already accessible in Python
+for tree, match in treebank.search(pattern):
+    word = tree.word(match["W"])
+    if word.misc:  # Access MISC field
+        print(f"MISC: {word.misc}")
+```
+
+For future query language support:
 ```
 MATCH {
-    # Check MISC field key-value pairs
+    # Check MISC field key-value pairs (NOT YET IMPLEMENTED)
     W [misc.SpaceAfter="No"];
     W [misc.Gloss="running"];
 }
@@ -354,7 +363,7 @@ MATCH {
    - Check DEPS constraints during edge constraint validation
    - Check MISC constraints during node constraint validation
 
-5. **Python bindings**: Expose deps and misc in Word class
+5. **Python bindings**: Expose deps in Word class (misc already exposed)
 
 ### Open Questions
 - **DEPS syntax**: Should we use `deps:` prefix or new operator?
@@ -364,7 +373,7 @@ MATCH {
 
 ### Testing
 - Query DEPS relations
-- Query MISC fields
+- Query MISC fields (basic access already tested)
 - Combine with regular constraints
 - Handle missing DEPS/MISC (most words don't have them)
 

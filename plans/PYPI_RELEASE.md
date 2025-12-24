@@ -14,21 +14,11 @@
 - [x] Version in Cargo.toml (0.1.0)
 - [x] Package builds successfully (`maturin build --release`)
 - [x] Version attribute exports correctly (`treesearch.__version__` → "0.1.0")
+- [x] CHANGELOG.md created with v0.1.0 entry (dated 2025-12-23)
 
 ### 🔧 Need to Do
 
-1. **Fix the dead code warning** (optional but clean)
-   - Remove or use the `forward_check` function in `src/searcher.rs:232`
-   - Or add `#[allow(dead_code)]` if keeping for future use
-
-2. **Add `license` field to pyproject.toml**
-   - Currently only in Cargo.toml
-   - Add to `[project]` section:
-     ```toml
-     license = "MIT"
-     ```
-
-3. **Test on TestPyPI first**
+1. **Test on TestPyPI first**
    ```bash
    # Build wheel
    maturin build --release
@@ -43,13 +33,13 @@
    python -c "import treesearch; print(treesearch.__version__)"
    ```
 
-4. **Verify installation works**
+2. **Verify installation works**
    - Test in fresh virtual environment
    - Import package: `import treesearch`
    - Run basic example from README
    - Check version: `treesearch.__version__`
 
-5. **When ready, publish to real PyPI**
+3. **When ready, publish to real PyPI**
    ```bash
    maturin publish
    ```
@@ -150,28 +140,7 @@ maturin publish --token YOUR_TOKEN
 
 ### CHANGELOG.md
 
-Create `CHANGELOG.md` with v0.1.0 release notes:
-
-```markdown
-# Changelog
-
-## [0.1.0] - 2025-XX-XX
-
-### Added
-- Initial release
-- Core pattern matching engine with CSP solver
-- CoNLL-U file parsing with gzip support
-- Python bindings (object-oriented + functional APIs)
-- Automatic parallel processing for multi-file treebanks
-- Query language for structural pattern matching
-- Negative edge constraints
-- Morphological feature support
-
-### Features
-- 95 Rust tests passing
-- 40 Python tests passing
-- Comprehensive documentation
-```
+✅ Already created with v0.1.0 release notes (dated 2025-12-23)
 
 ### Badge for README
 
