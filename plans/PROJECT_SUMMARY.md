@@ -52,18 +52,21 @@ MATCH {
 - ✅ Iterator-based APIs for trees and matches (iterators.rs)
 - ✅ Channel-based parallel file processing with rayon
 - ✅ Negative edge constraints (`!->`, `!-[label]->`)
-- ✅ 95 Rust tests passing (4669 lines of code)
+- ✅ Morphological features (FEATS) and miscellaneous annotations (MISC)
+- ✅ 92 Rust tests passing
 
 **Python Bindings** (100% complete)
 - ✅ PyO3 bindings with streamlined OO + functional API (python.rs)
-- ✅ Full test suite passing (40 Python tests)
+- ✅ Full test suite passing (42 Python tests)
 - ✅ **Object-Oriented API**:
   - `Treebank` class with `from_file()`, `from_files()`, `from_string()` class methods
-  - Instance methods: `trees(ordered)`, `matches(pattern, ordered)` for iteration
-  - Convenience functions: `open(source)`, `from_string(text)`
-- ✅ **Functional API**: `parse_query()`, `search()`, `get_trees()`, `get_matches()`
+  - Instance methods: `trees(ordered)`, `search(pattern, ordered)` for iteration
+  - Convenience functions: `load(source)`, `from_string(text)`
+- ✅ **Functional API**: `compile_query()`, `search()`, `trees()`, `search_trees()`
 - ✅ Data classes: `Tree`, `Word`, `Pattern`, `Treebank`
 - ✅ Iterator classes: `TreeIterator`, `MatchIterator`
+- ✅ Full access to FEATS and MISC fields via Word properties
+- ✅ Improved error handling (IndexError for invalid word IDs)
 
 ### In Progress 🔄
 
@@ -75,12 +78,13 @@ MATCH {
 
 **Documentation & Polish**:
 - ⏳ Comprehensive rustdoc for public APIs
-- ⏳ Update API documentation to reflect functional API
 
 **Future Enhancements**:
-- ⏳ Extended query features (negation, regex, more operators)
-- ⏳ Additional relation types (ancestor, sibling, etc.)
-- ⏳ Performance optimization based on benchmark results
+- ⏳ PyPI publishing for easy installation
+- ⏳ Extended query features (regex, disjunctions, wildcards)
+- ⏳ Additional relation types (ancestor, sibling, distance constraints)
+- ⏳ Export to CoNLL-U subcorpus
+- ⏳ DEPS (enhanced dependencies) support in queries
 
 ## Technology Stack
 

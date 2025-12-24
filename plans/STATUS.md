@@ -20,7 +20,8 @@ This document tracks the internal development status of Treesearch. For user-fac
 - Automatic parallel file processing using rayon + channels
 - Negative edge constraints (`!->`, `!-[label]->`)
 - Match struct with Arc<Tree> sharing
-- 95 tests passing
+- Morphological features (FEATS field) and miscellaneous annotations (MISC field)
+- 92 tests passing
 
 **Python Bindings**:
 - PyO3 wrapper code in `src/python.rs`
@@ -28,13 +29,15 @@ This document tracks the internal development status of Treesearch. For user-fac
 - Full integration with Rust core
 - **Object-Oriented API**:
   - `Treebank` class with `from_file()`, `from_files()`, `from_string()` class methods
-  - Instance methods: `trees(ordered)`, `matches(pattern, ordered)` for iteration
-  - Convenience functions: `open(source)`, `from_string(text)`
-- **Functional API**: `parse_query()`, `search()`, `get_trees()`, `get_matches()`
+  - Instance methods: `trees(ordered)`, `search(pattern, ordered)` for iteration
+  - Convenience functions: `load(source)`, `from_string(text)`
+- **Functional API**: `compile_query()`, `search()`, `trees()`, `search_trees()`
 - Data classes: `Tree`, `Word`, `Pattern`, `Treebank`
 - Iterator classes: `TreeIterator`, `MatchIterator`
+- Full access to word features (FEATS) and misc annotations (MISC)
+- Improved error handling with IndexError for out-of-range word IDs
 - Automatic parallel processing for multi-file operations
-- 40 Python tests passing
+- 42 Python tests passing
 
 ### 🔄 In Progress
 
@@ -46,12 +49,12 @@ This document tracks the internal development status of Treesearch. For user-fac
 
 **Documentation & Polish**:
 - Comprehensive rustdoc for public APIs
-- API documentation needs update to reflect functional API changes
 
 **Future Enhancements**:
-- Extended query language features (negation, regex, more operators)
-- Additional relation types (ancestor, sibling, etc.)
-- Performance optimization (after benchmarking establishes baseline)
+- Extended query language features (regex in constraints, disjunctions, wildcards)
+- Additional relation types (ancestor, sibling, distance constraints)
+- Export to CoNLL-U subcorpus
+- DEPS (enhanced dependencies) support in query language
 
 ## Development Roadmap
 
@@ -64,7 +67,7 @@ See `ROADMAP.md` for detailed implementation plans.
 3. **Disjunctions in node constraints** - `[upos="NOUN" | upos="PROPN"]`
 4. **Wildcards in dependency constraints** - `X -[nsubj:*]-> Y`
 5. **Export to CoNLL-U subcorpus** - Save matching trees to files
-6. **DEPS and MISC field support** - Query enhanced dependencies and misc annotations
+6. **DEPS field support in queries** - Query enhanced dependencies (MISC field already supported)
 
 ### Future Enhancements
 
