@@ -52,7 +52,7 @@ pub enum ParseError {
     #[error("Invalid DEPS pair: {pair}")]
     InvalidDepsPair { pair: String },
 
-    #[error("Multiword tokens and empty nodes are not supported: {token_id}")]
+    #[error("Empty nodes are not supported: {token_id}")]
     UnsupportedToken { token_id: String },
 
     #[error("Invalid token ID: {token_id}")]
@@ -74,7 +74,7 @@ pub struct TreeIterator<R: BufRead> {
 
 impl<R: BufRead> TreeIterator<R> {
     /// Parse a single CoNLL-U line into a Word
-    /// Errors on multiword tokens and empty nodes (not yet supported)
+    /// Skips multiword tokens (not yet supported), errors on empty nodes
     fn parse_line(
         &mut self,
         tree: &mut Tree,
@@ -98,7 +98,14 @@ impl<R: BufRead> TreeIterator<R> {
             }};
         }
 
-        let token_id = parse_id(next_field!())?;
+        let token_id_field = next_field!();
+
+        // Skip multiword tokens (e.g., "1-2")
+        if token_id_field.contains(&b'-') {
+            return Ok(());
+        }
+
+        let token_id = parse_id(token_id_field)?;
         let form = next_field!();
         let lemma = next_field!();
         let upos = next_field!();
@@ -297,11 +304,7 @@ fn parse_comment(line: &[u8], tree: &mut Tree) {
 
 /// Parse ID field (single integer only)
 fn parse_id(s: &[u8]) -> Result<TokenId, ParseError> {
-    if s.contains(&b'-') {
-        return Err(ParseError::UnsupportedToken {
-            token_id: str::from_utf8(s)?.to_string(),
-        });
-    }
+    // Check for empty nodes (containing '.')
     if s.contains(&b'.') {
         return Err(ParseError::UnsupportedToken {
             token_id: str::from_utf8(s)?.to_string(),
@@ -422,8 +425,6 @@ mod tests {
     fn test_parse_id() {
         assert_eq!(parse_id(b"1").unwrap(), 1);
         assert_eq!(parse_id(b"42").unwrap(), 42);
-        // Multiword tokens are not supported
-        assert!(parse_id(b"1-2").is_err());
         // Empty nodes are not supported
         assert!(parse_id(b"2.1").is_err());
         assert!(parse_id(b"10.5").is_err());
@@ -494,13 +495,6 @@ mod tests {
     }
 
     // Error handling tests
-    #[test]
-    fn test_error_multiword_token() {
-        let err = parse_id(b"1-2").unwrap_err();
-        assert!(matches!(err, ParseError::UnsupportedToken { .. }));
-        assert!(err.to_string().contains("1-2"));
-    }
-
     #[test]
     fn test_error_empty_node() {
         let err = parse_id(b"2.1").unwrap_err();
