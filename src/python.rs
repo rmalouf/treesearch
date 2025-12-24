@@ -141,6 +141,34 @@ impl PyWord {
         self.inner.head
     }
 
+    #[getter]
+    fn feats(&self) -> std::collections::HashMap<String, String> {
+        self.inner
+            .feats
+            .iter()
+            .map(|(k, v)| {
+                (
+                    String::from_utf8_lossy(&self.tree.string_pool.resolve(*k)).to_string(),
+                    String::from_utf8_lossy(&self.tree.string_pool.resolve(*v)).to_string(),
+                )
+            })
+            .collect()
+    }
+
+    #[getter]
+    fn misc(&self) -> std::collections::HashMap<String, String> {
+        self.inner
+            .misc
+            .iter()
+            .map(|(k, v)| {
+                (
+                    String::from_utf8_lossy(&self.tree.string_pool.resolve(*k)).to_string(),
+                    String::from_utf8_lossy(&self.tree.string_pool.resolve(*v)).to_string(),
+                )
+            })
+            .collect()
+    }
+
     fn parent(&self) -> Option<PyWord> {
         self.inner.parent(&self.tree).map(|word| PyWord {
             inner: word.clone(),

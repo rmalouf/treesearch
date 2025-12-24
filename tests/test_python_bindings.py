@@ -67,6 +67,18 @@ def multi_tree_conllu():
 
 
 @pytest.fixture
+def feats_misc_conllu():
+    """CoNLL-U data with features and misc annotations."""
+    return """# text = The cat sits.
+1	The	the	DET	DT	Definite=Def|PronType=Art	2	det	_	SpaceAfter=No
+2	cat	cat	NOUN	NN	Number=Sing	3	nsubj	_	_
+3	sits	sit	VERB	VBZ	Mood=Ind|Number=Sing|Person=3|Tense=Pres|VerbForm=Fin	0	root	_	SpaceAfter=No|CorrectForm=sits
+4	.	.	PUNCT	.	_	3	punct	_	_
+
+"""
+
+
+@pytest.fixture
 def temp_conllu_file(sample_conllu, tmp_path):
     """Create a temporary CoNLL-U file."""
     path = tmp_path / "test.conllu"
@@ -313,6 +325,32 @@ class TestWord:
         assert "helped" in repr_str
         assert "help" in repr_str
         assert "VERB" in repr_str
+
+    def test_word_feats(self, feats_misc_conllu, tmp_path):
+        """Test word feats property returns dict."""
+        path = tmp_path / "feats.conllu"
+        path.write_text(feats_misc_conllu)
+        trees = list(treesearch.Treebank.from_file(str(path)).trees())
+        tree = trees[0]
+
+        # Verify feats returns a dict
+        word = tree.word(0)  # "The"
+        assert isinstance(word.feats, dict)
+        assert "Definite" in word.feats
+        assert word.feats["Definite"] == "Def"
+
+    def test_word_misc(self, feats_misc_conllu, tmp_path):
+        """Test word misc property returns dict."""
+        path = tmp_path / "feats.conllu"
+        path.write_text(feats_misc_conllu)
+        trees = list(treesearch.Treebank.from_file(str(path)).trees())
+        tree = trees[0]
+
+        # Verify misc returns a dict
+        word = tree.word(0)  # "The"
+        assert isinstance(word.misc, dict)
+        assert "SpaceAfter" in word.misc
+        assert word.misc["SpaceAfter"] == "No"
 
 
 # NOTE: find_path functionality exists in Rust but is not yet exposed in Python bindings

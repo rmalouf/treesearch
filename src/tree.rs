@@ -27,8 +27,6 @@ pub type Misc = HashMap<String, String>;
 pub struct Word {
     pub id: WordId,
     pub token_id: TokenId,
-
-    // CoNLL-U fields
     pub form: Sym,
     pub lemma: Sym,
     pub upos: Sym,
@@ -36,8 +34,7 @@ pub struct Word {
     pub feats: Features,
     pub head: Option<WordId>,
     pub deprel: Sym,
-
-    // Tree structure
+    pub misc: Features,
     pub children: Vec<WordId>,
 }
 
@@ -61,6 +58,7 @@ impl Word {
             feats: Features::new(),
             head,
             deprel,
+            misc: Features::new(),
             children: Vec::new(),
         }
     }
@@ -76,6 +74,7 @@ impl Word {
         feats: Features,
         head: Option<WordId>,
         deprel: Sym,
+        misc: Features,
     ) -> Self {
         Self {
             id,
@@ -87,6 +86,7 @@ impl Word {
             feats,
             head,
             deprel,
+            misc,
             children: Vec::new(),
         }
     }
@@ -177,6 +177,7 @@ impl Tree {
         feats: Features,
         head: Option<WordId>,
         deprel: &[u8],
+        misc: Features,
     ) {
         let form_sym = self.string_pool.get_or_intern(form);
         let lemma_sym = self.string_pool.get_or_intern(lemma);
@@ -186,6 +187,7 @@ impl Tree {
 
         let word = Word::new(
             word_id, token_id, form_sym, lemma_sym, upos_sym, xpos_sym, feats, head, deprel_sym,
+            misc,
         );
         self.words.push(word);
     }

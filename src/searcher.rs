@@ -32,10 +32,20 @@ fn satisfies_var_constraint(tree: &Tree, word: &Word, constraint: &Constraint) -
         Constraint::DepRel(deprel) => tree
             .string_pool
             .compare_bytes(word.deprel, deprel.as_bytes()),
-        Constraint::Feature(key, value) => word.feats.iter().any(|(feat_key, feat_val)| {
-            tree.string_pool.compare_bytes(*feat_key, key.as_bytes())
-                && tree.string_pool.compare_bytes(*feat_val, value.as_bytes())
-        }),
+        Constraint::Feature(key, value) => {
+            let key_bytes = key.as_bytes();
+            let value_bytes = value.as_bytes();
+            word.feats
+                .iter()
+                .any(|(k, v)| tree.string_pool.compare_kv(*k, *v, key_bytes, value_bytes))
+        }
+        Constraint::Misc(key, value) => {
+            let key_bytes = key.as_bytes();
+            let value_bytes = value.as_bytes();
+            word.misc
+                .iter()
+                .any(|(k, v)| tree.string_pool.compare_kv(*k, *v, key_bytes, value_bytes))
+        }
         Constraint::And(constraints) => constraints
             .iter()
             .all(|constraint| satisfies_var_constraint(tree, word, constraint)),
@@ -658,7 +668,14 @@ mod tests {
             tree.string_pool.get_or_intern(b"Number"),
             tree.string_pool.get_or_intern(b"Sing"),
         ));
-        tree.add_word(0, 1, b"was", b"be", b"VERB", b"_", feats_was, None, b"root");
+        let mut misc_was = Features::new();
+        misc_was.push((
+            tree.string_pool.get_or_intern(b"SpaceAfter"),
+            tree.string_pool.get_or_intern(b"No"),
+        ));
+        tree.add_word(
+            0, 1, b"was", b"be", b"VERB", b"_", feats_was, None, b"root", misc_was,
+        );
 
         // Word 1: "running" - Tense=Pres, VerbForm=Part
         let mut feats_run = Features::new();
@@ -680,6 +697,7 @@ mod tests {
             feats_run,
             Some(0),
             b"xcomp",
+            Features::new(),
         );
 
         // Word 2: "," - no features
@@ -693,6 +711,7 @@ mod tests {
             Features::new(),
             Some(0),
             b"punct",
+            Features::new(),
         );
 
         tree.compile_tree();
@@ -739,6 +758,22 @@ mod tests {
         )
         .unwrap();
         assert_eq!(matches.len(), 0); // PUNCT has no Tense feature
+    }
+
+    #[test]
+    fn test_misc_constraints() {
+        let tree = build_feature_tree();
+
+        // Single misc constraint
+        let matches: Vec<_> =
+            search_tree_query(tree.clone(), r#"MATCH { V [misc.SpaceAfter="No"]; }"#).unwrap();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].bindings, hashmap! { "V" => 0 }); // "was"
+
+        // Non-existent misc value
+        let matches: Vec<_> =
+            search_tree_query(tree.clone(), r#"MATCH { V [misc.SpaceAfter="Yes"]; }"#).unwrap();
+        assert_eq!(matches.len(), 0);
     }
 
     #[test]
