@@ -23,10 +23,12 @@ This downloads a development set with about 2,000 sentences (~25,000 words) from
 
 ## Your First Search
 
-### Step 1: Import treesearch
+### Step 1: Import treesearch and load a treebank
 
 ```python
 import treesearch
+
+treebank = treesearch.load('UD_English-ParTUT-r2.17/*.conllu.gz')
 ```
 
 ### Step 2: Write a Query
@@ -36,7 +38,7 @@ Let's find all verbs in our corpus:
 ```python
 query = """
 MATCH {
-    V [upos="VERB"];
+    V [lemma="note", upos="VERB"];
 }
 """
 ```
@@ -50,38 +52,36 @@ pattern = treesearch.compile_query(query)
 ### Step 4: Search a File
 
 ```python
-for tree, match in treesearch.search("corpus.conllu", pattern):
-    verb = tree[match["V"]]
-    print(f"Found verb: {verb.form} (lemma: {verb.lemma})")
+for tree, match in treebank.search(pattern):
+    word = tree[match['V']]
+    print(f'{word.form}: {tree.sentence_text}')
 ```
 
 ## A More Complex Example
 
-Let's find verb-object constructions:
+Let's find *by* passive constructions:
 
 ```python
 import treesearch
 
-# Define the pattern: verb with nominal object
 query = """
 MATCH {
     V [upos="VERB"];
-    N [upos="NOUN"];
-    V -[obj]-> N;
+    Subj [upos="NOUN"];
+    By [lemma="by"];
+    Obl [upos="NOUN"];
+    V -[aux:pass]-> _;
+    V -[nsubj:pass]-> Subj;
+    V -[obl]-> Obl;
+    Obl -[case]-> By;
 }
 """
 
-# Compile pattern
 pattern = treesearch.compile_query(query)
 
-# Search corpus
-for tree, match in treesearch.search("corpus.conllu", pattern):
-    verb = tree[match["V"]]
-    noun = tree[match["N"]]
 
-    print(f"{verb.form} -> {noun.form}")
-    print(f"Sentence: {tree.sentence_text}")
-    print()
+for i,(tree, match) in enumerate(treebank.search(pattern)):
+    print(f"{i} {tree[match['Subj']].form} {tree[match['V']].form} by {tree[match['Obl']].form}")
 ```
 
 ## Understanding Matches
@@ -190,8 +190,8 @@ MATCH {
 query = """
 MATCH {
     Main [upos="VERB"];
-    Aux [lemma="have"];
-    Aux -[aux]-> Main;
+    Aux [lemma="have", upos="AUX"];
+    Main -[aux]-> Aux;
 }
 """
 ```
@@ -210,14 +210,14 @@ MATCH {
 
 ### Excluding Patterns with Negation
 
-Find verbs that **don't** have objects:
+Intransitive verbs (verbs that **don't** have objects):
 
 ```python
 query = """
 MATCH {
     V [upos="VERB"];
-    Obj [];
-    V !-[obj]-> Obj;
+    V -[nsubj]-> _;
+    V !-[obj]-> _;
 }
 """
 ```
