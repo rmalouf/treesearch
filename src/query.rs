@@ -114,19 +114,26 @@ fn compile_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, Q
     let inner = pair.into_inner().next().unwrap();
 
     match inner.as_rule() {
-        Rule::feature_constraint => compile_feature_constraint(inner),
+        Rule::feature_constraint => compile_feature_constraint(inner, Constraint::Feature),
+        Rule::misc_constraint => compile_feature_constraint(inner, Constraint::Misc),
         Rule::regular_constraint => compile_regular_constraint(inner),
         _ => unreachable!(),
     }
 }
 
-fn compile_feature_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, QueryError> {
+fn compile_feature_constraint<F>(
+    pair: pest::iterators::Pair<Rule>,
+    make_constraint: F,
+) -> Result<Constraint, QueryError>
+where
+    F: FnOnce(String, String) -> Constraint,
+{
     let mut inner = pair.into_inner();
     let feature_key = inner.next().unwrap().as_str().to_string();
     let operator = inner.next().unwrap().as_str();
     let value = inner.next().unwrap().into_inner().as_str().to_string();
 
-    let constraint = Constraint::Feature(feature_key, value);
+    let constraint = make_constraint(feature_key, value);
 
     if operator == "!=" {
         Ok(Constraint::Not(Box::new(constraint)))

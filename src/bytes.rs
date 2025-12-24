@@ -33,9 +33,23 @@ impl BytestringPool {
         self.0.lock().unwrap().resolve(sym)
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn compare_bytes(&self, sym: Sym, bytes: &[u8]) -> bool {
         self.0.lock().unwrap().compare_bytes(sym, bytes)
+    }
+
+    #[inline(always)]
+    pub fn compare_kv(
+        &self,
+        key_sym: Sym,
+        val_sym: Sym,
+        key_bytes: &[u8],
+        val_bytes: &[u8],
+    ) -> bool {
+        self.0
+            .lock()
+            .unwrap()
+            .compare_kv(key_sym, val_sym, key_bytes, val_bytes)
     }
 }
 
@@ -96,9 +110,20 @@ impl ByteInterner {
         self.slab[(sym.0.get() - 1) as usize].clone()
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn compare_bytes(&self, sym: Sym, bytes: &[u8]) -> bool {
         &*self.slab[(sym.0.get() - 1) as usize] == bytes
+    }
+
+    #[inline(always)]
+    pub fn compare_kv(
+        &self,
+        key_sym: Sym,
+        val_sym: Sym,
+        key_bytes: &[u8],
+        val_bytes: &[u8],
+    ) -> bool {
+        self.compare_bytes(key_sym, key_bytes) && self.compare_bytes(val_sym, val_bytes)
     }
 }
 

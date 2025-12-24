@@ -43,9 +43,6 @@ pub enum ParseError {
     #[error("Extended deprels not yet supported")]
     UnsupportedExtendedDeprels,
 
-    #[error("Misc annotation not yet supported")]
-    UnsupportedMiscAnnotation,
-
     #[error("Expected 10 fields, found more than 10")]
     TooManyFields,
 
@@ -112,16 +109,14 @@ impl<R: BufRead> TreeIterator<R> {
         if next_field!() != b"_" {
             return Err(ParseError::UnsupportedExtendedDeprels);
         }
-        if next_field!() != b"_" {
-            return Err(ParseError::UnsupportedMiscAnnotation);
-        }
+        let misc = self.parse_features(next_field!())?;
 
         if fields.next().is_some() {
             return Err(ParseError::TooManyFields);
         }
 
         tree.add_word(
-            word_id, token_id, form, lemma, upos, xpos, feats, head, deprel,
+            word_id, token_id, form, lemma, upos, xpos, feats, head, deprel, misc,
         );
         Ok(())
     }
@@ -433,21 +428,64 @@ mod tests {
         assert!(parse_id(b"2.1").is_err());
         assert!(parse_id(b"10.5").is_err());
     }
-    /*
-        #[test]
-        fn test_parse_features() {
-            let feats = parse_features("Case=Nom|Number=Sing").unwrap();
-            assert!(feats.iter().any(|(k, v)| k == "Case" && v == "Nom"));
-            assert!(feats.iter().any(|(k, v)| k == "Number" && v == "Sing"));
 
-            let empty = parse_features("_").unwrap();
-            assert!(empty.is_empty());
+    #[test]
+    fn test_parse_features() {
+        let conllu = "1\tword\tlemma\tUPOS\tXPOS\tCase=Nom|Number=Plur\t0\troot\t_\t_\n\n";
+        let mut reader = TreeIterator::from_string(conllu);
+        let first = reader.next().unwrap().unwrap();
+        let feats = &first.word(0).unwrap().feats;
+        assert!(feats.iter().any(|(k, v)| first.string_pool.compare_kv(
+            *k,
+            *v,
+            "Case".as_bytes(),
+            "Nom".as_bytes()
+        )));
 
-            // Test error case
-            assert!(parse_features("InvalidPair").is_err());
-            assert!(parse_features("foo|bar=baz").is_err());
-        }
-    */
+        assert!(feats.iter().any(|(k, v)| first.string_pool.compare_kv(
+            *k,
+            *v,
+            "Number".as_bytes(),
+            "Plur".as_bytes()
+        )));
+
+        let conllu = "1\tword\tlemma\tUPOS\tXPOS\t_\t0\troot\t_\t_\n\n";
+        let mut reader = TreeIterator::from_string(conllu);
+        let first = reader.next().unwrap().unwrap();
+        let feats = &first.word(0).unwrap().feats;
+        assert!(feats.is_empty());
+
+        let conllu = "1\tword\tlemma\tUPOS\tXPOS\tInvalidPair\t0\troot\t_\t_\n\n";
+        let mut reader = TreeIterator::from_string(conllu);
+        let first = reader.next();
+        assert!(first.unwrap().is_err());
+
+        let conllu = "1\tword\tlemma\tUPOS\tXPOS\tfoo|bar=baz\t0\troot\t_\t_\n\n";
+        let mut reader = TreeIterator::from_string(conllu);
+        let first = reader.next();
+        assert!(first.unwrap().is_err());
+    }
+
+    #[test]
+    fn test_parse_misc() {
+        let conllu = "1\tword\tlemma\tUPOS\tXPOS\tNumber=Plur\t0\troot\t_\tSpaceAfter=No\n\n";
+        let mut reader = TreeIterator::from_string(conllu);
+        let first = reader.next().unwrap().unwrap();
+        let feats = &first.word(0).unwrap().misc;
+        assert!(feats.iter().any(|(k, v)| first.string_pool.compare_kv(
+            *k,
+            *v,
+            "SpaceAfter".as_bytes(),
+            "No".as_bytes()
+        )));
+
+        let conllu = "1\tword\tlemma\tUPOS\tXPOS\tNumber=Plur_\t0\troot\t_\t_\n\n";
+        let mut reader = TreeIterator::from_string(conllu);
+        let first = reader.next().unwrap().unwrap();
+        let feats = &first.word(0).unwrap().misc;
+        assert!(feats.is_empty());
+    }
+
     #[test]
     fn test_parse_head() {
         assert_eq!(parse_head(b"0").unwrap(), None);
@@ -525,17 +563,6 @@ mod tests {
         assert!(
             err.to_string()
                 .contains("Extended deprels not yet supported")
-        );
-    }
-
-    #[test]
-    fn test_error_unsupported_misc() {
-        let conllu = "1\tword\tlemma\tNOUN\tNN\t_\t2\tnsubj\t_\tSpaceAfter=No\n\n"; // MISC field not "_"
-        let mut reader = TreeIterator::from_string(conllu);
-        let err = reader.next().unwrap().unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("Misc annotation not yet supported")
         );
     }
 

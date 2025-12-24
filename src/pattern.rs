@@ -20,6 +20,7 @@ pub enum Constraint {
     Form(String),
     DepRel(String),
     Feature(String, String),
+    Misc(String, String),
     And(Vec<Constraint>),
     Not(Box<Constraint>),
     /// Check if variable has an incoming edge (from anonymous variable)
