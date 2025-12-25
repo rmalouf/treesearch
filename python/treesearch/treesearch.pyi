@@ -99,6 +99,16 @@ class Word:
         """IDs of all children words."""
         ...
 
+    @property
+    def feats(self) -> dict[str, str]:
+        """Morphological features as key-value pairs."""
+        ...
+
+    @property
+    def misc(self) -> dict[str, str]:
+        """Miscellaneous annotations as key-value pairs."""
+        ...
+
     def parent(self) -> Optional[Word]:
         """Get parent word, None for root."""
         ...
@@ -176,11 +186,11 @@ class Treebank:
         """
         ...
 
-    def search(self, pattern: Pattern, ordered: bool = True) -> MatchIterator:
+    def search(self, pattern: Pattern | str, ordered: bool = True) -> MatchIterator:
         """Search for pattern matches across all trees.
 
         Args:
-            pattern: Compiled pattern from compile_query()
+            pattern: Compiled Pattern or query string
             ordered: If True (default), return matches in deterministic order.
                     If False, matches may arrive in any order for better performance.
 
@@ -217,12 +227,12 @@ def compile_query(query: str) -> Pattern:
     """
     ...
 
-def py_search_trees(trees: list[Tree], pattern: Pattern) -> MatchIterator:
+def py_search_trees(trees: list[Tree], pattern: Pattern | str) -> MatchIterator:
     """Search a list of trees for pattern matches.
 
     Args:
         trees: List of trees to search
-        pattern: Compiled pattern from compile_query()
+        pattern: Compiled Pattern or query string
 
     Returns:
         Iterator over (Tree, match_dict) tuples from all trees

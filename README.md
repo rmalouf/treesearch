@@ -39,7 +39,7 @@ pattern = treesearch.parse_query("""
     MATCH {
         V [upos="VERB"];
         Aux [lemma="be"];
-        V <-[aux:pass]- Aux;
+        V -[aux:pass]-> Aux;
     }
 """)
 
@@ -76,9 +76,9 @@ MATCH {
 }
 ```
 
-**Node constraints**: `upos`, `xpos`, `lemma`, `form`, `deprel`, `feats.*` (morphological features)
+**Node constraints**: `upos`, `xpos`, `lemma`, `form`, `deprel`, `feats.*` (morphological features), `misc.*` (miscellaneous eatures)
 
-**Edge constraints**: `->` (child), `<-` (parent), `-[label]->` (labeled edge), `!->` (negative)
+**Edge constraints**: `->` (child), `-[label]->` (labeled edge), `!->` (negative), `!-[label]->` (negative labeled edge)
 
 **Precedence**: `<` (immediately precedes), `<<` (precedes)
 

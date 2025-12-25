@@ -7,8 +7,8 @@
 Treesearch provides both an object-oriented and functional API for searching linguistic dependency trees using a pattern-matching query language. The typical workflow is:
 
 1. Load a treebank with `load()` or create with `Treebank.from_*()`
-2. Compile query string to `Pattern` with `compile_query()`
-3. Search with `treebank.search(pattern)` or iterate with `treebank.trees()`
+2. Search with `treebank.search(query)` - pass query string directly or use `compile_query()` to compile once and reuse
+3. Iterate with `treebank.trees()` to access all trees
 4. Access matched nodes via the `Tree` and `Word` objects
 
 ## Basic Usage (Python)
@@ -18,7 +18,10 @@ Treesearch provides both an object-oriented and functional API for searching lin
 ```python
 import treesearch as ts
 
-# Parse your query once
+# Open a treebank (single file or glob pattern)
+treebank = ts.load("corpus.conllu")
+
+# Search with query string directly (simple, convenient)
 query = """
     MATCH {
         Verb [upos="VERB"];
@@ -26,12 +29,13 @@ query = """
         Verb -[nsubj]-> Noun;
     }
 """
+for tree, match in treebank.search(query):
+    verb = tree.word(match["Verb"])
+    noun = tree.word(match["Noun"])
+    print(f"Match: {verb.form} ← {noun.form}")
+
+# Or compile once and reuse for better performance
 pattern = ts.compile_query(query)
-
-# Open a treebank (single file or glob pattern)
-treebank = ts.load("corpus.conllu")
-
-# Search for matches
 for tree, match in treebank.search(pattern):
     verb = tree.word(match["Verb"])
     noun = tree.word(match["Noun"])
@@ -39,8 +43,8 @@ for tree, match in treebank.search(pattern):
 
 # Multiple files with automatic parallel processing
 treebank = ts.load("data/*.conllu")
-for tree, match in treebank.search(pattern):
-    verb = tree.word(match["Verb"])
+for tree, match in treebank.search('MATCH { V [upos="VERB"]; }'):
+    verb = tree.word(match["V"])
     print(f"Found: {verb.form}")
 
 # Iterate over trees without searching
@@ -213,18 +217,22 @@ for tree in treebank.trees(ordered=False):
     print(f"Tree: {tree.sentence_text}")
 ```
 
-##### `search(pattern: Pattern, ordered: bool = True) -> Iterator[tuple[Tree, dict[str, int]]]`
+##### `search(pattern: Pattern | str, ordered: bool = True) -> Iterator[tuple[Tree, dict[str, int]]]`
 
 Search for pattern matches across all trees. Returns an iterator of (tree, match) tuples. Can be called multiple times. Uses automatic parallel processing for multi-file treebanks.
 
 **Parameters:**
-- `pattern` (Pattern): Compiled pattern from `compile_query()`
+- `pattern` (Pattern | str): Compiled Pattern from `compile_query()` or query string
 - `ordered` (bool): If True (default), matches are returned in deterministic order. If False, matches may arrive in any order for better performance.
 
 ```python
-pattern = ts.compile_query("MATCH { Verb [upos=\"VERB\"]; }")
+# Pass query string directly (simple)
+for tree, match in treebank.search('MATCH { Verb [upos="VERB"]; }'):
+    verb = tree.word(match["Verb"])
+    print(f"Found: {verb.form}")
 
-# Ordered iteration (default)
+# Or compile once and reuse (better for multiple searches)
+pattern = ts.compile_query("MATCH { Verb [upos=\"VERB\"]; }")
 for tree, match in treebank.search(pattern):
     verb = tree.word(match["Verb"])
     print(f"Found: {verb.form}")
@@ -403,10 +411,12 @@ Represents a single word/node in the tree.
 - `form: str` - Word form
 - `lemma: str` - Lemma
 - `upos: str` - Universal POS tag
-- `xpos: str` - Language-specific POS tag
+- `xpos: str | None` - Language-specific POS tag (None if not specified)
 - `deprel: str` - Dependency relation to parent
 - `head: int | None` - Head word ID (0-based index, None for root)
-- `feats: list[tuple[str, str]]` - Morphological features
+- `children_ids: list[int]` - IDs of all children words
+- `feats: dict[str, str]` - Morphological features as key-value pairs
+- `misc: dict[str, str]` - Miscellaneous annotations as key-value pairs
 
 **Methods:**
 - `parent() -> Word | None` - Get parent word
@@ -426,7 +436,14 @@ print(f"Lemma: {word.lemma}")
 print(f"POS: {word.upos}")
 print(repr(word))  # <Word id=5 form='...' lemma='...' upos='...' deprel='...'>
 print(f"DepRel: {word.deprel}")
-print(f"Features: {word.feats}")
+
+# Access morphological features
+print(f"Features: {word.feats}")  # {'Tense': 'Past', 'VerbForm': 'Fin'}
+if 'Tense' in word.feats:
+    print(f"Tense: {word.feats['Tense']}")
+
+# Access misc annotations
+print(f"Misc: {word.misc}")  # {'SpaceAfter': 'No'}
 
 # Navigate tree
 if word.parent():
@@ -462,12 +479,9 @@ MATCH {
 }
 """
 
-# Parse query once
-pattern = ts.compile_query(query)
-
-# Open treebank and search for matches
+# Open treebank and search for matches (passing query string directly)
 treebank = ts.load("corpus.conllu")
-for tree, match in treebank.search(pattern):
+for tree, match in treebank.search(query):
     main = tree.word(match["Main"])
     comp = tree.word(match["Comp"])
     print(f"  Main = {main.form} (lemma: {main.lemma})")
@@ -475,15 +489,22 @@ for tree, match in treebank.search(pattern):
     print(f"  Sentence: {tree.sentence_text}")
     print()
 
-# Or use functional API
-for tree, match in ts.search("corpus.conllu", pattern):
+# For multiple searches, compile once for better performance
+pattern = ts.compile_query(query)
+for tree, match in treebank.search(pattern):
+    main = tree.word(match["Main"])
+    comp = tree.word(match["Comp"])
+    print(f"Match: {main.form} -[xcomp]-> {comp.form}")
+
+# Or use functional API with string
+for tree, match in ts.search("corpus.conllu", query):
     main = tree.word(match["Main"])
     comp = tree.word(match["Comp"])
     print(f"Match: {main.form} -[xcomp]-> {comp.form}")
 
 # Or iterate trees manually
 for tree in treebank.trees():
-    for match in ts.search(tree, pattern):
+    for tree, match in ts.search_trees(tree, query):
         main = tree.word(match["Main"])
         comp = tree.word(match["Comp"])
         print(f"{main.form} → {comp.form}")
@@ -517,7 +538,9 @@ except Exception as e:
 
 ## Performance Tips
 
-- **Parse queries once**: `Pattern` objects are reusable across searches
+- **Query compilation**:
+  - Pass query strings directly for one-off searches: `treebank.search('MATCH { V [upos="VERB"]; }')`
+  - Compile once with `compile_query()` when reusing the same pattern multiple times
 - **Exhaustive search**: Finds ALL matches, not just first/leftmost
 - **Automatic parallel processing**: Multi-file operations automatically process files in parallel for better performance
 - **Memory efficient**: Iterator-based API streams results without loading entire corpus
@@ -551,24 +574,27 @@ for tree, match in ts.search("data/*.conllu", pattern, ordered=False):
 ### Best Practices
 
 ```python
-# ✅ GOOD: Parse query once, reuse
+# ✅ GOOD: Pass query string directly for one-off searches
+for tree, match in ts.search("corpus.conllu", 'MATCH { V [upos="VERB"]; }'):
+    verb = tree.word(match["V"])
+    print(verb.form)
+
+# ✅ GOOD: Compile once when reusing query multiple times
 pattern = ts.compile_query(query_string)
 for tree in ts.trees("corpus.conllu"):
-    for match in ts.search(tree, pattern):
-        # Process match
+    for tree, match in ts.search_trees(tree, pattern):
+        # Reusing compiled pattern is efficient
         pass
 
-# ❌ BAD: Re-parsing query every iteration
+# ❌ BAD: Compiling same query repeatedly
 for tree in ts.trees("corpus.conllu"):
     pattern = ts.compile_query(query_string)  # Wasteful!
-    for match in ts.search(tree, pattern):
-        # Process match
+    for tree, match in ts.search_trees(tree, pattern):
         pass
 
-# ✅ GOOD: Use get_matches for simple cases
-for tree, match in ts.search("corpus.conllu", pattern):
-    # Convenient and efficient
-    verb = tree.word(match["Verb"])
+# ✅ GOOD: Use search() for convenient file-level searching
+for tree, match in ts.search("corpus.conllu", 'MATCH { V [upos="VERB"]; }'):
+    verb = tree.word(match["V"])
 
 # ✅ GOOD: Multi-file operations use automatic parallel processing
 for tree, match in ts.search("data/*.conllu", pattern):

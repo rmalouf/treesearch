@@ -135,11 +135,7 @@ def search(
     Returns:
         Iterator over (Tree, match_dict) tuples
     """
-    if isinstance(query, str):
-        query = compile_query(query)
     treebank = load(source)
-    if isinstance(query, str):
-        query = compile_query(query)
     return treebank.search(query, ordered=ordered)
 
 
@@ -147,18 +143,15 @@ def search_trees(
     source: Tree | Iterable[Tree],
     query: str | Pattern,
 ) -> MatchIterator:
-    """Search one or more files for pattern matches.
+    """Search a tree or list of trees for pattern matches.
 
     Args:
-        source: Path to a single file or glob pattern
+        source: Single Tree or iterable of Trees
         query: Query string or compiled Pattern
-        ordered: If True (default), return matches in deterministic order
 
     Returns:
         Iterator over (Tree, match_dict) tuples
     """
-    if isinstance(query, str):
-        query = compile_query(query)
     if isinstance(source, Tree):
         source = [source]
     else:
