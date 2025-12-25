@@ -229,6 +229,22 @@ impl PyPattern {
     }
 }
 
+/// Wrapper that accepts either a query string or compiled Pattern
+#[derive(FromPyObject)]
+enum QueryArg {
+    String(String),
+    Pattern(PyPattern),
+}
+
+impl QueryArg {
+    fn into_pattern(self) -> PyResult<PyPattern> {
+        match self {
+            QueryArg::String(s) => py_compile_query(&s),
+            QueryArg::Pattern(p) => Ok(p),
+        }
+    }
+}
+
 /// A compiled query pattern for tree matching.
 ///
 /// Created by parse_query() and used with search functions. Patterns are
@@ -358,7 +374,7 @@ impl PyTreebank {
     /// for multi-file treebanks.
     ///
     /// Args:
-    ///     pattern: Compiled pattern from parse_query()
+    ///     pattern: Compiled pattern from compile_query() or a query string
     ///     ordered: If True (default), matches are returned in deterministic order.
     ///              If False, matches may arrive in any order for better performance.
     ///
@@ -367,19 +383,24 @@ impl PyTreebank {
     ///
     /// Example:
     ///     >>> tb = Treebank.from_glob("data/*.conllu")
-    ///     >>> pattern = parse_query("MATCH { V [upos='VERB']; }")
-    ///     >>> for tree, match in tb.matches(pattern, ordered=True):
+    ///     >>> # Can use compiled pattern:
+    ///     >>> pattern = compile_query("MATCH { V [upos='VERB']; }")
+    ///     >>> for tree, match in tb.search(pattern, ordered=True):
+    ///     ...     print(match)
+    ///     >>> # Or use query string directly:
+    ///     >>> for tree, match in tb.search("MATCH { V [upos='VERB']; }"):
     ///     ...     print(match)
     #[pyo3(signature = (pattern, ordered=true))]
-    fn search(&self, pattern: &PyPattern, ordered: bool) -> PyMatchIterator {
-        PyMatchIterator {
+    fn search(&self, pattern: QueryArg, ordered: bool) -> PyResult<PyMatchIterator> {
+        let compiled = pattern.into_pattern()?;
+        Ok(PyMatchIterator {
             inner: Box::new(
                 self.inner
                     .clone()
-                    .match_iter(pattern.inner.clone(), ordered)
+                    .match_iter(compiled.inner, ordered)
                     .map(|result| result.map(|m| (m.tree, m.bindings))),
             ),
-        }
+        })
     }
 
     // TODO: make this more interesting (number of files? start of string?)
@@ -445,7 +466,7 @@ impl PyMatchIterator {
 ///
 /// Args:
 ///     trees: List of trees to search
-///     pattern: Compiled pattern from parse_query()
+///     pattern: Compiled pattern from compile_query() or a query string
 ///
 /// Returns:
 ///     Iterator over (tree, match) tuples
@@ -454,20 +475,21 @@ impl PyMatchIterator {
 ///     for tree, match in treesearch.search_trees([tree1, tree2], pattern):
 ///         print(match)
 #[pyfunction]
-fn py_search_trees(trees: Vec<PyTree>, pattern: &PyPattern) -> PyMatchIterator {
+fn py_search_trees(trees: Vec<PyTree>, pattern: QueryArg) -> PyResult<PyMatchIterator> {
+    let compiled = pattern.into_pattern()?;
     let results: Vec<_> = trees
         .into_iter()
         .flat_map(|tree| {
             let tree_arc = tree.inner.clone();
-            search_tree((*tree_arc).clone(), &pattern.inner)
+            search_tree((*tree_arc).clone(), &compiled.inner)
                 .into_iter()
                 .map(move |m| Ok((tree_arc.clone(), m.bindings)))
         })
         .collect();
 
-    PyMatchIterator {
+    Ok(PyMatchIterator {
         inner: Box::new(results.into_iter()),
-    }
+    })
 }
 
 /*

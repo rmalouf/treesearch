@@ -532,6 +532,40 @@ class TestSearch:
         assert word.lemma == "help"
 
 
+# Test flexible query arguments (str->Pattern coercion)
+class TestQueryArgCoercion:
+    """Tests for automatic string-to-Pattern conversion."""
+
+    def test_treebank_search_accepts_string(self, temp_conllu_file):
+        """Test that Treebank.search() accepts query string directly."""
+        tb = treesearch.Treebank.from_file(temp_conllu_file)
+        matches = list(tb.search('MATCH { V [upos="VERB"]; }'))
+        assert len(matches) > 0  # String was accepted and compiled
+
+    def test_search_trees_accepts_string(self, temp_conllu_file):
+        """Test that search_trees() accepts query string directly."""
+        trees = list(treesearch.Treebank.from_file(temp_conllu_file).trees())
+        matches = list(treesearch.search_trees(trees, 'MATCH { V [upos="VERB"]; }'))
+        assert len(matches) > 0  # String was accepted and compiled
+
+    def test_string_and_pattern_produce_same_results(self, temp_conllu_file):
+        """Test that string and compiled Pattern produce identical results."""
+        tb = treesearch.Treebank.from_file(temp_conllu_file)
+        query = 'MATCH { V [upos="VERB"]; }'
+
+        compiled_results = [m for _, m in tb.search(treesearch.compile_query(query))]
+        string_results = [m for _, m in tb.search(query)]
+
+        assert compiled_results == string_results
+
+    def test_invalid_string_raises_error(self, temp_conllu_file):
+        """Test that invalid query string raises ValueError during coercion."""
+        tb = treesearch.Treebank.from_file(temp_conllu_file)
+
+        with pytest.raises(ValueError, match="Query parse error"):
+            list(tb.search("INVALID SYNTAX"))
+
+
 # Test file searching
 class TestFileSearch:
     """Tests for searching CoNLL-U files."""
