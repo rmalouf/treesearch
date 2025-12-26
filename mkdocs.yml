@@ -11,26 +11,10 @@ theme:
 
 nav:
   - Home: index.md
-  - Getting Started:
-      - Installation: getting-started/installation.md
-      - Quick Start: getting-started/quickstart.md
-  - User Guide:
-      - Query Language: guide/query-language.md
-      - Reading Trees: guide/reading-trees.md
-      - Searching Patterns: guide/searching.md
-      - Working with Results: guide/results.md
-      - Multi-File Processing: guide/multi-file.md
-  - Research Workflows:
-      - Finding Constructions: workflows/constructions.md
-      - Frequency Analysis: workflows/frequency.md
-      - Extracting Examples: workflows/examples.md
-  - API Reference:
-      - Functions: api/functions.md
-      - Tree & Word: api/tree-word.md
-      - Pattern: api/pattern.md
-  - Advanced:
-      - Performance Tips: advanced/performance.md
-      - Architecture: advanced/architecture.md
+  - Tutorial: tutorial.md
+  - Query Language: query-language.md
+  - API Reference: api.md
+  - Internals: internals.md
 
 markdown_extensions:
   - pymdownx.highlight
