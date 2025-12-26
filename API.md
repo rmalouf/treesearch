@@ -13,7 +13,7 @@ Treesearch provides both an object-oriented and functional API for searching lin
 
 ## Basic Usage (Python)
 
-### Object-Oriented API (Recommended)
+### Object-Oriented API
 
 ```python
 import treesearch as ts
@@ -21,7 +21,7 @@ import treesearch as ts
 # Open a treebank (single file or glob pattern)
 treebank = ts.load("corpus.conllu")
 
-# Search with query string directly (simple, convenient)
+# Search with query string directly
 query = """
     MATCH {
         Verb [upos="VERB"];
@@ -42,7 +42,7 @@ for tree, match in treebank.search(pattern):
     print(f"Match: {verb.form} ← {noun.form}")
 
 # Multiple files with automatic parallel processing
-treebank = ts.load("data/*.conllu")
+treebank = ts.load("data/**/*.conllu.gz")
 for tree, match in treebank.search('MATCH { V [upos="VERB"]; }'):
     verb = tree.word(match["V"])
     print(f"Found: {verb.form}")
@@ -52,7 +52,7 @@ for tree in treebank.trees():
     print(f"Tree has {len(tree)} words")
 ```
 
-### Functional API (Alternative)
+### Functional API 
 
 ```python
 import treesearch as ts
@@ -90,6 +90,8 @@ VariableName [constraint];
 - `form="running"` - Word form
 - `deprel="nsubj"` - Dependency relation (to parent)
 - `feats.Tense="Past"` - Morphological feature (dotted notation)
+- `misc.SpaceAfter="No"` - Miscellaneous feature (dotted notation)
+
 
 **Multiple constraints** (AND):
 ```
@@ -165,7 +167,7 @@ MATCH {
 
 #### `Treebank`
 
-Represents a collection of dependency trees from one or more files. Supports multiple iterations and automatic parallel processing for multi-file treebanks.
+Represents a collection of dependency trees from one or more files.
 
 **Class Methods:**
 
@@ -204,7 +206,7 @@ treebank = ts.Treebank.from_string(conllu_text)
 Iterate over all trees in the treebank. Can be called multiple times. Uses automatic parallel processing for multi-file treebanks.
 
 **Parameters:**
-- `ordered` (bool): If True (default), trees are returned in deterministic order. If False, trees may arrive in any order for better performance.
+- `ordered` (bool): If True (default), trees are returned in corpus order. If False, trees may arrive in any order for better performance.
 
 ```python
 # Ordered iteration (default)
@@ -223,7 +225,7 @@ Search for pattern matches across all trees. Returns an iterator of (tree, match
 
 **Parameters:**
 - `pattern` (Pattern | str): Compiled Pattern from `compile_query()` or query string
-- `ordered` (bool): If True (default), matches are returned in deterministic order. If False, matches may arrive in any order for better performance.
+- `ordered` (bool): If True (default), matches are returned in corpus order. If False, matches may arrive in any order for better performance.
 
 ```python
 # Pass query string directly (simple)
@@ -541,68 +543,8 @@ except Exception as e:
 - **Query compilation**:
   - Pass query strings directly for one-off searches: `treebank.search('MATCH { V [upos="VERB"]; }')`
   - Compile once with `compile_query()` when reusing the same pattern multiple times
-- **Exhaustive search**: Finds ALL matches, not just first/leftmost
 - **Automatic parallel processing**: Multi-file operations automatically process files in parallel for better performance
 - **Memory efficient**: Iterator-based API streams results without loading entire corpus
 - **Use gzipped files**: Store CoNLL-U files as `.conllu.gz` to reduce I/O time and disk usage (decompression is automatic)
 - **Unordered iteration**: Use `ordered=False` for better performance when order doesn't matter
 
-### Parallel Processing
-
-Multi-file operations (via `load()` with glob patterns, or `get_trees()`/`get_matches()`) automatically process files in parallel using bounded channels and rayon for optimal throughput.
-
-```python
-# Automatic parallel file reading
-for tree in ts.trees("data/*.conllu"):
-    # Trees from different files processed in parallel automatically
-    pass
-
-# Automatic parallel search across files
-pattern = ts.compile_query("MATCH { Verb [upos=\"VERB\"]; }")
-for tree, match in ts.search("data/*.conllu", pattern):
-    # Searches run in parallel across files automatically
-    verb = tree.word(match["Verb"])
-    print(verb.form)
-
-# Unordered for maximum performance
-for tree, match in ts.search("data/*.conllu", pattern, ordered=False):
-    # Even faster when order doesn't matter
-    verb = tree.word(match["Verb"])
-    print(verb.form)
-```
-
-### Best Practices
-
-```python
-# ✅ GOOD: Pass query string directly for one-off searches
-for tree, match in ts.search("corpus.conllu", 'MATCH { V [upos="VERB"]; }'):
-    verb = tree.word(match["V"])
-    print(verb.form)
-
-# ✅ GOOD: Compile once when reusing query multiple times
-pattern = ts.compile_query(query_string)
-for tree in ts.trees("corpus.conllu"):
-    for tree, match in ts.search_trees(tree, pattern):
-        # Reusing compiled pattern is efficient
-        pass
-
-# ❌ BAD: Compiling same query repeatedly
-for tree in ts.trees("corpus.conllu"):
-    pattern = ts.compile_query(query_string)  # Wasteful!
-    for tree, match in ts.search_trees(tree, pattern):
-        pass
-
-# ✅ GOOD: Use search() for convenient file-level searching
-for tree, match in ts.search("corpus.conllu", 'MATCH { V [upos="VERB"]; }'):
-    verb = tree.word(match["V"])
-
-# ✅ GOOD: Multi-file operations use automatic parallel processing
-for tree, match in ts.search("data/*.conllu", pattern):
-    # Parallel processing happens automatically
-    verb = tree.word(match["Verb"])
-
-# ✅ GOOD: Use ordered=False when order doesn't matter
-for tree, match in ts.search("data/*.conllu", pattern, ordered=False):
-    # Maximum performance
-    verb = tree.word(match["Verb"])
-```
