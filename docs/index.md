@@ -1,79 +1,46 @@
 # Treesearch
 
-High-performance dependency treebank querying for corpus linguistics research.
+High-performance dependency treebank querying for corpus linguistics.
 
-## What is Treesearch?
+## Quick Start
 
-Treesearch lets you find syntactic patterns in dependency-parsed corpora using a simple query language. Designed for very large treebanks (500M+ tokens), it combines:
-
-- **Fast pattern matching** using constraint satisfaction with exhaustive search
-- **Simple query language** for specifying structural patterns
-- **Parallel processing** for searching multiple files efficiently
-- **Python API** for easy integration with research workflows
-
-## Quick Example
+```bash
+pip install treesearch
+```
 
 ```python
-import treesearch
+import treesearch as ts
 
-# Find help-to-infinitive constructions
+# Find all passive constructions
 query = """
 MATCH {
-    Help [lemma="help", upos="VERB"];
-    To [lemma="to"];
-    XComp [upos="VERB"];
-    Help -[xcomp]-> XComp;
-    XComp -[mark]-> To;
-    Help << XComp;
+    V [upos="VERB"];
+    V -[aux:pass]-> _;
+    V -[nsubj:pass]-> Subj;
 }
 """
 
-pattern = treesearch.compile_query(query)
-for tree, match in treesearch.search("corpus/*.conllu", pattern):
-    help_word = tree[match["Help"]]
-    xcomp_word = tree[match["XComp"]]
-    print(f"{help_word.form} ... to {xcomp.form}: {tree.sentence_text}")
+for tree, match in ts.search("corpus/*.conllu", query):
+    verb = tree.word(match["V"])
+    subj = tree.word(match["Subj"])
+    print(f"{subj.form} was {verb.form}: {tree.sentence_text}")
 ```
 
-## Key Features
+## Features
 
-### Powerful Query Language
-- Node constraints: lemma, POS tags, word forms (with negation support)
-- Dependency edges: specify parent-child relationships (positive and negative)
-- Negative edge constraints: require absence of relationships
-- Precedence operators: linear word order constraints
-- See [Query Language](guide/query-language.md) for complete reference
+- **Query language** for structural patterns (nodes, edges, precedence, negation)
+- **Exhaustive search** finds all matches using CSP solving
+- **Automatic parallelism** for multi-file processing
+- **Memory efficient** streaming with string interning
+- **Transparent gzip** support
 
-### Built for Scale
-- Designed for corpora with 500M+ tokens
-- Parallel file processing using Rust's rayon
-- Iterator-based API for memory efficiency
-- Transparent gzip support
+## Documentation
 
-## Get Started
-
-- **[Installation](getting-started/installation.md)** - Install from source or pip
-- **[Quick Start](getting-started/quickstart.md)** - 5-minute tutorial
-- **[Query Language](guide/query-language.md)** - Learn the query syntax
-- **[API Reference](api/functions.md)** - Complete API documentation
-
-## Example Workflows
-
-- **[Finding Constructions](workflows/constructions.md)** - Locate specific syntactic patterns
-- **[Frequency Analysis](workflows/frequency.md)** - Count construction occurrences
-- **[Extracting Examples](workflows/examples.md)** - Get representative sentences
-
-## Architecture
-
-Treesearch uses a constraint satisfaction approach to pattern matching:
-
-- **Core**: Rust for performance-critical code
-- **Bindings**: PyO3 for Python integration
-- **Solver**: CSP with DFS and forward checking
-- **Parallelization**: File-level parallel processing
-
-See [Architecture](advanced/architecture.md) for implementation details.
+- **[Tutorial](tutorial.md)** - Complete walkthrough from installation to advanced usage
+- **[Query Language](query-language.md)** - Full syntax reference
+- **[API Reference](api.md)** - Functions and classes
+- **[Internals](internals.md)** - Architecture for contributors
 
 ## License
 
-MIT License - see repository for details.
+MIT
