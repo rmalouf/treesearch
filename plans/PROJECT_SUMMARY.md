@@ -27,6 +27,16 @@ MATCH {
     Help -> To;           # Help has child To
     To -[mark]-> Verb;    # To has child Verb with deprel=mark
 }
+EXCEPT {
+    # Reject matches where this pattern holds
+    Aux [upos="AUX"];
+    Aux -> Verb;
+}
+OPTIONAL {
+    # Extend match with these bindings if possible
+    Obj [];
+    Verb -[obj]-> Obj;
+}
 ```
 
 ### Matching Algorithm
@@ -52,8 +62,10 @@ MATCH {
 - ✅ Iterator-based APIs for trees and matches (iterators.rs)
 - ✅ Channel-based parallel file processing with rayon
 - ✅ Negative edge constraints (`!->`, `!-[label]->`)
+- ✅ EXCEPT blocks for negative existential queries
+- ✅ OPTIONAL blocks for optional variable binding
 - ✅ Morphological features (FEATS) and miscellaneous annotations (MISC)
-- ✅ 92 Rust tests passing
+- ✅ 96 Rust tests passing
 
 **Python Bindings** (100% complete)
 - ✅ PyO3 bindings with streamlined OO + functional API (python.rs)
@@ -110,34 +122,32 @@ MATCH {
 ```python
 import treesearch as ts
 
-# Parse query once
+# Compile query once
 query_str = """
 MATCH {
     Verb [upos="VERB"];
     Subj [upos="NOUN"];
     Verb -[nsubj]-> Subj;
 }
+OPTIONAL {
+    Obj [];
+    Verb -[obj]-> Obj;
+}
 """
-pattern = ts.parse_query(query_str)
+pattern = ts.compile_query(query_str)
 
 # Object-oriented API: Create treebank and iterate
-treebank = ts.Treebank.from_file("corpus.conllu")
-for tree, match in treebank.matches(pattern):
-  verb = tree.get_word(match["Verb"])
-  subj = tree.get_word(match["Subj"])
-  print(f"Found match: {verb.form} ← {subj.form}")
+treebank = ts.load("corpus.conllu")
+for tree, match in treebank.search(pattern):
+    verb = tree.word(match["Verb"])
+    subj = tree.word(match["Subj"])
+    obj_str = tree.word(match["Obj"]).form if "Obj" in match else "(none)"
+    print(f"{verb.form} ← {subj.form}, obj: {obj_str}")
 
 # Functional API: Search files directly with automatic parallelization
 for tree, match in ts.search("data/*.conllu", pattern):
-  verb = tree.get_word(match["Verb"])
-  print(f"{verb.form} in: {tree.sentence_text}")
-
-# Work with individual trees
-for tree in ts.trees("corpus.conllu"):
-  for match in ts.search(tree, pattern):
-    verb = tree.get_word(match["Verb"])
-    subj = tree.get_word(match["Subj"])
-    print(f"{verb.form} ← {subj.form}")
+    verb = tree.word(match["Verb"])
+    print(f"{verb.form} in: {tree.sentence_text}")
 ```
 
 ## References

@@ -403,10 +403,11 @@ Start with **PyPI Publishing** to get the project out to users with current func
 - **Ancestor/Descendant relations**: `X <<- Y` (X is ancestor of Y)
 - **Sibling relations**: `X ~ Y` (X and Y share parent)
 - **Distance constraints**: `X <-[2..5]- Y` (path length 2-5)
-- **Optional matches**: `X -[nsubj]->? Y` (Y is optional)
 - **Capture groups**: Store intermediate matches
 - **Query optimization**: Reorder constraints for performance
 - **Indexing**: Pre-index corpus for faster repeated queries
+
+> **Note**: Optional matches are now implemented via OPTIONAL blocks (December 2025).
 
 ---
 

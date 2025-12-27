@@ -1,5 +1,11 @@
 # Plan: EXCEPT and OPTIONAL Blocks for CSP Solver
 
+## Status: ✅ COMPLETED (December 2025)
+
+Implementation complete. See `EXCEPT_OPTIONAL_TASKS.md` for task checklist.
+
+---
+
 ## Summary
 
 Extend the CSP solver to support EXCEPT and OPTIONAL blocks, enabling:
