@@ -99,6 +99,38 @@ Use `_` when you need to check for existence without binding:
 'MATCH { V [upos="VERB"]; V !-[obj]-> _; }'
 ```
 
+### EXCEPT Blocks
+
+Reject matches where a condition is true:
+
+```python
+# Find verbs that are NOT modified by adverbs
+'''
+MATCH { V [upos="VERB"]; }
+EXCEPT { Adv [upos="ADV"]; V -[advmod]-> Adv; }
+'''
+```
+
+### OPTIONAL Blocks
+
+Capture additional bindings when available:
+
+```python
+# Find verbs, optionally capturing their object
+query = '''
+MATCH { V [upos="VERB"]; }
+OPTIONAL { O []; V -[obj]-> O; }
+'''
+
+for tree, match in treebank.search(query):
+    verb = tree.word(match["V"])
+    if "O" in match:  # check if optional matched
+        obj = tree.word(match["O"])
+        print(f"{verb.lemma} -> {obj.form}")
+    else:
+        print(f"{verb.lemma} (intransitive)")
+```
+
 ## Working with Results
 
 Matches are dictionaries mapping variable names to word IDs (0-indexed):
