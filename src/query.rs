@@ -875,4 +875,31 @@ MATCH {
             _ => panic!("Expected And constraint for X"),
         }
     }
+
+    #[test]
+    fn test_duplicate_extension_variable() {
+        // Same new variable name in multiple EXCEPT/OPTIONAL blocks
+        let query = r#"
+            MATCH { V [upos="VERB"]; }
+            EXCEPT { M [upos="ADV"]; V -[advmod]-> M; }
+            OPTIONAL { M [upos="NOUN"]; V -[obj]-> M; }
+        "#;
+        let pattern = compile_query(query);
+        assert!(matches!(
+            pattern,
+            Err(QueryError::DuplicateExtensionVariable(_))
+        ));
+
+        // Same variable in two EXCEPT blocks
+        let query = r#"
+            MATCH { V [upos="VERB"]; }
+            EXCEPT { M []; V -[advmod]-> M; }
+            EXCEPT { M []; V -[obj]-> M; }
+        "#;
+        let pattern = compile_query(query);
+        assert!(matches!(
+            pattern,
+            Err(QueryError::DuplicateExtensionVariable(_))
+        ));
+    }
 }

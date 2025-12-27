@@ -146,6 +146,53 @@ fn has_any_match(
     !solve_with_bindings(tree, pattern, initial_bindings).is_empty()
 }
 
+/// Process OPTIONAL blocks: extend base bindings with cross-product of all extensions.
+/// Each OPTIONAL is evaluated independently against base_bindings.
+/// Returns all combinations of optional extensions (or just base if none match).
+fn process_optionals(
+    tree: &Tree,
+    base_bindings: &Bindings,
+    optional_patterns: &[Pattern],
+) -> Vec<Bindings> {
+    if optional_patterns.is_empty() {
+        return vec![base_bindings.clone()];
+    }
+
+    // For each OPTIONAL, collect possible extensions
+    let mut extension_sets: Vec<Vec<Bindings>> = Vec::new();
+    for optional in optional_patterns {
+        let extensions = solve_with_bindings(tree, optional, base_bindings);
+        extension_sets.push(extensions);
+    }
+
+    // Compute cross-product of all extensions
+    let mut results = vec![base_bindings.clone()];
+
+    for extensions in extension_sets {
+        if extensions.is_empty() {
+            // No match for this OPTIONAL - keep results unchanged
+            continue;
+        }
+        // Replace each current result with extended versions
+        let mut new_results = Vec::new();
+        for result in &results {
+            for ext in &extensions {
+                let mut combined = result.clone();
+                // Merge in the new bindings from this OPTIONAL
+                for (k, v) in ext {
+                    if !combined.contains_key(k) {
+                        combined.insert(k.clone(), *v);
+                    }
+                }
+                new_results.push(combined);
+            }
+        }
+        results = new_results;
+    }
+
+    results
+}
+
 /// Search with pre-bound variables from initial_bindings.
 /// Variables in initial_bindings are pre-assigned; others are solved.
 /// Returns all possible bindings (including initial bindings).
@@ -194,13 +241,34 @@ pub fn find_all_matches(tree: Tree, pattern: &Pattern) -> Vec<Match> {
     let tree = Arc::new(tree);
     let empty_bindings = Bindings::new();
 
-    solve_with_bindings(&tree, pattern, &empty_bindings)
-        .into_iter()
-        .map(|bindings| Match {
-            tree: Arc::clone(&tree),
-            bindings,
-        })
-        .collect()
+    // Find all MATCH block solutions
+    let base_matches = solve_with_bindings(&tree, pattern, &empty_bindings);
+
+    // Process EXCEPT and OPTIONAL blocks
+    let mut results = Vec::new();
+    for base_bindings in base_matches {
+        // Check EXCEPT: reject if ANY except block matches
+        let rejected = pattern
+            .except_patterns
+            .iter()
+            .any(|except| has_any_match(&tree, except, &base_bindings));
+
+        if rejected {
+            continue;
+        }
+
+        // Process OPTIONAL blocks: extend with all combinations
+        let extended_solutions = process_optionals(&tree, &base_bindings, &pattern.optional_patterns);
+
+        for bindings in extended_solutions {
+            results.push(Match {
+                tree: Arc::clone(&tree),
+                bindings,
+            });
+        }
+    }
+
+    results
 }
 
 fn dfs(
@@ -1019,5 +1087,99 @@ mod tests {
             }
             other => panic!("Unexpected constraint on W: {:?}", other),
         }
+    }
+
+    #[test]
+    fn test_except_blocks() {
+        // Tree: saw (VERB) -> John (nsubj), running (xcomp) -> quickly (advmod)
+        let tree = build_multi_verb_tree();
+
+        // Test 1: EXCEPT rejects when condition matches
+        let matches = search_tree_query(
+            tree.clone(),
+            r#"MATCH { V [upos="VERB"]; }
+               EXCEPT { M [upos="ADV"]; V -[advmod]-> M; }"#,
+        )
+        .unwrap();
+        // Should find word 0 ("saw") but not word 2 ("running" with advmod)
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].bindings, hashmap! { "V" => 0 });
+
+        // Test 2: Multiple EXCEPT blocks (ANY semantics)
+        let matches = search_tree_query(
+            tree.clone(),
+            r#"MATCH { V [upos="VERB"]; }
+               EXCEPT { M [upos="ADV"]; V -[advmod]-> M; }
+               EXCEPT { C [upos="VERB"]; V -[xcomp]-> C; }"#,
+        )
+        .unwrap();
+        // Both verbs rejected: saw has xcomp, running has advmod
+        assert_eq!(matches.len(), 0);
+
+        // Test 3: EXCEPT with shared MATCH variable
+        let matches = search_tree_query(
+            tree.clone(),
+            r#"MATCH { V [upos="VERB"]; S [upos="PROPN"]; V -[nsubj]-> S; }
+               EXCEPT { C [upos="VERB"]; V -[xcomp]-> C; }"#,
+        )
+        .unwrap();
+        // saw-John pair rejected because saw has xcomp
+        assert_eq!(matches.len(), 0);
+    }
+
+    #[test]
+    fn test_optional_blocks() {
+        // Tree: saw -> John (nsubj), running (xcomp) -> quickly (advmod)
+        let tree = build_multi_verb_tree();
+
+        // Test 1: OPTIONAL found - variable present in bindings
+        let matches = search_tree_query(
+            tree.clone(),
+            r#"MATCH { V [lemma="see"]; }
+               OPTIONAL { S [upos="PROPN"]; V -[nsubj]-> S; }"#,
+        )
+        .unwrap();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].bindings, hashmap! { "V" => 0, "S" => 1 });
+
+        // Test 2: OPTIONAL not found - variable absent from bindings
+        let matches = search_tree_query(
+            tree.clone(),
+            r#"MATCH { V [lemma="run"]; }
+               OPTIONAL { S [upos="PROPN"]; V -[nsubj]-> S; }"#,
+        )
+        .unwrap();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].bindings, hashmap! { "V" => 2 });
+        assert!(!matches[0].bindings.contains_key("S"));
+
+        // Test 3: Multiple OPTIONAL blocks - cross-product semantics
+        let matches = search_tree_query(
+            tree.clone(),
+            r#"MATCH { V [lemma="see"]; }
+               OPTIONAL { S [upos="PROPN"]; V -[nsubj]-> S; }
+               OPTIONAL { C [upos="VERB"]; V -[xcomp]-> C; }"#,
+        )
+        .unwrap();
+        // Both OPTIONAL blocks match, so we get the cross-product (1 result with both)
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].bindings, hashmap! { "V" => 0, "S" => 1, "C" => 2 });
+    }
+
+    #[test]
+    fn test_combined_except_optional() {
+        let tree = build_multi_verb_tree();
+
+        // Find all verbs, exclude those with advmod, optionally capture subject
+        let matches = search_tree_query(
+            tree.clone(),
+            r#"MATCH { V [upos="VERB"]; }
+               EXCEPT { M [upos="ADV"]; V -[advmod]-> M; }
+               OPTIONAL { S [upos="PROPN"]; V -[nsubj]-> S; }"#,
+        )
+        .unwrap();
+        // Should find only word 0 ("saw"), with subject
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].bindings, hashmap! { "V" => 0, "S" => 1 });
     }
 }

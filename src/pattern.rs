@@ -208,14 +208,16 @@ impl Pattern {
                 // Normal edge between two named variables
                 // For positive labeled edges, add DepRel constraint to target
                 // For negative labeled edges, skip DepRel (Y's deprel is unconstrained)
+                self.add_var(&edge_constraint.from, Constraint::Any);
                 if let Some(label) = &edge_constraint.label {
                     if !edge_constraint.negated {
                         self.add_var(&edge_constraint.to, Constraint::DepRel(label.clone()));
+                    } else {
+                        self.add_var(&edge_constraint.to, Constraint::Any);
                     }
                 } else {
-                    self.add_var(&edge_constraint.from, Constraint::Any);
+                    self.add_var(&edge_constraint.to, Constraint::Any);
                 }
-                self.add_var(&edge_constraint.to, Constraint::Any);
 
                 let edge_id = self.edge_constraints.len();
                 let from_var_id = self.var_ids.get(&edge_constraint.from).unwrap();
