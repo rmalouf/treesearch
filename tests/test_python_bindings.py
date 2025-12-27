@@ -522,7 +522,7 @@ class TestSearch:
 
     def test_search_multiple_constraints(self, sample_tree):
         """Test searching with multiple constraints on one variable."""
-        pattern = treesearch.compile_query('MATCH { V [upos="VERB", lemma="help"]; }')
+        pattern = treesearch.compile_query('MATCH { V [upos="VERB" & lemma="help"]; }')
         matches = list(treesearch.search_trees(sample_tree, pattern))
 
         assert len(matches) == 1
@@ -703,7 +703,7 @@ class TestIntegration:
         # 1. compile a query
         query = """
             MATCH {
-                Verb [upos="VERB", lemma="help"];
+                Verb [upos="VERB" & lemma="help"];
                 Noun [upos="PRON"];
                 Verb -[obj]-> Noun;
             }

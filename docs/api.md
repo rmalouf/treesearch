@@ -127,7 +127,7 @@ MATCH {
     # Node constraints
     V [upos="VERB"];              # by POS
     V [lemma="run"];              # by lemma
-    V [upos="VERB", lemma="run"]; # multiple (AND)
+    V [upos="VERB" & lemma="run"]; # multiple (AND)
     V [feats.Tense="Past"];       # by feature
     V [];                         # any word
 

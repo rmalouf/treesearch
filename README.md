@@ -35,7 +35,7 @@ Find passive constructions in an English treebank:
 import treesearch
 
 # Parse a pattern for passive voice
-pattern = treesearch.parse_query("""
+pattern = treesearch.compile_query("""
     MATCH {
         V [upos="VERB"];
         Aux [lemma="be"];
@@ -45,7 +45,7 @@ pattern = treesearch.parse_query("""
 
 # Search a single file
 for tree, match in treesearch.search("corpus.conllu", pattern):
-    verb = tree.get_word(match["V"])
+    verb = tree.word(match["V"])
     print(f"{verb.form}: {tree.sentence_text}")
 ```
 
@@ -54,13 +54,13 @@ Search multiple files with automatic parallel processing:
 ```python
 # Glob pattern for multiple files
 for tree, match in treesearch.search("data/*.conllu", pattern):
-    verb = tree.get_word(match["V"])
+    verb = tree.word(match["V"])
     print(f"{verb.form}: {tree.sentence_text}")
 
 # Or use the object-oriented API
 treebank = treesearch.load("data/*.conllu")
-for tree, match in treebank.matches(pattern):
-    verb = tree.get_word(match["V"])
+for tree, match in treebank.search(pattern):
+    verb = tree.word(match["V"])
     print(f"{verb.form}: {tree.sentence_text}")
 ```
 
@@ -70,13 +70,13 @@ Patterns specify structural constraints on dependency trees:
 
 ```
 MATCH {
-    Verb [upos="VERB", lemma="help"];
+    Verb [upos="VERB" & lemma="help"];
     Obj [upos="NOUN"];
     Verb -[obj]-> Obj;
 }
 ```
 
-**Node constraints**: `upos`, `xpos`, `lemma`, `form`, `deprel`, `feats.*` (morphological features), `misc.*` (miscellaneous eatures)
+**Node constraints**: `upos`, `xpos`, `lemma`, `form`, `deprel`, `feats.*` (morphological features), `misc.*` (miscellaneous features)
 
 **Edge constraints**: `->` (child), `-[label]->` (labeled edge), `!->` (negative), `!-[label]->` (negative labeled edge)
 
