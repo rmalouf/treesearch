@@ -13,10 +13,12 @@
 Documentation consists of:
 
 1. **README.md** - GitHub landing page with quick install and examples
-2. **docs/** - Full documentation site
-   - **docs/index.md** - Documentation home page
-   - **User's Guide** - Topic-based guide for users
-   - **API Reference** - Complete Python API documentation
+2. **docs/** - Full documentation site (flat structure)
+   - **docs/index.md** - Documentation home with quick start
+   - **docs/tutorial.md** - Complete walkthrough from installation to advanced usage
+   - **docs/query-language.md** - Query syntax reference
+   - **docs/api.md** - Functions and classes reference
+   - **docs/internals.md** - Architecture for contributors
 
 ### File Organization
 
@@ -24,21 +26,11 @@ Documentation consists of:
 treesearch/
 ├── README.md                          # GitHub landing page
 └── docs/
-    ├── index.md                       # Documentation home
-    ├── guide/
-    │   ├── installation.md           # Installation instructions
-    │   ├── quickstart.md             # First steps tutorial
-    │   ├── query-language.md         # Query syntax reference
-    │   ├── reading-trees.md          # Loading treebanks
-    │   ├── searching.md              # Pattern matching
-    │   ├── working-with-results.md   # Navigating trees and matches
-    │   └── examples.md               # Practical use cases
-    └── api/
-        ├── overview.md               # API organization
-        ├── treebank.md               # Treebank class
-        ├── tree-word.md              # Tree and Word classes
-        ├── pattern.md                # Pattern class
-        └── functions.md              # Standalone functions
+    ├── index.md                       # Documentation home with quick start
+    ├── tutorial.md                    # Complete walkthrough
+    ├── query-language.md              # Query syntax reference
+    ├── api.md                         # Functions and classes
+    └── internals.md                   # Architecture for contributors
 ```
 
 ---
@@ -84,80 +76,81 @@ treesearch/
 
 ## Content Guidelines
 
-### User's Guide
+### Tutorial (tutorial.md)
 
-**Organization**: Topic-based, not linear. Readers should be able to jump to what they need.
+**Purpose**: Complete walkthrough from installation to advanced usage.
 
 **Structure**:
+1. **Installation** - pip and from-source instructions
+2. **Basic Usage** - Load, search, access results
+3. **Writing Queries** - Node constraints, edges, precedence
+4. **Working with Results** - Match dicts, word properties, tree navigation
+5. **Examples** - Passive construction, collecting examples
+6. **Performance Tips** - Compile once, ordered=False, gzip, streaming
 
-1. **Installation** - How to install from source (pip package later)
-2. **Quickstart** - First working example in 5 minutes
-3. **Query Language** - Complete syntax reference with linguistic examples
-4. **Reading Trees** - Loading treebanks from files
-5. **Searching** - Pattern matching techniques
-6. **Working with Results** - Navigating trees, accessing word properties
-7. **Examples** - Real-world use cases with linguistic phenomena
+**Style**:
+- Progressive complexity (simple → advanced)
+- Each section builds on previous
+- Complete runnable examples
+- Real linguistic constructions (passives, relative clauses)
 
-**Examples**:
-- Use real linguistic constructions (help-to-infinitive, passive voice, relative clauses)
-- Code snippets only (not full scripts - those go in separate examples/)
-- Always complete and runnable within context
-- Assume imports when context is clear
+### Query Language Reference (query-language.md)
 
-**External references**:
-- Link to CoNLL-U format documentation (don't explain it)
-- Link to Universal Dependencies for linguistic background
-- Don't re-explain dependency parsing concepts
+**Purpose**: Complete syntax reference with examples.
 
-### API Reference
+**Structure**:
+- Query structure overview
+- Node constraints (table format)
+- Edge constraints (positive and negative)
+- Precedence operators
+- Comments
+- Examples of common patterns
+- Common errors table
 
-**Organization**: Topical grouping, not alphabetical.
+**Style**:
+- Reference-focused (users look up specific syntax)
+- Concise descriptions
+- Table format for constraint types
+- Code examples for each feature
 
-**Categories**:
-1. **Treebank operations** - Creating and iterating treebanks
-2. **Pattern compilation** - parse_query()
-3. **Searching** - search(), get_matches()
-4. **Tree/Word access** - Navigating dependency structures
-5. **Helper functions** - Utility functions
+### API Reference (api.md)
 
-**For each function/class/method**:
-- Full signature with types
-- Brief description (1-2 sentences)
-- Parameters with types and descriptions
-- Return value with type and description
-- At least one example
-- Related functions/methods
-- Notes about behavior (optional)
+**Organization**: Functions first, then classes.
 
-**Example format**:
-```markdown
-### get_matches()
+**Current API functions**:
+1. `load(path)` → Treebank
+2. `from_string(text)` → Treebank
+3. `compile_query(query)` → Pattern
+4. `trees(source, ordered=True)` → Iterator[Tree]
+5. `search(source, query, ordered=True)` → Iterator[tuple[Tree, dict]]
+6. `search_trees(trees, query)` → Iterator[tuple[Tree, dict]]
 
-Search one or more CoNLL-U files for pattern matches.
+**Classes documented**:
+1. `Treebank` - Collection with `.trees()` and `.search()` methods
+2. `Tree` - Dependency tree with `.word(id)`, `sentence_text`, `metadata`
+3. `Word` - All properties and navigation methods
+4. `Pattern` - Compiled query (opaque)
 
-```python
-get_matches(source: str | Path | Iterable[str | Path], query: str | Pattern, ordered: bool = True) -> Iterator[tuple[Tree, dict[str, int]]]
-```
+**Format for each item**:
+- Signature with types
+- Brief description
+- Simple example
 
-**Parameters:**
-- `source` (str | Path | Iterable) - Path to file, glob pattern, or list of paths
-- `query` (str | Pattern) - Query string or compiled pattern from parse_query()
-- `ordered` (bool) - If True (default), return matches in deterministic order
+**Note**: API docs include a Query Language Summary section linking to full reference
 
-**Returns:**
-- Iterator of (tree, match) tuples
+### Internals (internals.md)
 
-**Example:**
+**Purpose**: Architecture documentation for contributors.
 
-```python
-pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
-for tree, match in treesearch.search("corpus.conllu", pattern):
-    verb = tree.get_word(match["V"])
-    print(f"{verb.form}: {tree.sentence_text}")
-```
+**Content**:
+- Architecture overview with component list
+- Search algorithm pseudocode
+- Constraint types explanation
+- Parallelization diagram
+- Design decisions rationale
+- Source file reference table
 
-**See also:** search(), get_trees()
-```
+**Audience**: Developers, not end users
 
 ### README.md
 
@@ -196,19 +189,19 @@ for tree, match in treesearch.search("corpus.conllu", pattern):
 
 **Example style**:
 ```python
-import treesearch
+import treesearch as ts
 
 # Find passive constructions
-pattern = treesearch.parse_query("""
-    MATCH {
-        V [upos="VERB"];
-        Aux [lemma="be"];
-        V <-[aux:pass]- Aux;
-    }
-""")
+query = """
+MATCH {
+    V [upos="VERB"];
+    V -[aux:pass]-> _;
+    V -[nsubj:pass]-> Subj;
+}
+"""
 
-for tree, match in treesearch.get_matches("corpus.conllu", pattern):
-    verb = tree.get_word(match["V"])
+for tree, match in ts.search("corpus.conllu", query):
+    verb = tree.word(match["V"])
     print(f"{tree.sentence_text}")
 ```
 
@@ -334,21 +327,21 @@ MIT
 
 ## docs/index.md Specification
 
-**Purpose**: Entry point to documentation - orient readers and direct them to relevant sections.
+**Purpose**: Entry point to documentation with quick start example.
 
-**Required sections**:
-1. Brief description (2-3 sentences)
-2. Quick navigation to User's Guide sections
-3. Quick navigation to API Reference sections
-4. Link to installation
-5. Link to GitHub/source
+**Current sections**:
+1. Brief description (1 sentence)
+2. Quick Start (install + example)
+3. Features list (concise)
+4. Documentation links
+5. License
 
 **What NOT to include**:
-- Duplicating README content
-- Feature marketing
-- Extensive examples (link to guide)
+- Extensive examples (link to tutorial)
+- Full API details (link to api.md)
+- Implementation details (link to internals.md)
 
-**Length**: ~50-80 lines
+**Length**: ~50 lines
 
 ---
 
@@ -372,11 +365,10 @@ for match in search(...):
 **Good**:
 
 ```python
-import treesearch
+import treesearch as ts
 
-pattern = treesearch.parse_query('MATCH { V [upos="VERB"]; }')
-for tree, match in treesearch.search("corpus.conllu", pattern):
-    verb = tree.get_word(match["V"])
+for tree, match in ts.search("corpus.conllu", 'MATCH { V [upos="VERB"]; }'):
+    verb = tree.word(match["V"])
     print(f"Found: {verb.form}")
 ```
 
@@ -402,7 +394,7 @@ for tree, match in treesearch.search("corpus.conllu", pattern):
 
 ## Examples Template
 
-### User's Guide Example
+### Tutorial Example
 
 ```markdown
 ## Finding Passive Constructions
@@ -415,16 +407,18 @@ Passive constructions in Universal Dependencies typically have:
 ### Basic Pattern
 
 ```python
-pattern = treesearch.parse_query("""
-    MATCH {
-        V [upos="VERB"];
-        Aux [lemma="be"];
-        V <-[aux:pass]- Aux;
-    }
-""")
+import treesearch as ts
 
-for tree, match in treesearch.get_matches("corpus.conllu", pattern):
-    verb = tree.get_word(match["V"])
+query = """
+MATCH {
+    V [upos="VERB"];
+    V -[aux:pass]-> _;
+    V -[nsubj:pass]-> Subj;
+}
+"""
+
+for tree, match in ts.search("corpus.conllu", query):
+    verb = tree.word(match["V"])
     print(tree.sentence_text)
 ```
 
@@ -433,55 +427,27 @@ for tree, match in treesearch.get_matches("corpus.conllu", pattern):
 To find passives with *by*-phrases:
 
 ```python
-pattern = treesearch.parse_query("""
-    MATCH {
-        V [upos="VERB"];
-        Aux [lemma="be"];
-        Agent [];
-        V <-[aux:pass]- Aux;
-        V -[obl:agent]-> Agent;
-    }
-""")
+query = """
+MATCH {
+    V [upos="VERB"];
+    Agent [];
+    V -[aux:pass]-> _;
+    V -[obl:agent]-> Agent;
+}
+"""
 ```
 ```
 
 ### API Reference Example
 
 ```markdown
-### parse_query()
+### compile_query(query) → Pattern
 
-Compile a query string into a Pattern object.
-
-```python
-parse_query(query: str) -> Pattern
-```
-
-**Parameters:**
-- `query` (str) - Query string in Treesearch query language
-
-**Returns:**
-- Pattern object for use with search functions
-
-**Raises:**
-- `ValueError` - If query syntax is invalid
-
-**Example:**
+Compile a query string into a reusable Pattern. Raises `ValueError` on syntax error.
 
 ```python
-pattern = treesearch.parse_query("""
-    MATCH {
-        V [upos="VERB"];
-        N [upos="NOUN"];
-        V -[obj]-> N;
-    }
-""")
+pattern = ts.compile_query('MATCH { V [upos="VERB"]; }')
 ```
-
-**Notes:**
-- Pattern objects are reusable and thread-safe
-- Parse once and reuse for better performance
-
-**See also:** search(), get_matches(), get_trees()
 ```
 
 ---
@@ -490,16 +456,25 @@ pattern = treesearch.parse_query("""
 
 ### When to Update
 
-**User's Guide:**
+**tutorial.md:**
 - New query syntax features
 - Changed behavior in searching/iteration
 - New usage patterns or best practices
 
-**API Reference:**
+**query-language.md:**
+- New constraint types
+- Changed syntax
+- New operator support
+
+**api.md:**
 - Any change to public API signatures
 - New functions/classes/methods
 - Changed return types or parameters
-- New examples for clarity
+
+**internals.md:**
+- Architecture changes
+- New components
+- Changed design decisions
 
 **README:**
 - Installation method changes
@@ -513,27 +488,26 @@ Before committing documentation:
 - [ ] Audience appropriate (linguists who know Python, not general users)
 - [ ] No marketing language
 - [ ] Code examples complete and tested
+- [ ] Uses current API names (`compile_query`, `tree.word`, etc.)
 - [ ] Consistent terminology (pattern/treebank/match)
 - [ ] Real linguistic examples (not toy cases)
 - [ ] Links working
 - [ ] Proper Markdown formatting
-- [ ] Appropriate section (User's Guide vs API Reference)
 
 ---
 
 ## Future Additions
 
-As project grows:
+Potential additions as project grows:
 
-- **Tutorials section** - Step-by-step workflows for common tasks
-- **Examples repository** - Full scripts and Jupyter notebooks
-- **FAQ** - Common questions and solutions
+- **More examples in tutorial.md** - Additional linguistic constructions
+- **Examples repository** - Full scripts and Jupyter notebooks in `examples/`
+- **FAQ section** - Common questions and solutions
 - **Troubleshooting** - Common errors and fixes
-
-These should be separate from core User's Guide and API Reference.
 
 ---
 
 ## Version History
 
 - **December 2025**: Initial version defining documentation structure and style
+- **December 2025**: Consolidated to flat structure (index, tutorial, query-language, api, internals)
