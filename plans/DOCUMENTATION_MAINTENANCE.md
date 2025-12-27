@@ -38,42 +38,57 @@ Updating API.md took 4-5 iterations because I didn't check the actual implementa
 - `src/python.rs` - All classes and their methods
 - `python/treesearch/treesearch.pyi` - Type hints (should match reality)
 
-**Current API surface (Dec 2024):**
+**Current API surface (Dec 2025):**
 
 Functions:
-- `load(source)` → Treebank
+- `load(path)` → Treebank
 - `from_string(text)` → Treebank
 - `compile_query(query)` → Pattern
-- `trees(source, ordered=True)` → TreeIterator
-- `search(source, query, ordered=True)` → MatchIterator
-- `search_trees(trees, query)` → MatchIterator
+- `trees(source, ordered=True)` → Iterator[Tree]
+- `search(source, query, ordered=True)` → Iterator[tuple[Tree, dict]]
+- `search_trees(trees, query)` → Iterator[tuple[Tree, dict]]
 
 Classes:
 - `Treebank` with methods:
   - `.trees(ordered=True)`
-  - `.search(pattern, ordered=True)`
-- `Tree` with methods:
+  - `.search(query, ordered=True)`
+- `Tree` with methods/properties:
   - `.word(id)` - raises IndexError
   - `[id]` - indexing syntax
+  - `.sentence_text`, `.metadata`
+  - `len(tree)`
 - `Word` with properties:
-  - `.form`, `.lemma`, `.upos`, `.deprel`, etc.
-  - `.parent()`, `.children()`, `.children_by_deprel()`
+  - `.id`, `.token_id`, `.form`, `.lemma`, `.upos`, `.xpos`, `.deprel`, `.head`
+  - `.children_ids`, `.feats`, `.misc`
+  - `.parent()`, `.children()`, `.children_by_deprel(deprel)`
+- `Pattern` - opaque compiled pattern
 
 **Watch out for:**
 - Function renames (e.g., `parse_query` → `compile_query`)
 - Method renames (e.g., `.matches()` → `.search()`)
 - Old synonyms that were removed (e.g., `open()` vs `load()`)
+- Property renames (e.g., `.pos` → `.upos`)
+
+### Current Documentation Structure
+
+```
+docs/
+├── index.md           # Landing page with quick start
+├── tutorial.md        # Complete walkthrough
+├── query-language.md  # Syntax reference
+├── api.md             # Functions and classes
+└── internals.md       # Architecture for contributors
+```
 
 ### Quick Verification
 
 Before committing doc changes:
 ```bash
-# Check for old function names
-grep -E "parse_query|get_trees|get_matches|\.matches\(" API.md
+# Check for old function names in docs
+grep -rE "parse_query|get_trees|get_matches|\.matches\(|\.pos[^t]" docs/
 
-# Check for consistency with Python API
-diff <(grep "^def " python/treesearch/__init__.py) \
-     <(grep -E "^#### \`[a-z_]+\(" API.md)
+# Verify API functions match
+grep "^def " python/treesearch/__init__.py
 ```
 
 ### General Principle

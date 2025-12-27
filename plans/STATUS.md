@@ -4,7 +4,7 @@
 
 ## Overview
 
-This document tracks the internal development status of Treesearch. For user-facing documentation, see README.md and API.md.
+This document tracks the internal development status of Treesearch. For user-facing documentation, see `docs/` folder (tutorial, API reference, query language).
 
 ## Implementation Status
 
@@ -21,7 +21,7 @@ This document tracks the internal development status of Treesearch. For user-fac
 - Negative edge constraints (`!->`, `!-[label]->`)
 - Match struct with Arc<Tree> sharing
 - Morphological features (FEATS field) and miscellaneous annotations (MISC field)
-- 92 tests passing
+- 96 tests passing (92 unit + 4 doctests)
 
 **Python Bindings**:
 - PyO3 wrapper code in `src/python.rs`
@@ -37,7 +37,15 @@ This document tracks the internal development status of Treesearch. For user-fac
 - Full access to word features (FEATS) and misc annotations (MISC)
 - Improved error handling with IndexError for out-of-range word IDs
 - Automatic parallel processing for multi-file operations
-- 42 Python tests passing
+- 46 Python tests passing
+
+**Documentation**:
+- Complete user documentation in `docs/`:
+  - `index.md` - Landing page with quick start
+  - `tutorial.md` - Complete walkthrough from installation to advanced usage
+  - `query-language.md` - Full syntax reference
+  - `api.md` - Functions and classes reference
+  - `internals.md` - Architecture for contributors
 
 ### 🔄 In Progress
 
@@ -48,7 +56,7 @@ This document tracks the internal development status of Treesearch. For user-fac
 ### ⏳ Not Started
 
 **Documentation & Polish**:
-- Comprehensive rustdoc for public APIs
+- Comprehensive rustdoc for Rust APIs (user docs complete, internal docs pending)
 
 **Future Enhancements**:
 - Extended query language features (regex in constraints, disjunctions, wildcards)
@@ -120,7 +128,7 @@ The pattern matching engine uses **constraint satisfaction programming (CSP)**:
 
 ```
 treesearch/
-├── src/              # Rust core (4669 lines)
+├── src/              # Rust core
 │   ├── lib.rs        # Module declarations and re-exports
 │   ├── tree.rs       # Tree data structures
 │   ├── pattern.rs    # Pattern AST representation
@@ -130,11 +138,11 @@ treesearch/
 │   ├── iterators.rs  # Iterator interfaces
 │   ├── bytes.rs      # Byte handling utilities
 │   └── python.rs     # Python bindings (PyO3)
-├── tests/            # Integration tests (95 Rust tests passing)
-├── python/           # Python package (40 tests passing)
+├── tests/            # Integration tests (96 Rust tests passing)
+├── python/           # Python package (46 tests passing)
 ├── benches/          # Performance benchmarks
 ├── examples/         # Usage examples
-├── docs/             # User documentation
+├── docs/             # User documentation (5 files)
 └── plans/            # Design documents (this file)
 ```
 
