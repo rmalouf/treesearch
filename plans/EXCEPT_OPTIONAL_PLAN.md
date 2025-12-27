@@ -18,9 +18,10 @@ Extend the CSP solver to support EXCEPT and OPTIONAL blocks, enabling:
   - EXCEPT/OPTIONAL blocks can introduce their own NEW local variables (e.g., M)
   - EXCEPT/OPTIONAL blocks CANNOT reference variables from other EXCEPT/OPTIONAL blocks
   - Each extension block is evaluated independently against the MATCH solution
-- **AllDifferent across blocks**: Extension vars must bind to different words than MATCH vars
+- **AllDifferent across blocks**: Extension vars must bind to different words than MATCH vars (but NOT enforced between different OPTIONAL blocks - mostly comes for free from dependency structure)
 - **Processing order**: EXCEPT filtering first, then OPTIONAL extension
 - **Keyword**: Rename `OPTION` to `OPTIONAL` in grammar
+- **Variable name uniqueness**: New variables introduced in EXCEPT/OPTIONAL blocks must be unique across all blocks (parser error if same new var name appears in multiple blocks)
 
 ## Architecture
 
@@ -50,6 +51,22 @@ Normal patterns have empty vectors → zero overhead for basic queries.
 | `src/query.rs` | Parse EXCEPT/OPTIONAL blocks into Pattern fields |
 | `src/pattern.rs` | Add `except_patterns` and `optional_patterns` fields to Pattern |
 | `src/searcher.rs` | Add `solve_with_bindings()`, `has_any_match()`, update `find_all_matches()` |
+
+## Validation Rules
+
+The parser must enforce:
+
+1. **Unique new variable names**: If a variable name is introduced (not from MATCH) in one EXCEPT/OPTIONAL block, it cannot appear in any other EXCEPT/OPTIONAL block. Error message: `"Variable 'X' already defined in another EXCEPT/OPTIONAL block"`
+
+2. **MATCH variables can be referenced**: Variables defined in MATCH can be freely referenced in any EXCEPT/OPTIONAL block (they're pre-bound during extension search)
+
+## Documented Behavior (Potential Surprises)
+
+1. **No AllDifferent between OPTIONAL blocks**: Variables from different OPTIONAL blocks CAN bind to the same word. In practice this rarely matters due to dependency tree structure.
+
+2. **OPTIONAL with only MATCH variables**: Acts as a no-op (solution kept regardless of whether constraint holds). Not an error, but probably not what user intended.
+
+3. **Each block evaluated independently**: OPTIONAL blocks don't see each other's bindings. Cross-product of all extensions is returned.
 
 ## Implementation Phases
 
