@@ -31,7 +31,8 @@ pub enum QueryError {
 
 pub fn compile_query(input: &str) -> Result<Pattern, QueryError> {
     let mut match_pattern: Option<Pattern> = None;
-    let mut option_patterns: Vec<Pattern> = vec![];
+    let mut except_patterns: Vec<Pattern> = vec![];
+    let mut optional_patterns: Vec<Pattern> = vec![];
 
     let mut pairs = QueryParser::parse(Rule::query, input)?;
     let query_pair = pairs.next().unwrap();
@@ -39,14 +40,17 @@ pub fn compile_query(input: &str) -> Result<Pattern, QueryError> {
     for item in query_pair.into_inner() {
         match item.as_rule() {
             Rule::match_block => match_pattern = Some(compile_query_block(item)?),
-            Rule::option_block => option_patterns.push(compile_query_block(item)?),
+            Rule::except_block => except_patterns.push(compile_query_block(item)?),
+            Rule::optional_block => optional_patterns.push(compile_query_block(item)?),
             Rule::EOI => {}
             _ => unreachable!(),
         }
     }
 
-    if let Some(match_pattern) = match_pattern {
-        Ok(match_pattern)
+    if let Some(mut pattern) = match_pattern {
+        pattern.except_patterns = except_patterns;
+        pattern.optional_patterns = optional_patterns;
+        Ok(pattern)
     } else {
         Err(QueryError::NoMATCH)
     }
