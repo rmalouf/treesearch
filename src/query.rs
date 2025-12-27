@@ -27,6 +27,9 @@ pub enum QueryError {
 
     #[error("Query error: No MATCH block found")]
     NoMATCH,
+
+    #[error("Query error: Variable '{0}' already defined in another EXCEPT/OPTIONAL block")]
+    DuplicateExtensionVariable(String),
 }
 
 pub fn compile_query(input: &str) -> Result<Pattern, QueryError> {
@@ -48,6 +51,9 @@ pub fn compile_query(input: &str) -> Result<Pattern, QueryError> {
     }
 
     if let Some(mut pattern) = match_pattern {
+        // Validate that new variables in extension blocks are unique
+        validate_unique_extension_variables(&pattern, &except_patterns, &optional_patterns)?;
+
         pattern.except_patterns = except_patterns;
         pattern.optional_patterns = optional_patterns;
         Ok(pattern)
@@ -88,6 +94,53 @@ pub fn compile_query_block(item: Pair<Rule>) -> Result<Pattern, QueryError> {
     }
 
     Ok(Pattern::with_constraints(vars, edges))
+}
+
+/// Validate that new variables in EXCEPT/OPTIONAL blocks are unique across all extension blocks
+fn validate_unique_extension_variables(
+    match_pattern: &Pattern,
+    except_patterns: &[Pattern],
+    optional_patterns: &[Pattern],
+) -> Result<(), QueryError> {
+    use std::collections::HashSet;
+
+    // Get all variable names from MATCH block
+    let match_vars: HashSet<&str> = match_pattern.var_names.iter().map(|s| s.as_str()).collect();
+
+    // Track new variables seen across all EXCEPT/OPTIONAL blocks
+    let mut seen_new_vars: HashSet<String> = HashSet::new();
+
+    // Check EXCEPT blocks
+    for except_pattern in except_patterns {
+        for var_name in &except_pattern.var_names {
+            // Skip if it's a MATCH variable (allowed to be referenced)
+            if match_vars.contains(var_name.as_str()) {
+                continue;
+            }
+
+            // Check if this new variable was already seen in another block
+            if !seen_new_vars.insert(var_name.clone()) {
+                return Err(QueryError::DuplicateExtensionVariable(var_name.clone()));
+            }
+        }
+    }
+
+    // Check OPTIONAL blocks
+    for optional_pattern in optional_patterns {
+        for var_name in &optional_pattern.var_names {
+            // Skip if it's a MATCH variable
+            if match_vars.contains(var_name.as_str()) {
+                continue;
+            }
+
+            // Check if this new variable was already seen
+            if !seen_new_vars.insert(var_name.clone()) {
+                return Err(QueryError::DuplicateExtensionVariable(var_name.clone()));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn compile_var_decl(pair: pest::iterators::Pair<Rule>) -> Result<PatternVar, QueryError> {
