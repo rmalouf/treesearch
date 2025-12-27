@@ -8,7 +8,15 @@ MATCH {
     ...
     edge_constraints;
 }
+EXCEPT {
+    # Reject if this pattern matches
+}
+OPTIONAL {
+    # Extend match with these bindings if possible
+}
 ```
+
+A query consists of a required MATCH block followed by zero or more EXCEPT and OPTIONAL blocks.
 
 ## Node Constraints
 
@@ -111,6 +119,66 @@ MATCH {
     V < Obj;          # verb before object
 }
 ```
+
+## EXCEPT Blocks
+
+Reject matches where a condition is true. Multiple EXCEPT blocks use ANY semantics (reject if any matches).
+
+```
+MATCH {
+    V [upos="VERB"];
+}
+EXCEPT {
+    M [upos="ADV"];
+    V -[advmod]-> M;
+}
+```
+
+This finds verbs that do NOT have an adverb modifier.
+
+EXCEPT blocks can reference variables from MATCH:
+
+```
+MATCH {
+    V [upos="VERB"];
+    S [upos="NOUN"];
+    V -[nsubj]-> S;
+}
+EXCEPT {
+    Aux [upos="AUX"];
+    Aux -> V;
+}
+```
+
+This finds verb-subject pairs where the verb is not governed by an auxiliary.
+
+## OPTIONAL Blocks
+
+Extend matches with additional variables if possible. If the OPTIONAL pattern doesn't match, the base match is kept with the optional variables absent from bindings.
+
+```
+MATCH {
+    V [upos="VERB"];
+}
+OPTIONAL {
+    O [upos="NOUN"];
+    V -[obj]-> O;
+}
+```
+
+This finds all verbs, and if they have an object, binds it to `O`. Check for optional bindings with `match.get("O")`.
+
+**Multiple OPTIONAL blocks**: Create cross-product of all extensions.
+
+```
+MATCH { V [upos="VERB"]; }
+OPTIONAL { S []; V -[nsubj]-> S; }
+OPTIONAL { O []; V -[obj]-> O; }
+```
+
+If V has 2 subjects and 3 objects, this produces 6 matches (2 × 3).
+
+**Variable scoping**: EXCEPT/OPTIONAL blocks can reference MATCH variables but cannot reference variables from other EXCEPT/OPTIONAL blocks. New variable names must be unique across all extension blocks.
 
 ## Case Sensitivity
 

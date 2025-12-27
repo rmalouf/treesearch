@@ -82,6 +82,10 @@ MATCH {
 
 **Precedence**: `<` (immediately precedes), `<<` (precedes)
 
+**EXCEPT blocks**: Reject matches where a condition is true (negative existential)
+
+**OPTIONAL blocks**: Extend matches with additional bindings if possible
+
 ## Data Format
 
 Reads treebanks in [CoNLL-U format](https://universaldependencies.org/format.html). Supports plain text (`.conllu`) and gzip-compressed files (`.conllu.gz`) with automatic decompression.
