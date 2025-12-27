@@ -1,10 +1,12 @@
 // Grammar for dependency tree query language
 
-query = { SOI ~ match_block ~ option_block* ~ EOI }
+query = { SOI ~ match_block ~ (except_block | optional_block)* ~ EOI }
 
 match_block = { "MATCH" ~ "{" ~ statement* ~ "}" }
 
-option_block = { "OPTION" ~ "{" ~ statement* ~ "}" }
+except_block = { "EXCEPT" ~ "{" ~ statement* ~ "}" }
+
+optional_block = { "OPTIONAL" ~ "{" ~ statement* ~ "}" }
 
 statement = { node_decl | edge_decl | precedence_decl }
 

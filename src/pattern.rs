@@ -109,6 +109,10 @@ pub struct Pattern {
     pub incident_edges: Vec<Vec<DirectedEdge>>,
     pub var_constraints: Vec<Constraint>,
     pub edge_constraints: Vec<EdgeConstraint>,
+    /// EXCEPT blocks: reject match if any of these patterns match
+    pub except_patterns: Vec<Pattern>,
+    /// OPTIONAL blocks: extend match with these patterns if possible
+    pub optional_patterns: Vec<Pattern>,
 }
 
 impl Pattern {
@@ -122,6 +126,8 @@ impl Pattern {
             incident_edges: Vec::new(),
             var_constraints: Vec::new(),
             edge_constraints: Vec::new(),
+            except_patterns: Vec::new(),
+            optional_patterns: Vec::new(),
         }
     }
 
