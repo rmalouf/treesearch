@@ -9,10 +9,10 @@ option_block = { "OPTION" ~ "{" ~ statement* ~ "}" }
 statement = { node_decl | edge_decl | precedence_decl }
 
 // Node declaration: Name [constraint, constraint];
-node_decl = { ident ~ "[" ~ constraint_list ~ "]" ~ ";" }
+node_decl = { ident ~ "[" ~ constraint_list ~ "]" ~ ";"? }
 
 // Edge declaration: Parent -[label]-> Child; or Parent -> Child; with optional negation
-edge_decl = { edge_ident ~ edge_op ~ edge_ident ~ ";" }
+edge_decl = { edge_ident ~ edge_op ~ edge_ident ~ ";"? }
 
 // Edge operators (order matters - longer patterns first)
 edge_op = { neg_labeled_edge | labeled_edge | neg_unlabeled_edge | unlabeled_edge }
@@ -22,11 +22,11 @@ neg_unlabeled_edge = { "!->" }
 unlabeled_edge = { "->" }
 
 // Precedence declarations: Node1 ( << | <) Node2;
-precedence_decl = { ident ~ precedence_op ~ ident ~ ";" }
+precedence_decl = { ident ~ precedence_op ~ ident ~ ";"? }
 precedence_op = { "<<" | "<" }
 
 // Constraint list (can be empty)
-constraint_list = { (constraint ~ ("," ~ constraint)*)? }
+constraint_list = { (constraint ~ ("&" ~ constraint)*)? }
 
 // Single constraint: either feature or regular
 constraint = { feature_constraint | misc_constraint | regular_constraint }

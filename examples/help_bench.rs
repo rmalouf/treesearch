@@ -2,8 +2,8 @@ use treesearch::{Treebank, compile_query};
 
 fn main() {
     let query = r#"MATCH {
-    Head [upos="VERB", lemma="help"];
-    XComp [upos="VERB", feats.VerbForm="Inf"];
+    Head [upos="VERB" & lemma="help"];
+    XComp [upos="VERB" & feats.VerbForm="Inf"];
     Head -[xcomp]-> XComp;
     Head !-[aux:pass]-> _;
     _ !-[conj]-> Head;

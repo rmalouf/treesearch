@@ -247,7 +247,7 @@ mod tests {
             Constraint::UPOS("VERB".to_string())
         );
 
-        let query = r#"MATCH { Help [lemma="help", upos="VERB"]; }"#;
+        let query = r#"MATCH { Help [lemma="help" & upos="VERB"]; }"#;
         let pattern = compile_query(query).unwrap();
 
         assert_eq!(pattern.var_constraints.len(), 1);
@@ -597,7 +597,7 @@ MATCH {
 
     #[test]
     fn test_parse_multiple_features() {
-        let query = r#"MATCH { N [feats.Number="Plur", feats.Case="Nom"]; }"#;
+        let query = r#"MATCH { N [feats.Number="Plur" & feats.Case="Nom"]; }"#;
         let pattern = compile_query(query).unwrap();
 
         match &pattern.var_constraints[0] {
@@ -616,7 +616,7 @@ MATCH {
 
     #[test]
     fn test_parse_mixed_constraints() {
-        let query = r#"MATCH { V [lemma="be", feats.Tense="Past"]; }"#;
+        let query = r#"MATCH { V [lemma="be" & feats.Tense="Past"]; }"#;
         let pattern = compile_query(query).unwrap();
 
         match &pattern.var_constraints[0] {
@@ -663,7 +663,7 @@ MATCH {
 
     #[test]
     fn test_parse_mixed_positive_negative() {
-        let query = r#"MATCH { V [lemma="run", upos!="NOUN"]; }"#;
+        let query = r#"MATCH { V [lemma="run" & upos!="NOUN"]; }"#;
         let pattern = compile_query(query).unwrap();
 
         match &pattern.var_constraints[0] {

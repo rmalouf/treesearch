@@ -22,7 +22,7 @@ MATCH {
 | `feats.X` | Morphological feature | `[feats.Tense="Past"]` |
 | `misc.X` | Miscellaneous annotation | `[misc.SpaceAfter="No"]` |
 
-**Multiple constraints** (AND): `V [upos="VERB", lemma="run"];`
+**Multiple constraints** (AND): `V [upos="VERB" & lemma="run"];`
 
 **Empty constraint** (any word): `X [];`
 

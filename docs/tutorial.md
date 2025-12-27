@@ -52,7 +52,7 @@ MATCH {
 'MATCH { Help [lemma="help"]; }'
 
 # Multiple constraints (AND)
-'MATCH { V [upos="VERB", lemma="run"]; }'
+'MATCH { V [upos="VERB" & lemma="run"]; }'
 
 # Any word (no constraints)
 'MATCH { X []; }'

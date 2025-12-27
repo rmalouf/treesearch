@@ -95,7 +95,7 @@ VariableName [constraint];
 
 **Multiple constraints** (AND):
 ```
-V [upos="VERB", lemma="be"];
+V [upos="VERB" & lemma="be"];
 ```
 
 **Empty constraint** (matches any node):
@@ -112,7 +112,7 @@ MATCH {
 
 MATCH {
     # Plural nominative noun
-    Noun [feats.Number="Plur", feats.Case="Nom"];
+    Noun [feats.Number="Plur" & feats.Case="Nom"];
 }
 ```
 

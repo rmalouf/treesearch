@@ -469,7 +469,7 @@ mod tests {
 
         // Multiple constraints (AND)
         let matches: Vec<_> =
-            search_tree_query(tree.clone(), "MATCH { V [lemma=\"help\", upos=\"VERB\"]; }")
+            search_tree_query(tree.clone(), "MATCH { V [lemma=\"help\" & upos=\"VERB\"]; }")
                 .unwrap();
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].bindings, hashmap! { "V" => 0 });
@@ -731,7 +731,7 @@ mod tests {
         // Multiple feature constraints (AND)
         let matches: Vec<_> = search_tree_query(
             tree.clone(),
-            r#"MATCH { V [feats.Tense="Past", feats.Number="Sing"]; }"#,
+            r#"MATCH { V [feats.Tense="Past" & feats.Number="Sing"]; }"#,
         )
         .unwrap();
         assert_eq!(matches.len(), 1);
@@ -740,7 +740,7 @@ mod tests {
         // Feature combined with other constraints
         let matches: Vec<_> = search_tree_query(
             tree.clone(),
-            r#"MATCH { V [lemma="be", feats.Tense="Past"]; }"#,
+            r#"MATCH { V [lemma="be" & feats.Tense="Past"]; }"#,
         )
         .unwrap();
         assert_eq!(matches.len(), 1);
@@ -754,7 +754,7 @@ mod tests {
         // Word with no features
         let matches: Vec<_> = search_tree_query(
             tree.clone(),
-            r#"MATCH { P [upos="PUNCT", feats.Tense="Past"]; }"#,
+            r#"MATCH { P [upos="PUNCT" & feats.Tense="Past"]; }"#,
         )
         .unwrap();
         assert_eq!(matches.len(), 0); // PUNCT has no Tense feature
@@ -826,7 +826,7 @@ mod tests {
 
         // Find all verbs that are NOT past tense
         let matches: Vec<_> =
-            search_tree_query(tree, r#"MATCH { V [upos="VERB", feats.Tense!="Past"]; }"#).unwrap();
+            search_tree_query(tree, r#"MATCH { V [upos="VERB" & feats.Tense!="Past"]; }"#).unwrap();
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].bindings, hashmap! { "V" => 1 }); // "running" has Tense=Pres
     }

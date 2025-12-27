@@ -6,7 +6,7 @@ def xcomps():
     xcomp_query = """
     MATCH {
         Head [upos="VERB"];
-        XComp [upos="VERB", feats.VerbForm="Inf"];
+        XComp [upos="VERB" & feats.VerbForm="Inf"];
         Head -[xcomp]-> XComp;
     }
     """
@@ -35,8 +35,8 @@ def check_dep(tree, node, deprel, tag=None):
 def helps():
     help_query = """
     MATCH {
-        Head [upos="VERB", lemma="help"];
-        XComp [upos="VERB", feats.VerbForm="Inf"];
+        Head [upos="VERB" & lemma="help"];
+        XComp [upos="VERB" & feats.VerbForm="Inf"];
         Head -[xcomp]-> XComp;
         Head !-[aux:pass]-> _;
         _ !-[conj]-> Head;
