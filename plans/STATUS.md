@@ -19,9 +19,11 @@ This document tracks the internal development status of Treesearch. For user-fac
 - Iterator-based API for trees and matches (`iterators.rs`)
 - Automatic parallel file processing using rayon + channels
 - Negative edge constraints (`!->`, `!-[label]->`)
+- EXCEPT blocks for negative existential queries
+- OPTIONAL blocks for optional variable binding
 - Match struct with Arc<Tree> sharing
 - Morphological features (FEATS field) and miscellaneous annotations (MISC field)
-- 96 tests passing (92 unit + 4 doctests)
+- 100 tests passing (96 unit + 4 doctests)
 
 **Python Bindings**:
 - PyO3 wrapper code in `src/python.rs`
@@ -82,7 +84,6 @@ See `ROADMAP.md` for detailed implementation plans.
 - Ancestor/descendant relation types (`X <<- Y`)
 - Sibling relations (`X ~ Y`)
 - Distance constraints (`X <-[2..5]- Y`)
-- Optional matches (`X -[nsubj]->? Y`)
 - Query result caching
 - Corpus indexing for faster queries
 
