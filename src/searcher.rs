@@ -136,6 +136,16 @@ fn satisfies_arc_constraint(
     }
 }
 
+/// Returns true if any match exists (for EXCEPT checking).
+/// TODO: Could be optimized to short-circuit after first solution.
+fn has_any_match(
+    tree: &Tree,
+    pattern: &Pattern,
+    initial_bindings: &Bindings,
+) -> bool {
+    !solve_with_bindings(tree, pattern, initial_bindings).is_empty()
+}
+
 /// Search with pre-bound variables from initial_bindings.
 /// Variables in initial_bindings are pre-assigned; others are solved.
 /// Returns all possible bindings (including initial bindings).
