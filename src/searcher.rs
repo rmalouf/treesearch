@@ -136,14 +136,38 @@ fn satisfies_arc_constraint(
     }
 }
 
-pub fn find_all_matches(tree: Tree, pattern: &Pattern) -> Vec<Match> {
+/// Search with pre-bound variables from initial_bindings.
+/// Variables in initial_bindings are pre-assigned; others are solved.
+/// Returns all possible bindings (including initial bindings).
+fn solve_with_bindings(
+    tree: &Tree,
+    pattern: &Pattern,
+    initial_bindings: &Bindings,
+) -> Vec<Bindings> {
     let num_words = tree.words.len();
 
-    // Initial candidate domains (node consistency)
+    // Initialize assignment vector and assigned words bitset
+    let mut assign: Vec<Option<WordId>> = vec![None; pattern.n_vars];
+    let mut assigned_words: BitFixed<u64> = BitFixed::new(num_words);
+
+    // Pre-populate with initial bindings
+    for (var_name, &word_id) in initial_bindings {
+        if let Some(&var_id) = pattern.var_ids.get(var_name) {
+            assign[var_id] = Some(word_id);
+            assigned_words.set(word_id);
+        }
+    }
+
+    // Initialize domains (node consistency) for all variables
     let mut domains: Vec<BitFixed<u64>> = vec![BitFixed::new(num_words); pattern.n_vars];
     for (var_id, constr) in pattern.var_constraints.iter().enumerate() {
+        // Skip domain computation for pre-assigned variables
+        if assign[var_id].is_some() {
+            continue;
+        }
+
         for (word_id, word) in tree.words.iter().enumerate() {
-            if satisfies_var_constraint(&tree, word, constr) {
+            if satisfies_var_constraint(tree, word, constr) {
                 domains[var_id].set(word_id);
             }
         }
@@ -152,11 +176,15 @@ pub fn find_all_matches(tree: Tree, pattern: &Pattern) -> Vec<Match> {
         }
     }
 
-    let tree = Arc::new(tree);
-    let assign: Vec<Option<WordId>> = vec![None; pattern.n_vars];
-    let assigned_words: BitFixed<u64> = BitFixed::new(num_words);
+    // Run DFS to find all solutions
+    dfs(tree, pattern, &assign, &domains, &assigned_words)
+}
 
-    dfs(&tree, pattern, &assign, &domains, &assigned_words)
+pub fn find_all_matches(tree: Tree, pattern: &Pattern) -> Vec<Match> {
+    let tree = Arc::new(tree);
+    let empty_bindings = Bindings::new();
+
+    solve_with_bindings(&tree, pattern, &empty_bindings)
         .into_iter()
         .map(|bindings| Match {
             tree: Arc::clone(&tree),
