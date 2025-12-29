@@ -84,9 +84,16 @@ pub enum DirectedEdge {
     Out(usize),
 }
 
-/// A complete pattern to match against dependency trees
 #[derive(Debug, Clone)]
 pub struct Pattern {
+    pub match_pattern: BasePattern,
+    pub except_patterns: Vec<BasePattern>,
+    pub optional_patterns: Vec<BasePattern>,
+}
+
+/// A complete pattern to match against dependency trees
+#[derive(Debug, Clone)]
+pub struct BasePattern {
     pub n_vars: usize,
     pub var_ids: HashMap<String, VarId>,
     pub var_names: Vec<String>,
@@ -95,13 +102,9 @@ pub struct Pattern {
     pub incident_edges: Vec<Vec<DirectedEdge>>,
     pub var_constraints: Vec<Constraint>,
     pub edge_constraints: Vec<EdgeConstraint>,
-    /// EXCEPT blocks: reject match if any of these patterns match
-    pub except_patterns: Vec<Pattern>,
-    /// OPTIONAL blocks: extend match with these patterns if possible
-    pub optional_patterns: Vec<Pattern>,
 }
 
-impl Pattern {
+impl BasePattern {
     pub fn new() -> Self {
         Self {
             n_vars: 0,
@@ -112,16 +115,14 @@ impl Pattern {
             incident_edges: Vec::new(),
             var_constraints: Vec::new(),
             edge_constraints: Vec::new(),
-            except_patterns: Vec::new(),
-            optional_patterns: Vec::new(),
         }
     }
 
     pub fn with_constraints(
         vars: HashMap<String, PatternVar>,
         edges: Vec<EdgeConstraint>,
-    ) -> Pattern {
-        let mut pattern = Pattern::new();
+    ) -> BasePattern {
+        let mut pattern = BasePattern::new();
 
         for var in vars.into_values() {
             pattern.add_var(&var.var_name, var.constraint);
@@ -219,7 +220,7 @@ impl Pattern {
     }
 }
 
-impl Default for Pattern {
+impl Default for BasePattern {
     fn default() -> Self {
         Self::new()
     }
@@ -249,7 +250,7 @@ mod tests {
             negated: false,
         }];
 
-        let pattern = Pattern::with_constraints(vars, edges);
+        let pattern = BasePattern::with_constraints(vars, edges);
 
         assert_eq!(pattern.var_names.len(), 2);
         assert_eq!(pattern.var_constraints.len(), 2);

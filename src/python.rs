@@ -225,7 +225,7 @@ pub struct PyPattern {
 #[pymethods]
 impl PyPattern {
     fn __repr__(&self) -> String {
-        format!("Pattern({} vars)", self.inner.n_vars)
+        format!("Pattern({} vars)", self.inner.match_pattern.n_vars)
     }
 }
 
