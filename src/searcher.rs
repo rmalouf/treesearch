@@ -136,8 +136,7 @@ fn satisfies_arc_constraint(
     }
 }
 
-/// Returns true if any match exists (for EXCEPT checking).
-/// TODO: Could be optimized to short-circuit after first solution.
+/// TODO: short-circuit after first solution.
 fn has_any_match(
     tree: &Tree,
     pattern: &Pattern,

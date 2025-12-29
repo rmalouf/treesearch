@@ -1,6 +1,6 @@
 import treesearch
 import polars as pl
-
+import time
 
 def xcomps():
     xcomp_query = """
@@ -45,6 +45,19 @@ def helps():
         XComp !-[conj]-> _;
         Head << XComp;
     }
+    #EXCEPT {
+    #    Head -[aux:pass]-> _;
+    #}
+    OPTIONAL {
+        HeadTo [lemma="to"];
+        Head -[mark]-> HeadTo;
+    }
+    OPTIONAL {
+        XCompTo [lemma="to"];
+        XComp -[mark]-> XCompTo;
+    }
+
+
     """
 
     path = "/Volumes/Corpora/CCOHA/conll/*.conllu.gz"
@@ -59,10 +72,12 @@ def helps():
             {
                 "head_form": head.form.lower(),
                 "transitive": check_dep(tree, head, "obj") or check_dep(tree, xcomp, "nsubj"),
-                "head_to": check_dep(tree, head, "mark", tag="TO"),
+                #"head_to": check_dep(tree, head, "mark", tag="TO"),
+                "head_to": "HeadTo" in match,
                 "head_aux": check_dep(tree, head, "aux"),
                 "xcomp_lemma": xcomp.lemma,
-                "bare_inf": not check_dep(tree, xcomp, "mark", tag="TO"),
+                #"bare_inf": not check_dep(tree, xcomp, "mark", tag="TO"),
+                "bare_inf": "XCompTo" not in match,
                 "xcomp_transitive": check_dep(tree, xcomp, "obj")
                 or check_dep(tree, xcomp, "ccomp"),
                 "distance": int(xcomp.id - head.id),
@@ -72,9 +87,12 @@ def helps():
             }
         )
     df = pl.DataFrame(data)
+    print(len(df))
     df.write_parquet("help.parquet")
 
 
 if __name__ == "__main__":
     # xcomps()
+    t0 = time.time()
     helps()
+    print(time.time() - t0)
