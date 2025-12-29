@@ -811,3 +811,193 @@ class TestIntegration:
             assert parent is not None
             assert parent.id == verb.id
             assert noun.deprel == "nsubj"
+
+
+# Test EXCEPT and OPTIONAL blocks
+class TestExceptOptional:
+    """Tests for EXCEPT and OPTIONAL query blocks."""
+
+    @pytest.fixture
+    def multi_verb_conllu(self):
+        """CoNLL-U data with multiple verbs for testing EXCEPT/OPTIONAL."""
+        return """# text = John saw him running quickly.
+1	John	John	PROPN	NNP	_	2	nsubj	_	_
+2	saw	see	VERB	VBD	_	0	root	_	_
+3	him	he	PRON	PRP	_	2	obj	_	_
+4	running	run	VERB	VBG	_	2	xcomp	_	_
+5	quickly	quickly	ADV	RB	_	4	advmod	_	_
+6	.	.	PUNCT	.	_	2	punct	_	_
+
+"""
+
+    @pytest.fixture
+    def multi_verb_tree(self, multi_verb_conllu, tmp_path):
+        """Get a tree with multiple verbs."""
+        path = tmp_path / "multi_verb.conllu"
+        path.write_text(multi_verb_conllu)
+        trees = list(treesearch.Treebank.from_file(str(path)).trees())
+        return trees[0]
+
+    def test_except_basic(self, multi_verb_tree):
+        """Test basic EXCEPT functionality."""
+        # Find verbs, but exclude those with advmod children
+        pattern = treesearch.compile_query("""
+            MATCH { V [upos="VERB"]; }
+            EXCEPT { M [upos="ADV"]; V -[advmod]-> M; }
+        """)
+        matches = list(treesearch.search_trees(multi_verb_tree, pattern))
+
+        # Should find "saw" but not "running" (which has advmod)
+        assert len(matches) == 1
+        tree, match = matches[0]
+        verb = tree.word(match["V"])
+        assert verb.lemma == "see"
+
+    def test_except_multiple_blocks(self, multi_verb_tree):
+        """Test multiple EXCEPT blocks with ANY semantics."""
+        # Find verbs, exclude those with advmod OR xcomp children
+        pattern = treesearch.compile_query("""
+            MATCH { V [upos="VERB"]; }
+            EXCEPT { M [upos="ADV"]; V -[advmod]-> M; }
+            EXCEPT { C [upos="VERB"]; V -[xcomp]-> C; }
+        """)
+        matches = list(treesearch.search_trees(multi_verb_tree, pattern))
+
+        # Both verbs should be rejected (saw has xcomp, running has advmod)
+        assert len(matches) == 0
+
+    def test_except_no_rejection(self, multi_verb_tree):
+        """Test EXCEPT that doesn't match anything."""
+        # EXCEPT condition that won't match
+        pattern = treesearch.compile_query("""
+            MATCH { V [upos="VERB"]; }
+            EXCEPT { N [upos="NOUN"]; V -[obj]-> N; }
+        """)
+        matches = list(treesearch.search_trees(multi_verb_tree, pattern))
+
+        # Both verbs should be found (no NOUN objects)
+        assert len(matches) == 2
+
+    def test_optional_basic_found(self, multi_verb_tree):
+        """Test OPTIONAL when pattern is found."""
+        # Find "saw" verb with optional subject
+        pattern = treesearch.compile_query("""
+            MATCH { V [lemma="see"]; }
+            OPTIONAL { S [upos="PROPN"]; V -[nsubj]-> S; }
+        """)
+        matches = list(treesearch.search_trees(multi_verb_tree, pattern))
+
+        # Should find one match with S bound
+        assert len(matches) == 1
+        tree, match = matches[0]
+        assert "V" in match
+        assert "S" in match
+        assert tree.word(match["S"]).form == "John"
+
+    def test_optional_basic_not_found(self, multi_verb_tree):
+        """Test OPTIONAL when pattern is not found."""
+        # Find "running" verb with optional subject (it has none)
+        pattern = treesearch.compile_query("""
+            MATCH { V [lemma="run"]; }
+            OPTIONAL { S [upos="PROPN"]; V -[nsubj]-> S; }
+        """)
+        matches = list(treesearch.search_trees(multi_verb_tree, pattern))
+
+        # Should find one match without S
+        assert len(matches) == 1
+        tree, match = matches[0]
+        assert "V" in match
+        assert "S" not in match
+
+    def test_optional_multiple_matches(self, tmp_path):
+        """Test OPTIONAL with multiple possible matches."""
+        # Create tree with multiple pronouns
+        conllu = """# text = He helped us win.
+1	He	he	PRON	PRP	_	2	nsubj	_	_
+2	helped	help	VERB	VBD	_	0	root	_	_
+3	us	we	PRON	PRP	_	2	obj	_	_
+4	win	win	VERB	VB	_	2	xcomp	_	_
+5	.	.	PUNCT	.	_	2	punct	_	_
+
+"""
+        path = tmp_path / "multi_pron.conllu"
+        path.write_text(conllu)
+        tree = list(treesearch.Treebank.from_file(str(path)).trees())[0]
+
+        # Match verb with optional PRON child (any edge)
+        pattern = treesearch.compile_query("""
+            MATCH { V [lemma="help"]; }
+            OPTIONAL { P [upos="PRON"]; V -> P; }
+        """)
+        matches = list(treesearch.search_trees(tree, pattern))
+
+        # Should get 2 results: one with P=He, one with P=us
+        assert len(matches) == 2
+        pron_forms = [tree.word(m["P"]).form for t, m in matches]
+        assert "He" in pron_forms
+        assert "us" in pron_forms
+
+    def test_optional_cross_product(self, tmp_path):
+        """Test cross-product semantics with multiple OPTIONAL blocks."""
+        # Create tree with multiple pronouns and adverbs
+        conllu = """# text = He helped us quickly.
+1	He	he	PRON	PRP	_	2	nsubj	_	_
+2	helped	help	VERB	VBD	_	0	root	_	_
+3	us	we	PRON	PRP	_	2	obj	_	_
+4	quickly	quickly	ADV	RB	_	2	advmod	_	_
+5	.	.	PUNCT	.	_	2	punct	_	_
+
+"""
+        path = tmp_path / "cross_product.conllu"
+        path.write_text(conllu)
+        tree = list(treesearch.Treebank.from_file(str(path)).trees())[0]
+
+        # Match verb with optional PRON and ADV children
+        pattern = treesearch.compile_query("""
+            MATCH { V [lemma="help"]; }
+            OPTIONAL { P [upos="PRON"]; V -> P; }
+            OPTIONAL { A [upos="ADV"]; V -> A; }
+        """)
+        matches = list(treesearch.search_trees(tree, pattern))
+
+        # Cross-product: 2 PRONs × 1 ADV = 2 results
+        assert len(matches) == 2
+
+        # Both should have A, but different P values
+        for _, match in matches:
+            assert "V" in match
+            assert "P" in match
+            assert "A" in match
+
+    def test_combined_except_optional(self, multi_verb_tree):
+        """Test combined EXCEPT and OPTIONAL blocks."""
+        # Find verbs without advmod, with optional subject
+        pattern = treesearch.compile_query("""
+            MATCH { V [upos="VERB"]; }
+            EXCEPT { M [upos="ADV"]; V -[advmod]-> M; }
+            OPTIONAL { S [upos="PROPN"]; V -[nsubj]-> S; }
+        """)
+        matches = list(treesearch.search_trees(multi_verb_tree, pattern))
+
+        # Should find only "saw" with subject
+        assert len(matches) == 1
+        tree, match = matches[0]
+        verb = tree.word(match["V"])
+        subj = tree.word(match["S"])
+        assert verb.lemma == "see"
+        assert subj.form == "John"
+
+    def test_except_optional_string_queries(self, multi_verb_tree):
+        """Test that EXCEPT/OPTIONAL work with string queries (not just compiled)."""
+        # Test with string query directly
+        matches = list(treesearch.search_trees(
+            multi_verb_tree,
+            """MATCH { V [upos="VERB"]; }
+               EXCEPT { M [upos="ADV"]; V -[advmod]-> M; }
+               OPTIONAL { S [upos="PROPN"]; V -[nsubj]-> S; }"""
+        ))
+
+        assert len(matches) == 1
+        tree, match = matches[0]
+        assert tree.word(match["V"]).lemma == "see"
+        assert tree.word(match["S"]).form == "John"

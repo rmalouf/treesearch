@@ -7,7 +7,7 @@
 //!
 
 use crate::RelationType;
-use crate::pattern::{Constraint, EdgeConstraint, Pattern};
+use crate::pattern::{BasePattern, Constraint, EdgeConstraint, Pattern};
 use crate::query::{QueryError, compile_query};
 use crate::tree::Word;
 use crate::tree::{Tree, WordId};
@@ -137,11 +137,7 @@ fn satisfies_arc_constraint(
 }
 
 /// TODO: short-circuit after first solution.
-fn has_any_match(
-    tree: &Tree,
-    pattern: &Pattern,
-    initial_bindings: &Bindings,
-) -> bool {
+fn has_any_match(tree: &Tree, pattern: &BasePattern, initial_bindings: &Bindings) -> bool {
     !solve_with_bindings(tree, pattern, initial_bindings).is_empty()
 }
 
@@ -151,7 +147,7 @@ fn has_any_match(
 fn process_optionals(
     tree: &Tree,
     base_bindings: &Bindings,
-    optional_patterns: &[Pattern],
+    optional_patterns: &[BasePattern],
 ) -> Vec<Bindings> {
     if optional_patterns.is_empty() {
         return vec![base_bindings.clone()];
@@ -197,7 +193,7 @@ fn process_optionals(
 /// Returns all possible bindings (including initial bindings).
 fn solve_with_bindings(
     tree: &Tree,
-    pattern: &Pattern,
+    pattern: &BasePattern,
     initial_bindings: &Bindings,
 ) -> Vec<Bindings> {
     let num_words = tree.words.len();
@@ -241,7 +237,7 @@ pub fn find_all_matches(tree: Tree, pattern: &Pattern) -> Vec<Match> {
     let empty_bindings = Bindings::new();
 
     // Find all MATCH block solutions
-    let base_matches = solve_with_bindings(&tree, pattern, &empty_bindings);
+    let base_matches = solve_with_bindings(&tree, &pattern.match_pattern, &empty_bindings);
 
     // Process EXCEPT and OPTIONAL blocks
     let mut results = Vec::new();
@@ -257,7 +253,8 @@ pub fn find_all_matches(tree: Tree, pattern: &Pattern) -> Vec<Match> {
         }
 
         // Process OPTIONAL blocks: extend with all combinations
-        let extended_solutions = process_optionals(&tree, &base_bindings, &pattern.optional_patterns);
+        let extended_solutions =
+            process_optionals(&tree, &base_bindings, &pattern.optional_patterns);
 
         for bindings in extended_solutions {
             results.push(Match {
@@ -272,7 +269,7 @@ pub fn find_all_matches(tree: Tree, pattern: &Pattern) -> Vec<Match> {
 
 fn dfs(
     tree: &Tree,
-    pattern: &Pattern,
+    pattern: &BasePattern,
     assign: &[Option<WordId>],
     domains: &[BitFixed<u64>],
     assigned_words: &BitFixed<u64>,
@@ -352,7 +349,7 @@ fn dfs(
 #[allow(dead_code)]
 fn forward_check(
     tree: &Tree,
-    pattern: &Pattern,
+    pattern: &BasePattern,
     next_var: usize,
     word_id: WordId,
     new_assign: &mut [Option<WordId>],
@@ -396,7 +393,7 @@ fn forward_check(
 
 fn check_arc_consistency(
     tree: &Tree,
-    pattern: &Pattern,
+    pattern: &BasePattern,
     assign: &[Option<WordId>],
     next_var: usize,
     word_id: WordId,
@@ -573,9 +570,11 @@ mod tests {
         assert_eq!(matches.len(), 0);
 
         // Multiple constraints (AND)
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), "MATCH { V [lemma=\"help\" & upos=\"VERB\"]; }")
-                .unwrap();
+        let matches: Vec<_> = search_tree_query(
+            tree.clone(),
+            "MATCH { V [lemma=\"help\" & upos=\"VERB\"]; }",
+        )
+        .unwrap();
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].bindings, hashmap! { "V" => 0 });
 
@@ -1072,8 +1071,8 @@ mod tests {
         let pattern = compile_query(r#"MATCH { V []; W []; V !-[obj]-> W; }"#).unwrap();
 
         // Check that W does not have a DepRel constraint
-        let w_id = *pattern.var_ids.get("W").unwrap();
-        match &pattern.var_constraints[w_id] {
+        let w_id = *pattern.match_pattern.var_ids.get("W").unwrap();
+        match &pattern.match_pattern.var_constraints[w_id] {
             Constraint::Any => { /* Expected - no constraint */ }
             Constraint::And(constraints) => {
                 // Should not contain DepRel constraint
@@ -1162,7 +1161,10 @@ mod tests {
         .unwrap();
         // Both OPTIONAL blocks match, so we get the cross-product (1 result with both)
         assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings, hashmap! { "V" => 0, "S" => 1, "C" => 2 });
+        assert_eq!(
+            matches[0].bindings,
+            hashmap! { "V" => 0, "S" => 1, "C" => 2 }
+        );
     }
 
     #[test]
@@ -1180,5 +1182,183 @@ mod tests {
         // Should find only word 0 ("saw"), with subject
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].bindings, hashmap! { "V" => 0, "S" => 1 });
+    }
+
+    #[test]
+    fn test_except_no_rejection() {
+        let tree = build_multi_verb_tree();
+
+        // EXCEPT condition that doesn't match anything - all results should pass through
+        let matches = search_tree_query(
+            tree.clone(),
+            r#"MATCH { V [upos="VERB"]; }
+               EXCEPT { N [upos="NOUN"]; V -[obj]-> N; }"#,
+        )
+        .unwrap();
+        // Both verbs should be found (no NOUNs in tree)
+        assert_eq!(matches.len(), 2);
+        assert!(matches
+            .iter()
+            .any(|m| m.bindings == hashmap! { "V" => 0 }));
+        assert!(matches
+            .iter()
+            .any(|m| m.bindings == hashmap! { "V" => 2 }));
+    }
+
+    #[test]
+    fn test_except_all_rejected() {
+        let tree = build_multi_verb_tree();
+
+        // EXCEPT condition that matches all MATCH results
+        let matches = search_tree_query(
+            tree.clone(),
+            r#"MATCH { V [upos="VERB"]; }
+               EXCEPT { V [upos="VERB"]; }"#,
+        )
+        .unwrap();
+        // All verbs should be rejected
+        assert_eq!(matches.len(), 0);
+    }
+
+    #[test]
+    fn test_except_complex_pattern() {
+        // Tree: saw -> John (nsubj), running (xcomp) -> quickly (advmod)
+        let tree = build_multi_verb_tree();
+
+        // EXCEPT with multiple constraints and edges
+        let matches = search_tree_query(
+            tree.clone(),
+            r#"MATCH { V [upos="VERB"]; }
+               EXCEPT {
+                   C [upos="VERB"];
+                   M [upos="ADV"];
+                   V -[xcomp]-> C;
+                   C -[advmod]-> M;
+               }"#,
+        )
+        .unwrap();
+        // Only "running" should be found (not "saw", which has xcomp to running which has advmod)
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].bindings, hashmap! { "V" => 2 });
+    }
+
+    #[test]
+    fn test_optional_multiple_matches() {
+        // Create a tree with multiple possible matches for OPTIONAL
+        // Tree: helped -> He (nsubj), us (obj), win (xcomp)
+        let mut tree = Tree::default();
+        tree.add_minimal_word(0, b"helped", b"help", b"VERB", b"_", None, b"root");
+        tree.add_minimal_word(1, b"He", b"he", b"PRON", b"_", Some(0), b"nsubj");
+        tree.add_minimal_word(2, b"us", b"we", b"PRON", b"_", Some(0), b"obj");
+        tree.add_minimal_word(3, b"win", b"win", b"VERB", b"_", Some(0), b"xcomp");
+        tree.compile_tree();
+
+        // Match verb, optionally match any PRON child
+        let matches = search_tree_query(
+            tree,
+            r#"MATCH { V [lemma="help"]; }
+               OPTIONAL { P [upos="PRON"]; V -> P; }"#,
+        )
+        .unwrap();
+
+        // Should get 2 results: one with P=He, one with P=us
+        assert_eq!(matches.len(), 2);
+        assert!(matches
+            .iter()
+            .any(|m| m.bindings == hashmap! { "V" => 0, "P" => 1 }));
+        assert!(matches
+            .iter()
+            .any(|m| m.bindings == hashmap! { "V" => 0, "P" => 2 }));
+    }
+
+    #[test]
+    fn test_optional_cross_product_multiple_matches() {
+        // Create a tree where multiple OPTIONALs each have multiple matches
+        // Tree: helped -> He (nsubj), us (obj), quickly (advmod), very (advmod)
+        let mut tree = Tree::default();
+        tree.add_minimal_word(0, b"helped", b"help", b"VERB", b"_", None, b"root");
+        tree.add_minimal_word(1, b"He", b"he", b"PRON", b"_", Some(0), b"nsubj");
+        tree.add_minimal_word(2, b"us", b"we", b"PRON", b"_", Some(0), b"obj");
+        tree.add_minimal_word(3, b"quickly", b"quickly", b"ADV", b"_", Some(0), b"advmod");
+        tree.add_minimal_word(4, b"very", b"very", b"ADV", b"_", Some(0), b"advmod");
+        tree.compile_tree();
+
+        // Match verb, optionally match PRON and ADV children
+        let matches = search_tree_query(
+            tree,
+            r#"MATCH { V [lemma="help"]; }
+               OPTIONAL { P [upos="PRON"]; V -> P; }
+               OPTIONAL { A [upos="ADV"]; V -> A; }"#,
+        )
+        .unwrap();
+
+        // Cross-product: 2 PRONs × 2 ADVs = 4 results
+        assert_eq!(matches.len(), 4);
+
+        // Verify all combinations exist
+        assert!(matches
+            .iter()
+            .any(|m| m.bindings == hashmap! { "V" => 0, "P" => 1, "A" => 3 }));
+        assert!(matches
+            .iter()
+            .any(|m| m.bindings == hashmap! { "V" => 0, "P" => 1, "A" => 4 }));
+        assert!(matches
+            .iter()
+            .any(|m| m.bindings == hashmap! { "V" => 0, "P" => 2, "A" => 3 }));
+        assert!(matches
+            .iter()
+            .any(|m| m.bindings == hashmap! { "V" => 0, "P" => 2, "A" => 4 }));
+    }
+
+    #[test]
+    fn test_optional_one_matches_one_doesnt() {
+        // Test where one OPTIONAL matches and another doesn't
+        let tree = build_multi_verb_tree();
+
+        let matches = search_tree_query(
+            tree.clone(),
+            r#"MATCH { V [lemma="see"]; }
+               OPTIONAL { S [upos="PROPN"]; V -[nsubj]-> S; }
+               OPTIONAL { N [upos="NOUN"]; V -[obj]-> N; }"#,
+        )
+        .unwrap();
+
+        // First OPTIONAL matches (John), second doesn't (no NOUN obj)
+        // Should get 1 result with S but no N
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].bindings.get("V"), Some(&0));
+        assert_eq!(matches[0].bindings.get("S"), Some(&1));
+        assert!(!matches[0].bindings.contains_key("N"));
+    }
+
+    #[test]
+    fn test_complex_except_optional_interaction() {
+        // Create a more complex tree for testing
+        // Tree: helped -> He (nsubj), them (obj), win (xcomp) -> quickly (advmod)
+        let mut tree = Tree::default();
+        tree.add_minimal_word(0, b"helped", b"help", b"VERB", b"_", None, b"root");
+        tree.add_minimal_word(1, b"He", b"he", b"PRON", b"_", Some(0), b"nsubj");
+        tree.add_minimal_word(2, b"them", b"they", b"PRON", b"_", Some(0), b"obj");
+        tree.add_minimal_word(3, b"win", b"win", b"VERB", b"_", Some(0), b"xcomp");
+        tree.add_minimal_word(4, b"quickly", b"quickly", b"ADV", b"_", Some(3), b"advmod");
+        tree.compile_tree();
+
+        // Find all verbs, except those with advmod, optionally get subject and object
+        let matches = search_tree_query(
+            tree,
+            r#"MATCH { V [upos="VERB"]; }
+               EXCEPT { A [upos="ADV"]; V -[advmod]-> A; }
+               OPTIONAL { S [upos="PRON"]; V -[nsubj]-> S; }
+               OPTIONAL { O [upos="PRON"]; V -[obj]-> O; }"#,
+        )
+        .unwrap();
+
+        // Should find only "helped" (not "win" which has advmod)
+        // With both subject and object
+        assert_eq!(matches.len(), 1);
+        assert_eq!(
+            matches[0].bindings,
+            hashmap! { "V" => 0, "S" => 1, "O" => 2 }
+        );
     }
 }

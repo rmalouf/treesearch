@@ -8,7 +8,7 @@ use pest_derive::Parser;
 use std::collections::HashMap;
 use thiserror::Error;
 
-use crate::pattern::{Constraint, EdgeConstraint, Pattern, PatternVar, RelationType};
+use crate::pattern::{BasePattern, Constraint, EdgeConstraint, Pattern, PatternVar, RelationType};
 
 #[derive(Parser)]
 #[grammar = "query_grammar.pest"]
@@ -33,9 +33,9 @@ pub enum QueryError {
 }
 
 pub fn compile_query(input: &str) -> Result<Pattern, QueryError> {
-    let mut match_pattern: Option<Pattern> = None;
-    let mut except_patterns: Vec<Pattern> = vec![];
-    let mut optional_patterns: Vec<Pattern> = vec![];
+    let mut match_pattern: Option<BasePattern> = None;
+    let mut except_patterns: Vec<BasePattern> = vec![];
+    let mut optional_patterns: Vec<BasePattern> = vec![];
 
     let mut pairs = QueryParser::parse(Rule::query, input)?;
     let query_pair = pairs.next().unwrap();
@@ -50,19 +50,20 @@ pub fn compile_query(input: &str) -> Result<Pattern, QueryError> {
         }
     }
 
-    if let Some(mut pattern) = match_pattern {
+    if let Some(match_pattern) = match_pattern {
         // Validate that new variables in extension blocks are unique
-        validate_unique_extension_variables(&pattern, &except_patterns, &optional_patterns)?;
-
-        pattern.except_patterns = except_patterns;
-        pattern.optional_patterns = optional_patterns;
-        Ok(pattern)
+        validate_unique_extension_variables(&match_pattern, &except_patterns, &optional_patterns)?;
+        Ok(Pattern {
+            match_pattern,
+            except_patterns,
+            optional_patterns,
+        })
     } else {
         Err(QueryError::NoMATCH)
     }
 }
 
-pub fn compile_query_block(item: Pair<Rule>) -> Result<Pattern, QueryError> {
+pub fn compile_query_block(item: Pair<Rule>) -> Result<BasePattern, QueryError> {
     let mut vars: HashMap<String, PatternVar> = HashMap::new();
     let mut edges: Vec<EdgeConstraint> = Vec::new();
 
@@ -93,53 +94,27 @@ pub fn compile_query_block(item: Pair<Rule>) -> Result<Pattern, QueryError> {
         };
     }
 
-    Ok(Pattern::with_constraints(vars, edges))
+    Ok(BasePattern::with_constraints(vars, edges))
 }
 
 /// Validate that new variables in EXCEPT/OPTIONAL blocks are unique across all extension blocks
 fn validate_unique_extension_variables(
-    match_pattern: &Pattern,
-    except_patterns: &[Pattern],
-    optional_patterns: &[Pattern],
+    match_pattern: &BasePattern,
+    except_patterns: &[BasePattern],
+    optional_patterns: &[BasePattern],
 ) -> Result<(), QueryError> {
     use std::collections::HashSet;
 
-    // Get all variable names from MATCH block
-    let match_vars: HashSet<&str> = match_pattern.var_names.iter().map(|s| s.as_str()).collect();
+    let match_vars: HashSet<&String> = match_pattern.var_names.iter().collect();
+    let mut seen_new_vars: HashSet<&String> = HashSet::new();
 
-    // Track new variables seen across all EXCEPT/OPTIONAL blocks
-    let mut seen_new_vars: HashSet<String> = HashSet::new();
-
-    // Check EXCEPT blocks
-    for except_pattern in except_patterns {
-        for var_name in &except_pattern.var_names {
-            // Skip if it's a MATCH variable (allowed to be referenced)
-            if match_vars.contains(var_name.as_str()) {
-                continue;
-            }
-
-            // Check if this new variable was already seen in another block
-            if !seen_new_vars.insert(var_name.clone()) {
+    for pattern in except_patterns.iter().chain(optional_patterns.iter()) {
+        for var_name in &pattern.var_names {
+            if !match_vars.contains(var_name) && !seen_new_vars.insert(var_name) {
                 return Err(QueryError::DuplicateExtensionVariable(var_name.clone()));
             }
         }
     }
-
-    // Check OPTIONAL blocks
-    for optional_pattern in optional_patterns {
-        for var_name in &optional_pattern.var_names {
-            // Skip if it's a MATCH variable
-            if match_vars.contains(var_name.as_str()) {
-                continue;
-            }
-
-            // Check if this new variable was already seen
-            if !seen_new_vars.insert(var_name.clone()) {
-                return Err(QueryError::DuplicateExtensionVariable(var_name.clone()));
-            }
-        }
-    }
-
     Ok(())
 }
 
@@ -290,26 +265,29 @@ mod tests {
         let query = "MATCH { Node []; }";
         let pattern = compile_query(query).unwrap();
 
-        assert_eq!(pattern.var_constraints.len(), 1);
-        assert_eq!(*pattern.var_ids.get("Node").unwrap(), 0);
-        assert!(matches!(pattern.var_constraints[0], Constraint::Any));
+        assert_eq!(pattern.match_pattern.var_constraints.len(), 1);
+        assert_eq!(*pattern.match_pattern.var_ids.get("Node").unwrap(), 0);
+        assert!(matches!(
+            pattern.match_pattern.var_constraints[0],
+            Constraint::Any
+        ));
 
         let query = r#"MATCH { Verb [upos="VERB"]; }"#;
         let pattern = compile_query(query).unwrap();
 
-        assert_eq!(pattern.var_constraints.len(), 1);
-        assert_eq!(*pattern.var_ids.get("Verb").unwrap(), 0);
+        assert_eq!(pattern.match_pattern.var_constraints.len(), 1);
+        assert_eq!(*pattern.match_pattern.var_ids.get("Verb").unwrap(), 0);
         assert_eq!(
-            pattern.var_constraints[0],
+            pattern.match_pattern.var_constraints[0],
             Constraint::UPOS("VERB".to_string())
         );
 
         let query = r#"MATCH { Help [lemma="help" & upos="VERB"]; }"#;
         let pattern = compile_query(query).unwrap();
 
-        assert_eq!(pattern.var_constraints.len(), 1);
-        assert_eq!(*pattern.var_ids.get("Help").unwrap(), 0);
-        match &pattern.var_constraints[0] {
+        assert_eq!(pattern.match_pattern.var_constraints.len(), 1);
+        assert_eq!(*pattern.match_pattern.var_ids.get("Help").unwrap(), 0);
+        match &pattern.match_pattern.var_constraints[0] {
             Constraint::And(constraints) => {
                 assert_eq!(constraints.len(), 2);
                 assert_eq!(constraints[0], Constraint::Lemma("help".to_string()));
@@ -328,10 +306,10 @@ mod tests {
         }"#;
         let pattern = compile_query(query).unwrap();
 
-        assert_eq!(pattern.var_constraints.len(), 2);
-        assert_eq!(pattern.edge_constraints.len(), 1);
+        assert_eq!(pattern.match_pattern.var_constraints.len(), 2);
+        assert_eq!(pattern.match_pattern.edge_constraints.len(), 1);
 
-        let edge_constraint = &pattern.edge_constraints[0];
+        let edge_constraint = &pattern.match_pattern.edge_constraints[0];
         assert_eq!(edge_constraint.from, "Help");
         assert_eq!(edge_constraint.to, "To");
         assert_eq!(edge_constraint.relation, RelationType::Child);
@@ -347,10 +325,10 @@ mod tests {
         }"#;
         let pattern = compile_query(query).unwrap();
 
-        assert_eq!(pattern.var_constraints.len(), 2);
-        assert_eq!(pattern.edge_constraints.len(), 1);
+        assert_eq!(pattern.match_pattern.var_constraints.len(), 2);
+        assert_eq!(pattern.match_pattern.edge_constraints.len(), 1);
 
-        let edge_constraint = &pattern.edge_constraints[0];
+        let edge_constraint = &pattern.match_pattern.edge_constraints[0];
         assert_eq!(edge_constraint.from, "Parent");
         assert_eq!(edge_constraint.to, "Child");
         assert_eq!(edge_constraint.relation, RelationType::Child);
@@ -366,9 +344,9 @@ mod tests {
         }"#;
         let pattern = compile_query(query).unwrap();
 
-        assert_eq!(pattern.edge_constraints.len(), 1);
+        assert_eq!(pattern.match_pattern.edge_constraints.len(), 1);
 
-        let edge_constraint = &pattern.edge_constraints[0];
+        let edge_constraint = &pattern.match_pattern.edge_constraints[0];
         assert_eq!(edge_constraint.from, "Help");
         assert_eq!(edge_constraint.to, "To");
         assert_eq!(edge_constraint.relation, RelationType::Child);
@@ -385,9 +363,9 @@ mod tests {
         }"#;
         let pattern = compile_query(query).unwrap();
 
-        assert_eq!(pattern.edge_constraints.len(), 1);
+        assert_eq!(pattern.match_pattern.edge_constraints.len(), 1);
 
-        let edge_constraint = &pattern.edge_constraints[0];
+        let edge_constraint = &pattern.match_pattern.edge_constraints[0];
         assert_eq!(edge_constraint.from, "Help");
         assert_eq!(edge_constraint.to, "To");
         assert_eq!(edge_constraint.relation, RelationType::Child);
@@ -405,7 +383,7 @@ mod tests {
         }"#;
         let pattern = compile_query(query).unwrap();
 
-        let edge_constraint = &pattern.edge_constraints[0];
+        let edge_constraint = &pattern.match_pattern.edge_constraints[0];
         assert_eq!(edge_constraint.negated, false);
     }
 
@@ -422,16 +400,16 @@ mod tests {
         }"#;
         let pattern = compile_query(query).unwrap();
 
-        assert_eq!(pattern.var_constraints.len(), 3);
-        assert!(pattern.var_ids.contains_key("Help"));
-        assert!(pattern.var_ids.contains_key("To"));
-        assert!(pattern.var_ids.contains_key("YHead"));
+        assert_eq!(pattern.match_pattern.var_constraints.len(), 3);
+        assert!(pattern.match_pattern.var_ids.contains_key("Help"));
+        assert!(pattern.match_pattern.var_ids.contains_key("To"));
+        assert!(pattern.match_pattern.var_ids.contains_key("YHead"));
 
-        assert_eq!(pattern.edge_constraints.len(), 2);
-        assert_eq!(pattern.edge_constraints[0].from, "Help");
-        assert_eq!(pattern.edge_constraints[0].to, "To");
-        assert_eq!(pattern.edge_constraints[1].from, "To");
-        assert_eq!(pattern.edge_constraints[1].to, "YHead");
+        assert_eq!(pattern.match_pattern.edge_constraints.len(), 2);
+        assert_eq!(pattern.match_pattern.edge_constraints[0].from, "Help");
+        assert_eq!(pattern.match_pattern.edge_constraints[0].to, "To");
+        assert_eq!(pattern.match_pattern.edge_constraints[1].from, "To");
+        assert_eq!(pattern.match_pattern.edge_constraints[1].to, "YHead");
     }
 
     #[test]
@@ -444,24 +422,28 @@ mod tests {
         }"#;
         let pattern = compile_query(query).unwrap();
 
-        assert_eq!(pattern.var_constraints.len(), 4);
+        assert_eq!(pattern.match_pattern.var_constraints.len(), 4);
         assert!(
             pattern
+                .match_pattern
                 .var_constraints
                 .contains(&Constraint::Lemma("run".to_string()))
         );
         assert!(
             pattern
+                .match_pattern
                 .var_constraints
                 .contains(&Constraint::UPOS("VERB".to_string()))
         );
         assert!(
             pattern
+                .match_pattern
                 .var_constraints
                 .contains(&Constraint::Form("running".to_string()))
         );
         assert!(
             pattern
+                .match_pattern
                 .var_constraints
                 .contains(&Constraint::DepRel("nsubj".to_string()))
         );
@@ -478,10 +460,10 @@ mod tests {
         let pattern = compile_query(query).unwrap();
 
         // Parser accepts this, but should validate that all variables exist
-        assert_eq!(pattern.var_constraints.len(), 2);
-        assert_eq!(pattern.edge_constraints.len(), 1);
-        assert_eq!(pattern.edge_constraints[0].from, "Help");
-        assert_eq!(pattern.edge_constraints[0].to, "To");
+        assert_eq!(pattern.match_pattern.var_constraints.len(), 2);
+        assert_eq!(pattern.match_pattern.edge_constraints.len(), 1);
+        assert_eq!(pattern.match_pattern.edge_constraints[0].from, "Help");
+        assert_eq!(pattern.match_pattern.edge_constraints[0].to, "To");
     }
 
     #[test]
@@ -493,10 +475,10 @@ mod tests {
         }"#;
         let pattern = compile_query(query).unwrap();
 
-        assert_eq!(pattern.var_constraints.len(), 3);
-        assert_eq!(pattern.edge_constraints.len(), 1);
-        assert_eq!(pattern.edge_constraints[0].from, "Foo");
-        assert_eq!(pattern.edge_constraints[0].to, "Bar");
+        assert_eq!(pattern.match_pattern.var_constraints.len(), 3);
+        assert_eq!(pattern.match_pattern.edge_constraints.len(), 1);
+        assert_eq!(pattern.match_pattern.edge_constraints[0].from, "Foo");
+        assert_eq!(pattern.match_pattern.edge_constraints[0].to, "Bar");
     }
 
     #[test]
@@ -509,10 +491,10 @@ mod tests {
         let pattern = compile_query(query).unwrap();
 
         // This is likely invalid but parser should accept it
-        assert_eq!(pattern.var_constraints.len(), 1);
-        assert_eq!(pattern.edge_constraints.len(), 1);
-        assert_eq!(pattern.edge_constraints[0].from, "Node");
-        assert_eq!(pattern.edge_constraints[0].to, "Node");
+        assert_eq!(pattern.match_pattern.var_constraints.len(), 1);
+        assert_eq!(pattern.match_pattern.edge_constraints.len(), 1);
+        assert_eq!(pattern.match_pattern.edge_constraints[0].from, "Node");
+        assert_eq!(pattern.match_pattern.edge_constraints[0].to, "Node");
     }
 
     #[test]
@@ -537,10 +519,10 @@ mod tests {
         }"#;
         let pattern = compile_query(query).unwrap();
 
-        assert_eq!(pattern.var_constraints.len(), 2);
-        assert_eq!(pattern.edge_constraints.len(), 1);
+        assert_eq!(pattern.match_pattern.var_constraints.len(), 2);
+        assert_eq!(pattern.match_pattern.edge_constraints.len(), 1);
 
-        let edge_constraint = &pattern.edge_constraints[0];
+        let edge_constraint = &pattern.match_pattern.edge_constraints[0];
         assert_eq!(edge_constraint.from, "First");
         assert_eq!(edge_constraint.to, "Second");
         assert_eq!(edge_constraint.relation, RelationType::Precedes);
@@ -557,10 +539,10 @@ mod tests {
         }"#;
         let pattern = compile_query(query).unwrap();
 
-        assert_eq!(pattern.var_constraints.len(), 2);
-        assert_eq!(pattern.edge_constraints.len(), 1);
+        assert_eq!(pattern.match_pattern.var_constraints.len(), 2);
+        assert_eq!(pattern.match_pattern.edge_constraints.len(), 1);
 
-        let edge_constraint = &pattern.edge_constraints[0];
+        let edge_constraint = &pattern.match_pattern.edge_constraints[0];
         assert_eq!(edge_constraint.from, "Adj");
         assert_eq!(edge_constraint.to, "Noun");
         assert_eq!(edge_constraint.relation, RelationType::ImmediatelyPrecedes);
@@ -583,15 +565,17 @@ MATCH {
 }"#;
         let pattern = compile_query(query).unwrap();
 
-        assert_eq!(pattern.var_constraints.len(), 3);
-        assert_eq!(pattern.edge_constraints.len(), 4);
+        assert_eq!(pattern.match_pattern.var_constraints.len(), 3);
+        assert_eq!(pattern.match_pattern.edge_constraints.len(), 4);
 
         // Check that we have both Child and Precedes relations
         let has_child = pattern
+            .match_pattern
             .edge_constraints
             .iter()
             .any(|e| e.relation == RelationType::Child);
         let has_precedes = pattern
+            .match_pattern
             .edge_constraints
             .iter()
             .any(|e| e.relation == RelationType::Precedes);
@@ -614,11 +598,12 @@ MATCH {
 }"#;
         let pattern = compile_query(query).unwrap();
 
-        assert_eq!(pattern.var_constraints.len(), 3);
-        assert_eq!(pattern.edge_constraints.len(), 2);
+        assert_eq!(pattern.match_pattern.var_constraints.len(), 3);
+        assert_eq!(pattern.match_pattern.edge_constraints.len(), 2);
 
         // Find the immediate precedes constraint
         let immediate = pattern
+            .match_pattern
             .edge_constraints
             .iter()
             .find(|e| e.relation == RelationType::ImmediatelyPrecedes)
@@ -628,6 +613,7 @@ MATCH {
 
         // Find the precedes constraint
         let precedes = pattern
+            .match_pattern
             .edge_constraints
             .iter()
             .find(|e| e.relation == RelationType::Precedes)
@@ -641,9 +627,9 @@ MATCH {
         let query = r#"MATCH { V [feats.Tense="Past"]; }"#;
         let pattern = compile_query(query).unwrap();
 
-        assert_eq!(pattern.var_constraints.len(), 1);
-        assert_eq!(*pattern.var_ids.get("V").unwrap(), 0);
-        match &pattern.var_constraints[0] {
+        assert_eq!(pattern.match_pattern.var_constraints.len(), 1);
+        assert_eq!(*pattern.match_pattern.var_ids.get("V").unwrap(), 0);
+        match &pattern.match_pattern.var_constraints[0] {
             Constraint::Feature(key, value) => {
                 assert_eq!(key, "Tense");
                 assert_eq!(value, "Past");
@@ -657,7 +643,7 @@ MATCH {
         let query = r#"MATCH { N [feats.Number="Plur" & feats.Case="Nom"]; }"#;
         let pattern = compile_query(query).unwrap();
 
-        match &pattern.var_constraints[0] {
+        match &pattern.match_pattern.var_constraints[0] {
             Constraint::And(constraints) => {
                 assert_eq!(constraints.len(), 2);
                 assert!(constraints.iter().any(|c| matches!(
@@ -676,7 +662,7 @@ MATCH {
         let query = r#"MATCH { V [lemma="be" & feats.Tense="Past"]; }"#;
         let pattern = compile_query(query).unwrap();
 
-        match &pattern.var_constraints[0] {
+        match &pattern.match_pattern.var_constraints[0] {
             Constraint::And(constraints) => {
                 assert!(constraints.contains(&Constraint::Lemma("be".to_string())));
                 assert!(constraints.iter().any(|c| matches!(
@@ -692,7 +678,7 @@ MATCH {
         let query = r#"MATCH { V [lemma!="help"]; }"#;
         let pattern = compile_query(query).unwrap();
 
-        match &pattern.var_constraints[0] {
+        match &pattern.match_pattern.var_constraints[0] {
             Constraint::Not(inner) => match inner.as_ref() {
                 Constraint::Lemma(lemma) => assert_eq!(lemma, "help"),
                 _ => panic!("Expected Lemma constraint inside Not"),
@@ -706,7 +692,7 @@ MATCH {
         let query = r#"MATCH { V [feats.Tense!="Past"]; }"#;
         let pattern = compile_query(query).unwrap();
 
-        match &pattern.var_constraints[0] {
+        match &pattern.match_pattern.var_constraints[0] {
             Constraint::Not(inner) => match inner.as_ref() {
                 Constraint::Feature(key, value) => {
                     assert_eq!(key, "Tense");
@@ -723,7 +709,7 @@ MATCH {
         let query = r#"MATCH { V [lemma="run" & upos!="NOUN"]; }"#;
         let pattern = compile_query(query).unwrap();
 
-        match &pattern.var_constraints[0] {
+        match &pattern.match_pattern.var_constraints[0] {
             Constraint::And(constraints) => {
                 assert_eq!(constraints.len(), 2);
                 assert!(constraints.contains(&Constraint::Lemma("run".to_string())));
@@ -744,12 +730,12 @@ MATCH {
         }"#;
         let pattern = compile_query(query).unwrap();
 
-        assert_eq!(pattern.var_constraints.len(), 1);
-        assert_eq!(pattern.edge_constraints.len(), 0); // Anonymous edges don't create edge constraints
-        assert_eq!(*pattern.var_ids.get("X").unwrap(), 0);
+        assert_eq!(pattern.match_pattern.var_constraints.len(), 1);
+        assert_eq!(pattern.match_pattern.edge_constraints.len(), 0); // Anonymous edges don't create edge constraints
+        assert_eq!(*pattern.match_pattern.var_ids.get("X").unwrap(), 0);
 
         // Check that X has HasIncomingEdge constraint
-        match &pattern.var_constraints[0] {
+        match &pattern.match_pattern.var_constraints[0] {
             Constraint::And(constraints) => {
                 assert_eq!(constraints.len(), 2);
                 assert!(constraints.contains(&Constraint::UPOS("NOUN".to_string())));
@@ -770,11 +756,11 @@ MATCH {
         }"#;
         let pattern = compile_query(query).unwrap();
 
-        assert_eq!(pattern.var_constraints.len(), 1);
-        assert_eq!(pattern.edge_constraints.len(), 0);
+        assert_eq!(pattern.match_pattern.var_constraints.len(), 1);
+        assert_eq!(pattern.match_pattern.edge_constraints.len(), 0);
 
         // Check that X has HasOutgoingEdge constraint
-        match &pattern.var_constraints[0] {
+        match &pattern.match_pattern.var_constraints[0] {
             Constraint::And(constraints) => {
                 assert_eq!(constraints.len(), 2);
                 assert!(constraints.contains(&Constraint::UPOS("VERB".to_string())));
@@ -794,8 +780,8 @@ MATCH {
         }"#;
         let pattern = compile_query(query).unwrap();
 
-        assert_eq!(pattern.var_constraints.len(), 0);
-        assert_eq!(pattern.edge_constraints.len(), 0);
+        assert_eq!(pattern.match_pattern.var_constraints.len(), 0);
+        assert_eq!(pattern.match_pattern.edge_constraints.len(), 0);
     }
 
     #[test]
@@ -808,10 +794,10 @@ MATCH {
         }"#;
         let pattern = compile_query(query).unwrap();
 
-        assert_eq!(pattern.var_constraints.len(), 1);
+        assert_eq!(pattern.match_pattern.var_constraints.len(), 1);
 
         // Check that X has both HasIncomingEdge constraints
-        match &pattern.var_constraints[0] {
+        match &pattern.match_pattern.var_constraints[0] {
             Constraint::And(constraints) => {
                 assert_eq!(constraints.len(), 3); // UPOS + 2 HasIncomingEdge
                 assert!(constraints.contains(&Constraint::UPOS("NOUN".to_string())));
@@ -839,11 +825,11 @@ MATCH {
         }"#;
         let pattern = compile_query(query).unwrap();
 
-        assert_eq!(pattern.var_constraints.len(), 1);
+        assert_eq!(pattern.match_pattern.var_constraints.len(), 1);
 
         // Check that X has HasIncomingEdge with no label
         assert!(matches!(
-            &pattern.var_constraints[0],
+            &pattern.match_pattern.var_constraints[0],
             Constraint::HasIncomingEdge(RelationType::Child, None)
         ));
     }
@@ -861,11 +847,12 @@ MATCH {
 }"#;
         let pattern = compile_query(query).unwrap();
 
-        assert_eq!(pattern.var_constraints.len(), 2);
-        assert_eq!(pattern.edge_constraints.len(), 1); // Only X -> Y creates edge constraint
+        assert_eq!(pattern.match_pattern.var_constraints.len(), 2);
+        assert_eq!(pattern.match_pattern.edge_constraints.len(), 1); // Only X -> Y creates edge constraint
 
         // X should have HasIncomingEdge constraint
-        let x_constraints = &pattern.var_constraints[*pattern.var_ids.get("X").unwrap()];
+        let x_constraints = &pattern.match_pattern.var_constraints
+            [*pattern.match_pattern.var_ids.get("X").unwrap()];
         match x_constraints {
             Constraint::And(constraints) => {
                 assert!(constraints.iter().any(|c| matches!(
