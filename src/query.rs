@@ -292,7 +292,7 @@ mod tests {
 
         assert_eq!(pattern.var_constraints.len(), 1);
         assert_eq!(*pattern.var_ids.get("Node").unwrap(), 0);
-        assert!(pattern.var_constraints[0].is_any());
+        assert!(matches!(pattern.var_constraints[0], Constraint::Any));
 
         let query = r#"MATCH { Verb [upos="VERB"]; }"#;
         let pattern = compile_query(query).unwrap();

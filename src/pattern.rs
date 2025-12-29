@@ -10,7 +10,6 @@ use std::fmt::Debug;
 /// Type alias for pattern variable identifiers (indices into Pattern.vars)
 pub type VarId = usize;
 
-/// A constraint on a variable's attributes (node attributes in matched tree)
 #[derive(Debug, Clone, PartialEq)]
 pub enum Constraint {
     Any,
@@ -23,19 +22,8 @@ pub enum Constraint {
     Misc(String, String),
     And(Vec<Constraint>),
     Not(Box<Constraint>),
-    /// Check if variable has an incoming edge (from anonymous variable)
-    /// Format: _ -[label]-> X becomes HasIncomingEdge on X
     HasIncomingEdge(RelationType, Option<String>),
-    /// Check if variable has an outgoing edge (to anonymous variable)
-    /// Format: X -[label]-> _ becomes HasOutgoingEdge on X
     HasOutgoingEdge(RelationType, Option<String>),
-}
-
-impl Constraint {
-    /// Check if a constraint is trivially true (matches anything)
-    pub fn is_any(&self) -> bool {
-        matches!(self, Constraint::Any)
-    }
 }
 
 pub fn merge_constraints(a: &Constraint, b: &Constraint) -> Constraint {
@@ -59,9 +47,7 @@ pub fn merge_constraints(a: &Constraint, b: &Constraint) -> Constraint {
 /// A pattern variable representing a node in the dependency tree
 #[derive(Debug, Clone)]
 pub struct PatternVar {
-    /// Variable name to bind matched tree node to
     pub var_name: String,
-    /// Constraints that the matched tree node must satisfy
     pub constraint: Constraint,
 }
 
