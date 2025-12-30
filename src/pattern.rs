@@ -22,8 +22,8 @@ pub enum Constraint {
     Misc(String, String),
     And(Vec<Constraint>),
     Not(Box<Constraint>),
-    HasIncomingEdge(RelationType, Option<String>),
-    HasOutgoingEdge(RelationType, Option<String>),
+    IsChild(Option<String>),
+    HasChild(Option<String>),
 }
 
 pub fn merge_constraints(a: &Constraint, b: &Constraint) -> Constraint {
@@ -63,8 +63,6 @@ impl PatternVar {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RelationType {
     Child,
-    Ancestor,
-    Descendant,
     Precedes,
     ImmediatelyPrecedes,
 }
@@ -166,10 +164,7 @@ impl BasePattern {
             (true, false) => {
                 // _ -[rel]-> X: X has incoming edge
                 // _ !-[rel]-> X: X does NOT have incoming edge
-                let constraint = Constraint::HasIncomingEdge(
-                    edge_constraint.relation,
-                    edge_constraint.label.clone(),
-                );
+                let constraint = Constraint::IsChild(edge_constraint.label.clone());
                 let final_constraint = if edge_constraint.negated {
                     Constraint::Not(Box::new(constraint))
                 } else {
@@ -180,10 +175,7 @@ impl BasePattern {
             (false, true) => {
                 // X -[rel]-> _: X has outgoing edge
                 // X !-[rel]-> _: X does NOT have outgoing edge
-                let constraint = Constraint::HasOutgoingEdge(
-                    edge_constraint.relation,
-                    edge_constraint.label.clone(),
-                );
+                let constraint = Constraint::HasChild(edge_constraint.label.clone());
                 let final_constraint = if edge_constraint.negated {
                     Constraint::Not(Box::new(constraint))
                 } else {
