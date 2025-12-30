@@ -5,7 +5,7 @@ Complete walkthrough of treesearch, from installation to advanced usage.
 ## Installation
 
 ```bash
-pip install treesearch
+pip install treesearch-ud
 ```
 
 Or install from source (requires Rust toolchain):
