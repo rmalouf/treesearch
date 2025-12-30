@@ -164,7 +164,7 @@ impl BasePattern {
             (true, false) => {
                 // _ -[rel]-> X: X has incoming edge
                 // _ !-[rel]-> X: X does NOT have incoming edge
-                let constraint = Constraint::IsChild(edge_constraint.label.clone());
+                let constraint = Constraint::IsChild(edge_constraint.label);
                 let final_constraint = if edge_constraint.negated {
                     Constraint::Not(Box::new(constraint))
                 } else {
@@ -175,7 +175,7 @@ impl BasePattern {
             (false, true) => {
                 // X -[rel]-> _: X has outgoing edge
                 // X !-[rel]-> _: X does NOT have outgoing edge
-                let constraint = Constraint::HasChild(edge_constraint.label.clone());
+                let constraint = Constraint::HasChild(edge_constraint.label);
                 let final_constraint = if edge_constraint.negated {
                     Constraint::Not(Box::new(constraint))
                 } else {
