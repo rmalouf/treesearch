@@ -56,39 +56,21 @@ fn satisfies_var_constraint(tree: &Tree, word: &Word, constraint: &Constraint) -
             !satisfies_var_constraint(tree, word, inner_constraint)
         }
         Constraint::Any => true, // No filtering
-        Constraint::HasIncomingEdge(rel_type, label) => {
-            // Check if word has an incoming edge with optional label constraint
-            match rel_type {
-                RelationType::Child => {
-                    if let Some(required_label) = label {
-                        word.head.is_some()
-                            && tree
-                                .string_pool
-                                .compare_bytes(word.deprel, required_label.as_bytes())
-                    } else {
-                        word.head.is_some()
-                    }
-                }
-                _ => panic!(
-                    "Anonymous variables only supported for Child relations, not {:?}",
-                    rel_type
-                ),
+        Constraint::IsChild(label) => {
+            if let Some(required_label) = label {
+                word.head.is_some()
+                    && tree
+                        .string_pool
+                        .compare_bytes(word.deprel, required_label.as_bytes())
+            } else {
+                word.head.is_some()
             }
         }
-        Constraint::HasOutgoingEdge(rel_type, label) => {
-            // Check if word has an outgoing edge with optional label constraint
-            match rel_type {
-                RelationType::Child => {
-                    if let Some(required_label) = label {
-                        !word.children_by_deprel(tree, required_label).is_empty()
-                    } else {
-                        !word.children.is_empty()
-                    }
-                }
-                _ => panic!(
-                    "Anonymous variables only supported for Child relations, not {:?}",
-                    rel_type
-                ),
+        Constraint::HasChild(label) => {
+            if let Some(required_label) = label {
+                !word.children_by_deprel(tree, required_label).is_empty()
+            } else {
+                !word.children.is_empty()
             }
         }
     }
@@ -100,39 +82,26 @@ fn satisfies_arc_constraint(
     to_word_id: WordId,
     edge_constraint: &EdgeConstraint,
 ) -> bool {
-    // First check the structural relationship
-    let satisfies_relation = match edge_constraint.relation {
-        RelationType::Child => tree.check_rel(from_word_id, to_word_id),
+    let satisfies_constraint = match edge_constraint.relation {
+        RelationType::Child => {
+            tree.check_rel(from_word_id, to_word_id)
+                && edge_constraint
+                    .label
+                    .as_ref()
+                    .is_none_or(|expected_deprel| {
+                        let actual_deprel = tree.word(to_word_id).unwrap().deprel;
+                        tree.string_pool
+                            .compare_bytes(actual_deprel, expected_deprel.as_bytes())
+                    })
+        }
         RelationType::Precedes => from_word_id < to_word_id,
         RelationType::ImmediatelyPrecedes => to_word_id == from_word_id + 1,
-        _ => panic!("Unsupported relation: {:?}", edge_constraint.relation),
     };
 
-    // If the relation doesn't hold, positive constraint fails
-    if !satisfies_relation {
-        // For negative constraints, "relation doesn't hold" means constraint is satisfied
-        return edge_constraint.negated;
-    }
-
-    // If there's a label constraint, check it (only applicable to Child relations)
-    let satisfies_label = if let Some(expected_label) = &edge_constraint.label {
-        // For Child relations, check the deprel of the target word
-        if matches!(edge_constraint.relation, RelationType::Child) {
-            let actual_deprel = tree.word(to_word_id).unwrap().deprel;
-            tree.string_pool
-                .compare_bytes(actual_deprel, expected_label.as_bytes())
-        } else {
-            true // No label check for non-Child relations
-        }
-    } else {
-        true // No label constraint
-    };
-
-    // Apply negation to the final result
     if edge_constraint.negated {
-        !satisfies_label
+        !satisfies_constraint
     } else {
-        satisfies_label
+        satisfies_constraint
     }
 }
 
@@ -146,22 +115,17 @@ fn has_any_match(tree: &Tree, pattern: &BasePattern, initial_bindings: &Bindings
 /// Returns all combinations of optional extensions (or just base if none match).
 fn process_optionals(
     tree: &Tree,
-    base_bindings: &Bindings,
+    base_bindings: Bindings,
     optional_patterns: &[BasePattern],
 ) -> Vec<Bindings> {
-    if optional_patterns.is_empty() {
-        return vec![base_bindings.clone()];
-    }
+    let extension_sets: Vec<Vec<Bindings>> = optional_patterns
+        .iter()
+        .map(|optional| solve_with_bindings(tree, optional, &base_bindings))
+        .collect();
 
-    // For each OPTIONAL, collect possible extensions
-    let mut extension_sets: Vec<Vec<Bindings>> = Vec::new();
-    for optional in optional_patterns {
-        let extensions = solve_with_bindings(tree, optional, base_bindings);
-        extension_sets.push(extensions);
-    }
+    let mut results = vec![base_bindings];
 
     // Compute cross-product of all extensions
-    let mut results = vec![base_bindings.clone()];
 
     for extensions in extension_sets {
         if extensions.is_empty() {
@@ -189,7 +153,6 @@ fn process_optionals(
 }
 
 /// Search with pre-bound variables from initial_bindings.
-/// Variables in initial_bindings are pre-assigned; others are solved.
 /// Returns all possible bindings (including initial bindings).
 fn solve_with_bindings(
     tree: &Tree,
@@ -197,12 +160,9 @@ fn solve_with_bindings(
     initial_bindings: &Bindings,
 ) -> Vec<Bindings> {
     let num_words = tree.words.len();
-
-    // Initialize assignment vector and assigned words bitset
     let mut assign: Vec<Option<WordId>> = vec![None; pattern.n_vars];
     let mut assigned_words: BitFixed<u64> = BitFixed::new(num_words);
 
-    // Pre-populate with initial bindings
     for (var_name, &word_id) in initial_bindings {
         if let Some(&var_id) = pattern.var_ids.get(var_name) {
             assign[var_id] = Some(word_id);
@@ -210,16 +170,14 @@ fn solve_with_bindings(
         }
     }
 
-    // Initialize domains (node consistency) for all variables
+    // Initialize domains (node consistency)
     let mut domains: Vec<BitFixed<u64>> = vec![BitFixed::new(num_words); pattern.n_vars];
     for (var_id, constr) in pattern.var_constraints.iter().enumerate() {
-        // Skip domain computation for pre-assigned variables
         if assign[var_id].is_some() {
             continue;
         }
-
         for (word_id, word) in tree.words.iter().enumerate() {
-            if satisfies_var_constraint(tree, word, constr) {
+            if !assigned_words.test(word_id) && satisfies_var_constraint(tree, word, constr) {
                 domains[var_id].set(word_id);
             }
         }
@@ -228,21 +186,16 @@ fn solve_with_bindings(
         }
     }
 
-    // Run DFS to find all solutions
     dfs(tree, pattern, &assign, &domains, &assigned_words)
 }
 
 pub fn find_all_matches(tree: Tree, pattern: &Pattern) -> Vec<Match> {
     let tree = Arc::new(tree);
     let empty_bindings = Bindings::new();
-
-    // Find all MATCH block solutions
     let base_matches = solve_with_bindings(&tree, &pattern.match_pattern, &empty_bindings);
 
-    // Process EXCEPT and OPTIONAL blocks
     let mut results = Vec::new();
     for base_bindings in base_matches {
-        // Check EXCEPT: reject if ANY except block matches
         let rejected = pattern
             .except_patterns
             .iter()
@@ -252,9 +205,8 @@ pub fn find_all_matches(tree: Tree, pattern: &Pattern) -> Vec<Match> {
             continue;
         }
 
-        // Process OPTIONAL blocks: extend with all combinations
         let extended_solutions =
-            process_optionals(&tree, &base_bindings, &pattern.optional_patterns);
+            process_optionals(&tree, base_bindings, &pattern.optional_patterns);
 
         for bindings in extended_solutions {
             results.push(Match {
@@ -1197,12 +1149,8 @@ mod tests {
         .unwrap();
         // Both verbs should be found (no NOUNs in tree)
         assert_eq!(matches.len(), 2);
-        assert!(matches
-            .iter()
-            .any(|m| m.bindings == hashmap! { "V" => 0 }));
-        assert!(matches
-            .iter()
-            .any(|m| m.bindings == hashmap! { "V" => 2 }));
+        assert!(matches.iter().any(|m| m.bindings == hashmap! { "V" => 0 }));
+        assert!(matches.iter().any(|m| m.bindings == hashmap! { "V" => 2 }));
     }
 
     #[test]
@@ -1263,12 +1211,16 @@ mod tests {
 
         // Should get 2 results: one with P=He, one with P=us
         assert_eq!(matches.len(), 2);
-        assert!(matches
-            .iter()
-            .any(|m| m.bindings == hashmap! { "V" => 0, "P" => 1 }));
-        assert!(matches
-            .iter()
-            .any(|m| m.bindings == hashmap! { "V" => 0, "P" => 2 }));
+        assert!(
+            matches
+                .iter()
+                .any(|m| m.bindings == hashmap! { "V" => 0, "P" => 1 })
+        );
+        assert!(
+            matches
+                .iter()
+                .any(|m| m.bindings == hashmap! { "V" => 0, "P" => 2 })
+        );
     }
 
     #[test]
@@ -1296,18 +1248,26 @@ mod tests {
         assert_eq!(matches.len(), 4);
 
         // Verify all combinations exist
-        assert!(matches
-            .iter()
-            .any(|m| m.bindings == hashmap! { "V" => 0, "P" => 1, "A" => 3 }));
-        assert!(matches
-            .iter()
-            .any(|m| m.bindings == hashmap! { "V" => 0, "P" => 1, "A" => 4 }));
-        assert!(matches
-            .iter()
-            .any(|m| m.bindings == hashmap! { "V" => 0, "P" => 2, "A" => 3 }));
-        assert!(matches
-            .iter()
-            .any(|m| m.bindings == hashmap! { "V" => 0, "P" => 2, "A" => 4 }));
+        assert!(
+            matches
+                .iter()
+                .any(|m| m.bindings == hashmap! { "V" => 0, "P" => 1, "A" => 3 })
+        );
+        assert!(
+            matches
+                .iter()
+                .any(|m| m.bindings == hashmap! { "V" => 0, "P" => 1, "A" => 4 })
+        );
+        assert!(
+            matches
+                .iter()
+                .any(|m| m.bindings == hashmap! { "V" => 0, "P" => 2, "A" => 3 })
+        );
+        assert!(
+            matches
+                .iter()
+                .any(|m| m.bindings == hashmap! { "V" => 0, "P" => 2, "A" => 4 })
+        );
     }
 
     #[test]

@@ -118,7 +118,7 @@ fn validate_unique_extension_variables(
     Ok(())
 }
 
-fn compile_var_decl(pair: pest::iterators::Pair<Rule>) -> Result<PatternVar, QueryError> {
+fn compile_var_decl(pair: Pair<Rule>) -> Result<PatternVar, QueryError> {
     let mut inner = pair.into_inner();
 
     let ident_pair = inner.next().unwrap();
@@ -129,7 +129,7 @@ fn compile_var_decl(pair: pest::iterators::Pair<Rule>) -> Result<PatternVar, Que
     Ok(PatternVar::new(&var_name, constraints))
 }
 
-fn compile_constraint_list(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, QueryError> {
+fn compile_constraint_list(pair: Pair<Rule>) -> Result<Constraint, QueryError> {
     let constraints: Vec<Constraint> = pair
         .into_inner()
         .map(compile_constraint)
@@ -142,7 +142,7 @@ fn compile_constraint_list(pair: pest::iterators::Pair<Rule>) -> Result<Constrai
     }
 }
 
-fn compile_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, QueryError> {
+fn compile_constraint(pair: Pair<Rule>) -> Result<Constraint, QueryError> {
     let inner = pair.into_inner().next().unwrap();
 
     match inner.as_rule() {
@@ -154,7 +154,7 @@ fn compile_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, Q
 }
 
 fn compile_feature_constraint<F>(
-    pair: pest::iterators::Pair<Rule>,
+    pair: Pair<Rule>,
     make_constraint: F,
 ) -> Result<Constraint, QueryError>
 where
@@ -174,7 +174,7 @@ where
     }
 }
 
-fn compile_regular_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Constraint, QueryError> {
+fn compile_regular_constraint(pair: Pair<Rule>) -> Result<Constraint, QueryError> {
     let mut inner = pair.into_inner();
 
     let key = inner.next().unwrap().as_str();
@@ -197,7 +197,7 @@ fn compile_regular_constraint(pair: pest::iterators::Pair<Rule>) -> Result<Const
     }
 }
 
-fn compile_edge_decl(pair: pest::iterators::Pair<Rule>) -> Result<EdgeConstraint, QueryError> {
+fn compile_edge_decl(pair: Pair<Rule>) -> Result<EdgeConstraint, QueryError> {
     let mut inner = pair.into_inner();
 
     let from = inner.next().unwrap().as_str().to_string();
@@ -232,9 +232,7 @@ fn compile_edge_decl(pair: pest::iterators::Pair<Rule>) -> Result<EdgeConstraint
     })
 }
 
-fn compile_precedence_constraint(
-    pair: pest::iterators::Pair<Rule>,
-) -> Result<EdgeConstraint, QueryError> {
+fn compile_precedence_constraint(pair: Pair<Rule>) -> Result<EdgeConstraint, QueryError> {
     let mut inner = pair.into_inner();
 
     let from = inner.next().unwrap().as_str().to_string();
@@ -734,13 +732,12 @@ MATCH {
         assert_eq!(pattern.match_pattern.edge_constraints.len(), 0); // Anonymous edges don't create edge constraints
         assert_eq!(*pattern.match_pattern.var_ids.get("X").unwrap(), 0);
 
-        // Check that X has HasIncomingEdge constraint
         match &pattern.match_pattern.var_constraints[0] {
             Constraint::And(constraints) => {
                 assert_eq!(constraints.len(), 2);
                 assert!(constraints.contains(&Constraint::UPOS("NOUN".to_string())));
                 assert!(constraints.iter().any(|c| matches!(
-                    c, Constraint::HasIncomingEdge(RelationType::Child, Some(label)) if label == "obj"
+                    c, Constraint::IsChild(Some(label)) if label == "obj"
                 )));
             }
             _ => panic!("Expected And constraint"),
@@ -759,13 +756,12 @@ MATCH {
         assert_eq!(pattern.match_pattern.var_constraints.len(), 1);
         assert_eq!(pattern.match_pattern.edge_constraints.len(), 0);
 
-        // Check that X has HasOutgoingEdge constraint
         match &pattern.match_pattern.var_constraints[0] {
             Constraint::And(constraints) => {
                 assert_eq!(constraints.len(), 2);
                 assert!(constraints.contains(&Constraint::UPOS("VERB".to_string())));
                 assert!(constraints.iter().any(|c| matches!(
-                    c, Constraint::HasOutgoingEdge(RelationType::Child, Some(label)) if label == "nsubj"
+                    c, Constraint::HasChild(Some(label)) if label == "nsubj"
                 )));
             }
             _ => panic!("Expected And constraint"),
@@ -796,7 +792,6 @@ MATCH {
 
         assert_eq!(pattern.match_pattern.var_constraints.len(), 1);
 
-        // Check that X has both HasIncomingEdge constraints
         match &pattern.match_pattern.var_constraints[0] {
             Constraint::And(constraints) => {
                 assert_eq!(constraints.len(), 3); // UPOS + 2 HasIncomingEdge
@@ -804,10 +799,7 @@ MATCH {
                 assert!(
                     constraints
                         .iter()
-                        .filter(|c| matches!(
-                            c,
-                            Constraint::HasIncomingEdge(RelationType::Child, _)
-                        ))
+                        .filter(|c| matches!(c, Constraint::IsChild(_)))
                         .count()
                         == 2
                 );
@@ -827,10 +819,9 @@ MATCH {
 
         assert_eq!(pattern.match_pattern.var_constraints.len(), 1);
 
-        // Check that X has HasIncomingEdge with no label
         assert!(matches!(
             &pattern.match_pattern.var_constraints[0],
-            Constraint::HasIncomingEdge(RelationType::Child, None)
+            Constraint::IsChild(None)
         ));
     }
 
@@ -850,13 +841,12 @@ MATCH {
         assert_eq!(pattern.match_pattern.var_constraints.len(), 2);
         assert_eq!(pattern.match_pattern.edge_constraints.len(), 1); // Only X -> Y creates edge constraint
 
-        // X should have HasIncomingEdge constraint
         let x_constraints = &pattern.match_pattern.var_constraints
             [*pattern.match_pattern.var_ids.get("X").unwrap()];
         match x_constraints {
             Constraint::And(constraints) => {
                 assert!(constraints.iter().any(|c| matches!(
-                    c, Constraint::HasIncomingEdge(RelationType::Child, Some(label)) if label == "obj"
+                    c, Constraint::IsChild(Some(label)) if label == "obj"
                 )));
             }
             _ => panic!("Expected And constraint for X"),
