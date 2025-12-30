@@ -50,4 +50,6 @@ docs/_build/
 
 CLAUDE.md
 plans/
+.env
+.claude/
 
