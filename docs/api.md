@@ -58,6 +58,24 @@ for tree, match in ts.search_trees(tree, pattern):
     ...
 ```
 
+### to_displacy(tree) → dict
+
+Convert a Tree to displaCy format for visualization.
+
+```python
+data = ts.to_displacy(tree)
+# Returns: {'words': [...], 'arcs': [...]}
+```
+
+### render(tree, **options) → str
+
+Render a Tree as SVG using displaCy. Requires spaCy (`pip install treesearch-ud[viz]`).
+
+```python
+svg = ts.render(tree)
+ts.render(tree, jupyter=True)  # Display in Jupyter
+```
+
 ## Treebank
 
 Collection of trees from one or more files.
@@ -89,6 +107,8 @@ A dependency tree (parsed sentence).
 - `tree.word(id) → Word` - Get word by ID (0-indexed). Raises `IndexError` if out of range.
 - `tree[id] → Word` - Same as `word(id)`
 - `len(tree) → int` - Number of words
+- `tree.to_displacy() → dict` - Convert to displaCy format
+- `tree.render(**options) → str` - Render as SVG (requires spaCy)
 
 ## Word
 

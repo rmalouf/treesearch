@@ -361,6 +361,69 @@ for tree, match in ts.search_trees(trees, pattern):
     print(f"Found: {verb.form}")
 ```
 
+### Visualization Functions
+
+#### `to_displacy(tree: Tree) -> dict`
+
+Convert a Tree to displaCy's manual rendering format.
+
+**Parameters:**
+- `tree` (Tree): A Tree object to convert
+
+**Returns:**
+- `dict`: Dictionary with 'words' and 'arcs' keys in displaCy format
+
+```python
+tree = next(ts.trees("corpus.conllu"))
+data = ts.to_displacy(tree)
+# Returns: {'words': [{'text': '...', 'tag': '...'}, ...], 'arcs': [...]}
+
+# Use with spaCy's displacy
+from spacy import displacy
+displacy.render(data, style="dep", manual=True)
+```
+
+#### `render(tree: Tree, **options) -> str`
+
+Render a Tree as an SVG dependency visualization using displaCy.
+
+**Requirements:** Requires spaCy to be installed (`pip install treesearch-ud[viz]` or `pip install spacy`)
+
+**Parameters:**
+- `tree` (Tree): A Tree object to render
+- `**options`: Additional options passed to displacy.render()
+  - `jupyter` (bool): Return HTML for Jupyter display (default: auto-detect)
+  - `compact` (bool): Use compact visualization mode
+  - `word_spacing` (int): Spacing between words
+  - `distance` (int): Distance between dependency arcs
+
+**Returns:**
+- `str`: SVG markup string (or displays in Jupyter if jupyter=True)
+
+**Raises:**
+- `ImportError`: If spaCy is not installed
+
+```python
+# Basic usage
+tree = next(ts.trees("corpus.conllu"))
+svg = ts.render(tree)
+print(svg)  # SVG markup
+
+# Save to file
+with open("tree.svg", "w") as f:
+    f.write(svg)
+
+# In Jupyter notebook (displays inline)
+ts.render(tree, jupyter=True)
+
+# Compact mode with custom spacing
+svg = ts.render(tree, compact=True, word_spacing=50)
+
+# Also available as Tree methods
+svg = tree.render()
+data = tree.to_displacy()
+```
+
 ### Data Classes
 
 #### `Tree`

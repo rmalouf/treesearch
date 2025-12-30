@@ -45,6 +45,9 @@ docs = [
     "mkdocs>=1.5.0",
     "mkdocs-material>=9.0.0",
 ]
+viz = [
+    "spacy>=3.0.0",
+]
 
 [tool.maturin]
 features = ["pyo3/extension-module"]

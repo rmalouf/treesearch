@@ -18,6 +18,9 @@ Requires Python 3.12+.
 
 ```bash
 pip install treesearch-ud
+
+# Optional: Install with visualization support (displaCy)
+pip install treesearch-ud[viz]
 ```
 
 ### From Source

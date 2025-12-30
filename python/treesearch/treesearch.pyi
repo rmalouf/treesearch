@@ -238,3 +238,31 @@ def py_search_trees(trees: list[Tree], pattern: Pattern | str) -> MatchIterator:
         Iterator over (Tree, match_dict) tuples from all trees
     """
     ...
+
+def to_displacy(tree: Tree) -> dict[str, list]:
+    """Convert a Tree to displaCy's manual rendering format.
+
+    Args:
+        tree: A Tree object to convert
+
+    Returns:
+        Dictionary with 'words' and 'arcs' keys for displaCy rendering
+    """
+    ...
+
+def render(tree: Tree, **options) -> str:
+    """Render a Tree as an SVG dependency visualization using displaCy.
+
+    Requires spaCy to be installed.
+
+    Args:
+        tree: A Tree object to render
+        **options: Additional options passed to displacy.render()
+
+    Returns:
+        SVG markup string
+
+    Raises:
+        ImportError: If spaCy is not installed
+    """
+    ...
