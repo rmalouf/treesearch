@@ -3,7 +3,7 @@ requires = ["maturin>=1.0,<2.0"]
 build-backend = "maturin"
 
 [project]
-name = "treesearch"
+name = "treesearch-ud"
 dynamic = ["version"]
 description = "High-performance toolkit for querying linguistic dependency parses"
 authors = [
