@@ -6,7 +6,7 @@ use treesearch::{Treebank, parse_query};
 
 #[global_allocator]
 static ALLOC: AllocProfiler = AllocProfiler::system();
-static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+// static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 // static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 fn main() {

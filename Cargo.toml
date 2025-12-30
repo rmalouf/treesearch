@@ -16,7 +16,6 @@ pest = "2.8"
 pest_derive = "2.8"
 rustc-hash = "2.1"
 flate2 = { version = "1.1", features = ["zlib-rs"] }
-mimalloc = { version = "0.1", features = ["v3"] }
 hashbrown = "0.16"
 rayon = "1.11"
 glob = "0.3"
