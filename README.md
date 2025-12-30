@@ -1,5 +1,7 @@
 # Treesearch
 
+[![PyPI](https://img.shields.io/pypi/v/treesearch)](https://pypi.org/project/treesearch/)
+
 Pattern matching for dependency treebanks.
 
 > **⚠️ Early Stage**: This project is under active development. The API and query language **will** change as we refine the design.
@@ -9,6 +11,14 @@ Pattern matching for dependency treebanks.
 Treesearch finds syntactic patterns in dependency-parsed corpora. It reads treebanks in CoNLL-U format and returns all sentences matching a specified structural pattern. Designed for corpus linguistics research on large treebanks with automatic parallel processing for multi-file operations.
 
 ## Installation
+
+### From PyPI
+
+Requires Python 3.12+.
+
+```bash
+pip install treesearch-ud
+```
 
 ### From Source
 
