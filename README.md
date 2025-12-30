@@ -1,6 +1,6 @@
 # Treesearch
 
-[![PyPI](https://img.shields.io/pypi/v/treesearch)](https://pypi.org/project/treesearch/)
+[![PyPI](https://img.shields.io/pypi/v/treesearch-ud)](https://pypi.org/project/treesearch-ud/)
 
 Pattern matching for dependency treebanks.
 
