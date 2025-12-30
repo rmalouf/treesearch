@@ -48,3 +48,6 @@ docs/_build/
 *.conll.gz
 *.parquet
 
+CLAUDE.md
+plans/
+
