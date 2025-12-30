@@ -163,8 +163,15 @@ fn solve_with_bindings(
     let mut assign: Vec<Option<WordId>> = vec![None; pattern.n_vars];
     let mut assigned_words: BitFixed<u64> = BitFixed::new(num_words);
 
+    // Pre-assign from initial_bindings and validate constraints on pre-bound variables
     for (var_name, &word_id) in initial_bindings {
         if let Some(&var_id) = pattern.var_ids.get(var_name) {
+            // Check that pre-bound variable satisfies its constraints in this pattern
+            let word = &tree.words[word_id];
+            let constr = &pattern.var_constraints[var_id];
+            if !satisfies_var_constraint(tree, word, constr) {
+                return Vec::new(); // Pre-bound variable fails constraint, no solutions possible
+            }
             assign[var_id] = Some(word_id);
             assigned_words.set(word_id);
         }
@@ -174,7 +181,7 @@ fn solve_with_bindings(
     let mut domains: Vec<BitFixed<u64>> = vec![BitFixed::new(num_words); pattern.n_vars];
     for (var_id, constr) in pattern.var_constraints.iter().enumerate() {
         if assign[var_id].is_some() {
-            continue;
+            continue; // Already validated above
         }
         for (word_id, word) in tree.words.iter().enumerate() {
             if !assigned_words.test(word_id) && satisfies_var_constraint(tree, word, constr) {
@@ -1320,5 +1327,36 @@ mod tests {
             matches[0].bindings,
             hashmap! { "V" => 0, "S" => 1, "O" => 2 }
         );
+    }
+
+    #[test]
+    fn test_except_with_anonymous_edge() {
+        // Tree: helped -> us (obj), win (xcomp)
+        //       win -> to (mark)
+        let tree = build_test_tree();
+
+        // Find verbs, EXCEPT those that have a mark child
+        // "win" has mark child "to", should be excluded
+        // "helped" has no mark child, should be found
+        let matches = search_tree_query(
+            tree.clone(),
+            r#"MATCH { V [upos="VERB"]; }
+               EXCEPT { V -[mark]-> _; }"#,
+        )
+        .unwrap();
+
+        println!(
+            "Matches found: {:?}",
+            matches.iter().map(|m| &m.bindings).collect::<Vec<_>>()
+        );
+
+        // Should find only "helped" (word 0), not "win" (word 3)
+        assert_eq!(
+            matches.len(),
+            1,
+            "Expected 1 match but got {:?}",
+            matches.iter().map(|m| &m.bindings).collect::<Vec<_>>()
+        );
+        assert_eq!(matches[0].bindings, hashmap! { "V" => 0 });
     }
 }

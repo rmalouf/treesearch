@@ -45,9 +45,6 @@ def helps():
         XComp !-[conj]-> _;
         Head << XComp;
     }
-    #EXCEPT {
-    #    Head -[aux:pass]-> _;
-    #}
     OPTIONAL {
         HeadTo [lemma="to"];
         Head -[mark]-> HeadTo;
@@ -56,9 +53,7 @@ def helps():
         XCompTo [lemma="to"];
         XComp -[mark]-> XCompTo;
     }
-
-
-    """
+     """
 
     path = "/Volumes/Corpora/CCOHA/conll/*.conllu.gz"
     data = []
