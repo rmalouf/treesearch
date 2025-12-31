@@ -116,7 +116,7 @@ impl Treebank {
     ///
     /// # Arguments
     /// * `ordered` - If true (default), maintains file and tree order for deterministic results.
-    ///               If false, trees may arrive in any order for better performance.
+    ///   If false, trees may arrive in any order for better performance.
     ///
     /// # Examples
     /// ```no_run
@@ -226,7 +226,7 @@ impl Treebank {
     /// # Arguments
     /// * `pattern` - The pattern to search for
     /// * `ordered` - If true (default), maintains file and tree order for deterministic results.
-    ///               If false, matches may arrive in any order for better performance.
+    ///   If false, matches may arrive in any order for better performance.
     ///
     /// # Examples
     /// ```no_run
