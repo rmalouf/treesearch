@@ -105,9 +105,8 @@ fn satisfies_arc_constraint(
     }
 }
 
-/// TODO: short-circuit after first solution.
 fn has_any_match(tree: &Tree, pattern: &BasePattern, initial_bindings: &Bindings) -> bool {
-    !solve_with_bindings(tree, pattern, initial_bindings).is_empty()
+    !solve_with_bindings(tree, pattern, initial_bindings, true).is_empty()
 }
 
 /// Process OPTIONAL blocks: extend base bindings with cross-product of all extensions.
@@ -120,7 +119,7 @@ fn process_optionals(
 ) -> Vec<Bindings> {
     let extension_sets: Vec<Vec<Bindings>> = optional_patterns
         .iter()
-        .map(|optional| solve_with_bindings(tree, optional, &base_bindings))
+        .map(|optional| solve_with_bindings(tree, optional, &base_bindings, false))
         .collect();
 
     let mut results = vec![base_bindings];
@@ -153,11 +152,12 @@ fn process_optionals(
 }
 
 /// Search with pre-bound variables from initial_bindings.
-/// Returns all possible bindings (including initial bindings).
+/// Returns all possible bindings (including initial bindings), or just the first if first_only.
 fn solve_with_bindings(
     tree: &Tree,
     pattern: &BasePattern,
     initial_bindings: &Bindings,
+    first_only: bool,
 ) -> Vec<Bindings> {
     let num_words = tree.words.len();
     let mut assign: Vec<Option<WordId>> = vec![None; pattern.n_vars];
@@ -193,13 +193,30 @@ fn solve_with_bindings(
         }
     }
 
-    dfs(tree, pattern, &assign, &domains, &assigned_words)
+    dfs(
+        tree,
+        pattern,
+        &assign,
+        &domains,
+        &assigned_words,
+        first_only,
+    )
 }
 
 pub fn find_all_matches(tree: Tree, pattern: &Pattern) -> Vec<Match> {
+    find_matches_impl(tree, pattern, false)
+}
+
+/// Check if a tree has at least one match
+pub fn tree_matches(tree: Tree, pattern: &Pattern) -> bool {
+    !find_matches_impl(tree, pattern, true).is_empty()
+}
+
+fn find_matches_impl(tree: Tree, pattern: &Pattern, first_only: bool) -> Vec<Match> {
     let tree = Arc::new(tree);
     let empty_bindings = Bindings::new();
-    let base_matches = solve_with_bindings(&tree, &pattern.match_pattern, &empty_bindings);
+    let base_matches =
+        solve_with_bindings(&tree, &pattern.match_pattern, &empty_bindings, first_only);
 
     let mut results = Vec::new();
     for base_bindings in base_matches {
@@ -210,6 +227,15 @@ pub fn find_all_matches(tree: Tree, pattern: &Pattern) -> Vec<Match> {
 
         if rejected {
             continue;
+        }
+
+        if first_only {
+            // Skip optionals for existence check - just return first valid match
+            results.push(Match {
+                tree: Arc::clone(&tree),
+                bindings: base_bindings,
+            });
+            return results;
         }
 
         let extended_solutions =
@@ -232,6 +258,7 @@ fn dfs(
     assign: &[Option<WordId>],
     domains: &[BitFixed<u64>],
     assigned_words: &BitFixed<u64>,
+    first_only: bool,
 ) -> Vec<Bindings> {
     // No more variables to assign
     if assign.iter().all(|word_id| word_id.is_some()) {
@@ -300,7 +327,12 @@ fn dfs(
             &new_assign,
             new_domains,
             &new_assigned_words,
+            first_only,
         ));
+
+        if first_only && !solutions.is_empty() {
+            return solutions;
+        }
     }
     solutions
 }
@@ -1358,5 +1390,26 @@ mod tests {
             matches.iter().map(|m| &m.bindings).collect::<Vec<_>>()
         );
         assert_eq!(matches[0].bindings, hashmap! { "V" => 0 });
+    }
+
+    #[test]
+    fn test_tree_matches() {
+        // Multiple matches - tree_matches returns true
+        let tree = build_coord_tree();
+        let pattern = compile_query("MATCH { N [upos=\"NOUN\"]; }").unwrap();
+        assert_eq!(find_all_matches(tree.clone(), &pattern).len(), 2);
+        assert!(tree_matches(tree, &pattern));
+
+        // No matches - tree_matches returns false
+        let tree = build_test_tree();
+        assert!(!tree_matches(tree, &pattern));
+
+        // With EXCEPT block - still works correctly
+        let tree = build_multi_verb_tree();
+        let pattern = compile_query(
+            r#"MATCH { V [upos="VERB"]; } EXCEPT { M [upos="ADV"]; V -[advmod]-> M; }"#,
+        )
+        .unwrap();
+        assert!(tree_matches(tree, &pattern));
     }
 }

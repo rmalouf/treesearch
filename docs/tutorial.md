@@ -207,7 +207,17 @@ with open("examples.json", "w") as f:
 
 ## Performance Tips
 
-1. **Compile once** when reusing patterns:
+1. **Use `filter()` for existence checks** - when you only need matching trees:
+   ```python
+   # Efficient: stops after first match per tree
+   for tree in treebank.filter(query):
+       print(tree.sentence_text)
+
+   # Count matching trees
+   count = sum(1 for _ in treebank.filter(query))
+   ```
+
+2. **Compile once** when reusing patterns:
    ```python
    pattern = ts.compile_query(query)  # compile once
    for file in files:
@@ -215,15 +225,15 @@ with open("examples.json", "w") as f:
            ...
    ```
 
-2. **Use `ordered=False`** when order doesn't matter:
+3. **Use `ordered=False`** when order doesn't matter:
    ```python
    for tree, match in treebank.search(query, ordered=False):
        ...
    ```
 
-3. **Use gzip** - `.conllu.gz` files often faster due to less I/O
+4. **Use gzip** - `.conllu.gz` files often faster due to less I/O
 
-4. **Stream results** - don't collect into lists unless needed
+5. **Stream results** - don't collect into lists unless needed
 
 ## Next Steps
 

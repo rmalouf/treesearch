@@ -566,6 +566,52 @@ class TestQueryArgCoercion:
             list(tb.search("INVALID SYNTAX"))
 
 
+# Test filter method
+class TestFilter:
+    """Tests for Treebank.filter() method."""
+
+    def test_filter_returns_matching_trees(self, temp_conllu_file):
+        """Test that filter returns trees that match the pattern."""
+        tb = treesearch.Treebank.from_file(temp_conllu_file)
+        pattern = treesearch.compile_query('MATCH { V [upos="VERB"]; }')
+
+        trees = list(tb.filter(pattern))
+        assert len(trees) > 0
+        for tree in trees:
+            assert hasattr(tree, "word")
+            assert hasattr(tree, "sentence_text")
+
+    def test_filter_accepts_string(self, temp_conllu_file):
+        """Test that filter accepts query string directly."""
+        tb = treesearch.Treebank.from_file(temp_conllu_file)
+        trees = list(tb.filter('MATCH { V [upos="VERB"]; }'))
+        assert len(trees) > 0
+
+    def test_filter_no_matches(self, temp_conllu_file):
+        """Test filter returns empty when no matches."""
+        tb = treesearch.Treebank.from_file(temp_conllu_file)
+        trees = list(tb.filter('MATCH { X [upos="NONEXISTENT"]; }'))
+        assert len(trees) == 0
+
+    def test_filter_deduplicates_trees(self):
+        """Test that filter returns each tree once even with multiple matches."""
+        # Tree with 2 verbs
+        conllu = """1\tsaw\tsee\tVERB\tVBD\t_\t0\troot\t_\t_
+2\tJohn\tJohn\tPROPN\tNNP\t_\t1\tobj\t_\t_
+3\trunning\trun\tVERB\tVBG\t_\t1\txcomp\t_\t_
+
+"""
+        tb = treesearch.Treebank.from_string(conllu)
+
+        # search() would return 2 matches (one per verb)
+        matches = list(tb.search('MATCH { V [upos="VERB"]; }'))
+        assert len(matches) == 2
+
+        # filter() should return only 1 tree
+        trees = list(tb.filter('MATCH { V [upos="VERB"]; }'))
+        assert len(trees) == 1
+
+
 # Test file searching
 class TestFileSearch:
     """Tests for searching CoNLL-U files."""

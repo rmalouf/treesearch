@@ -7,7 +7,7 @@
 Treesearch provides both an object-oriented and functional API for searching linguistic dependency trees using a pattern-matching query language. The typical workflow is:
 
 1. Load a treebank with `load()` or create with `Treebank.from_*()`
-2. Search with `treebank.search(query)` - pass query string directly or use `compile_query()` to compile once and reuse
+2. Search with `treebank.search(query)` for all matches, or `treebank.filter(query)` for matching trees only
 3. Iterate with `treebank.trees()` to access all trees
 4. Access matched nodes via the `Tree` and `Word` objects
 
@@ -244,6 +244,34 @@ for tree, match in treebank.search(pattern, ordered=False):
     verb = tree.word(match["Verb"])
     print(f"Found: {verb.form}")
 ```
+
+##### `filter(pattern: Pattern | str, ordered: bool = True) -> Iterator[Tree]`
+
+Filter trees that have at least one match for the pattern. More efficient than `search()` when you only need to know which trees match, not the specific bindings. Uses early termination—stops searching each tree after finding the first match.
+
+**Parameters:**
+- `pattern` (Pattern | str): Compiled Pattern from `compile_query()` or query string
+- `ordered` (bool): If True (default), trees are returned in corpus order. If False, trees may arrive in any order for better performance.
+
+```python
+# Find all trees containing a verb
+for tree in treebank.filter('MATCH { V [upos="VERB"]; }'):
+    print(tree.sentence_text)
+
+# With compiled pattern
+pattern = ts.compile_query('MATCH { V [upos="VERB"]; N []; V -[nsubj]-> N; }')
+for tree in treebank.filter(pattern):
+    print(f"Tree with subject: {tree.sentence_text}")
+
+# Unordered for better performance
+for tree in treebank.filter(pattern, ordered=False):
+    print(tree.sentence_text)
+```
+
+**Note:** Use `filter()` instead of `search()` when:
+- You only need to know which trees match, not the variable bindings
+- You want to count matching trees
+- You're filtering trees for further processing
 
 ### Convenience Functions
 
@@ -606,6 +634,7 @@ except Exception as e:
 - **Query compilation**:
   - Pass query strings directly for one-off searches: `treebank.search('MATCH { V [upos="VERB"]; }')`
   - Compile once with `compile_query()` when reusing the same pattern multiple times
+- **Use `filter()` for existence checks**: When you only need matching trees (not bindings), use `filter()` instead of `search()`—it stops after finding the first match in each tree
 - **Automatic parallel processing**: Multi-file operations automatically process files in parallel for better performance
 - **Memory efficient**: Iterator-based API streams results without loading entire corpus
 - **Use gzipped files**: Store CoNLL-U files as `.conllu.gz` to reduce I/O time and disk usage (decompression is automatic)

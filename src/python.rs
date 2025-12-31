@@ -403,6 +403,38 @@ impl PyTreebank {
         })
     }
 
+    /// Filter trees that match a pattern.
+    ///
+    /// Returns only trees that have at least one match for the pattern.
+    /// More efficient than search() when you only need to know which trees
+    /// match, not the specific bindings.
+    ///
+    /// Args:
+    ///     pattern: Compiled pattern from compile_query() or a query string
+    ///     ordered: If True (default), trees are returned in deterministic order.
+    ///              If False, trees may arrive in any order for better performance.
+    ///
+    /// Returns:
+    ///     Iterator over Tree objects
+    ///
+    /// Example:
+    ///     >>> tb = Treebank.from_file("data.conllu")
+    ///     >>> pattern = compile_query("MATCH { V [upos='VERB']; }")
+    ///     >>> for tree in tb.filter(pattern):
+    ///     ...     print(tree.sentence_text)
+    #[pyo3(signature = (pattern, ordered=true))]
+    fn filter(&self, pattern: QueryArg, ordered: bool) -> PyResult<PyTreeIterator> {
+        let compiled = pattern.into_pattern()?;
+        Ok(PyTreeIterator {
+            inner: Box::new(
+                self.inner
+                    .clone()
+                    .filter(compiled.inner, ordered)
+                    .map(|result| result.map(Arc::new)),
+            ),
+        })
+    }
+
     // TODO: make this more interesting (number of files? start of string?)
     fn __repr__(&self) -> String {
         "<Treebank>".to_string()
