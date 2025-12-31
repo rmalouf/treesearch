@@ -879,4 +879,31 @@ MATCH {
             Err(QueryError::DuplicateExtensionVariable(_))
         ));
     }
+
+    #[test]
+    fn test_parse_comments() {
+        // Inline comment with #
+        let query = r#"
+            MATCH {
+                V [upos="VERB"];  # this is a comment
+            }
+        "#;
+        let pattern = compile_query(query).unwrap();
+        assert_eq!(pattern.match_pattern.var_ids.len(), 1);
+
+        // Full line comment with //
+        let query = r#"
+            MATCH {
+                // find all verbs
+                V [upos="VERB"];
+            }
+        "#;
+        let pattern = compile_query(query).unwrap();
+        assert_eq!(pattern.match_pattern.var_ids.len(), 1);
+
+        // Comment at end of query
+        let query = r#"MATCH { V [upos="VERB"]; } // trailing comment"#;
+        let pattern = compile_query(query).unwrap();
+        assert_eq!(pattern.match_pattern.var_ids.len(), 1);
+    }
 }

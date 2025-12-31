@@ -1412,4 +1412,64 @@ mod tests {
         .unwrap();
         assert!(tree_matches(tree, &pattern));
     }
+
+    /// Helper to build a tree with xpos values
+    fn build_xpos_tree() -> Tree {
+        let mut tree = Tree::default();
+        tree.add_minimal_word(0, b"The", b"the", b"DET", b"DT", Some(1), b"det");
+        tree.add_minimal_word(1, b"dog", b"dog", b"NOUN", b"NN", Some(2), b"nsubj");
+        tree.add_minimal_word(2, b"runs", b"run", b"VERB", b"VBZ", None, b"root");
+        tree.compile_tree();
+        tree
+    }
+
+    #[test]
+    fn test_xpos_constraint() {
+        let tree = build_xpos_tree();
+
+        // Single xpos constraint
+        let matches: Vec<_> =
+            search_tree_query(tree.clone(), r#"MATCH { W [xpos="DT"]; }"#).unwrap();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].bindings, hashmap! { "W" => 0 }); // "The"
+
+        // xpos combined with upos
+        let matches: Vec<_> =
+            search_tree_query(tree.clone(), r#"MATCH { W [upos="VERB" & xpos="VBZ"]; }"#).unwrap();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].bindings, hashmap! { "W" => 2 }); // "runs"
+
+        // xpos with no match
+        let matches: Vec<_> =
+            search_tree_query(tree.clone(), r#"MATCH { W [xpos="VBD"]; }"#).unwrap();
+        assert_eq!(matches.len(), 0);
+
+        // Negative xpos constraint
+        let matches: Vec<_> =
+            search_tree_query(tree.clone(), r#"MATCH { W [upos="NOUN" & xpos!="NNS"]; }"#).unwrap();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].bindings, hashmap! { "W" => 1 }); // "dog" has xpos=NN
+    }
+
+    #[test]
+    fn test_single_word_tree() {
+        let mut tree = Tree::default();
+        tree.add_minimal_word(0, b"word", b"word", b"NOUN", b"_", None, b"root");
+        tree.compile_tree();
+
+        // Should find the single word
+        let matches: Vec<_> =
+            search_tree_query(tree.clone(), r#"MATCH { W [upos="NOUN"]; }"#).unwrap();
+        assert_eq!(matches.len(), 1);
+
+        // Edge constraint should find nothing (no children)
+        let matches: Vec<_> =
+            search_tree_query(tree.clone(), r#"MATCH { P []; C []; P -> C; }"#).unwrap();
+        assert_eq!(matches.len(), 0);
+
+        // Precedence on single word - nothing precedes itself
+        let matches: Vec<_> =
+            search_tree_query(tree.clone(), r#"MATCH { A []; B []; A << B; }"#).unwrap();
+        assert_eq!(matches.len(), 0); // AllDifferent means A != B, so no pairs
+    }
 }
