@@ -91,6 +91,19 @@ Search for pattern matches. Accepts query string or compiled Pattern.
 **Parameters:**
 - `ordered`: If True (default), results in corpus order. If False, faster but unordered.
 
+### treebank.filter(query, ordered=True) → Iterator[Tree]
+
+Find trees that have at least one match. More efficient than `search()` when you only need matching trees, not bindings—stops after first match per tree.
+
+```python
+# Count trees with passive constructions
+count = sum(1 for _ in treebank.filter('MATCH { V []; V -[aux:pass]-> _; }'))
+
+# Get matching trees for further processing
+for tree in treebank.filter(pattern):
+    print(tree.sentence_text)
+```
+
 ## Tree
 
 A dependency tree (parsed sentence).

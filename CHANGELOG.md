@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `Treebank.filter(pattern)` method for efficient existence checks (stops after first match per tree)
 - Tree visualization with displaCy via `render()` and `to_displacy()` functions
 - Optional `viz` extras for spaCy dependency
 
