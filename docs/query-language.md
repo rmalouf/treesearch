@@ -184,7 +184,7 @@ If V has 2 subjects and 3 objects, this produces 6 matches (2 × 3).
 
 - Variable names: case-sensitive (`V` ≠ `v`)
 - Constraint values: case-sensitive (`"VERB"` ≠ `"verb"`)
-- Keywords: case-insensitive (`upos` = `UPOS`)
+- Keywords: case-sensitive (`upos` only, not `UPOS`)
 
 ## Common Errors
 
