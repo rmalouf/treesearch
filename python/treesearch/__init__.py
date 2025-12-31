@@ -5,7 +5,7 @@ from __future__ import annotations
 import glob
 from importlib.metadata import version
 from pathlib import Path
-from typing import Iterable, Iterator, Union
+from typing import Iterable
 
 __version__ = version("treesearch")
 

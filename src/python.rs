@@ -295,7 +295,7 @@ impl PyTreebank {
     #[classmethod]
     fn from_file(_cls: &Bound<'_, pyo3::types::PyType>, file_path: &str) -> Self {
         PyTreebank {
-            inner: Treebank::from_path(&PathBuf::from(file_path)),
+            inner: Treebank::from_path(PathBuf::from(file_path)),
         }
     }
 
@@ -337,7 +337,6 @@ impl PyTreebank {
     //         .map(|inner| PyTreebank { inner })
     //         .map_err(|e| PyValueError::new_err(format!("Glob pattern error: {}", e)))
     // }
-
     /// Iterate over all trees in the treebank.
     ///
     /// Can be called multiple times. Uses automatic parallel processing
