@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tree visualization with displaCy via `render()` and `to_displacy()` functions
 - Optional `viz` extras for spaCy dependency
 
+### Performance
+- Improved multi-threaded Python performance by releasing GIL during expensive operations
+- Python bindings now compatible with free-threaded Python 3.13+ (PEP 703)
+
 ## [0.1.0] - 2025-12-29
 
 Initial release.
