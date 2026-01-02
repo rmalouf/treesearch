@@ -40,6 +40,178 @@ const MATCH_BATCH_SIZE: usize = 500;
 /// Channel buffer size (in batches)
 const CHANNEL_BUFFER_SIZE: usize = 100;
 
+/// Helper for accumulating items into batches
+struct BatchAccumulator<T> {
+    batch: Vec<T>,
+    capacity: usize,
+}
+
+impl<T> BatchAccumulator<T> {
+    /// Create a new batch accumulator with the given capacity
+    fn new(capacity: usize) -> Self {
+        Self {
+            batch: Vec::with_capacity(capacity),
+            capacity,
+        }
+    }
+
+    /// Push an item into the batch. Returns Some(batch) if the batch is full.
+    fn push(&mut self, item: T) -> Option<Vec<T>> {
+        self.batch.push(item);
+        if self.batch.len() >= self.capacity {
+            Some(std::mem::replace(&mut self.batch, Vec::with_capacity(self.capacity)))
+        } else {
+            None
+        }
+    }
+
+    /// Flush any remaining items in the batch
+    fn flush(self) -> Option<Vec<T>> {
+        if self.batch.is_empty() {
+            None
+        } else {
+            Some(self.batch)
+        }
+    }
+}
+
+/// Process trees from a string source with batching (for match_iter and filter)
+fn process_string_source_batched<T, F>(
+    text: &str,
+    tx: &crossbeam_channel::Sender<Vec<Result<T, TreebankError>>>,
+    process_tree: F,
+) where
+    T: Send,
+    F: Fn(Tree) -> Vec<Result<T, TreebankError>>,
+{
+    let mut batch = BatchAccumulator::new(MATCH_BATCH_SIZE);
+    for result in TreeIterator::from_string(text) {
+        let items = match result {
+            Ok(tree) => process_tree(tree),
+            Err(e) => vec![Err(TreebankError::from(e))],
+        };
+        for item in items {
+            if let Some(full_batch) = batch.push(item) {
+                if tx.send(full_batch).is_err() {
+                    return;
+                }
+            }
+        }
+    }
+    if let Some(final_batch) = batch.flush() {
+        let _ = tx.send(final_batch);
+    }
+}
+
+/// Process files in ordered mode with chunking (for match_iter and filter)
+fn process_files_ordered_batched<T, F>(
+    paths: Vec<PathBuf>,
+    tx: &crossbeam_channel::Sender<Vec<Result<T, TreebankError>>>,
+    process_tree: F,
+    chunk_size: usize,
+) where
+    T: Send,
+    F: Fn(Tree) -> Vec<Result<T, TreebankError>> + Send + Sync,
+{
+    for chunk in paths.chunks(chunk_size) {
+        // Compute per-path results in parallel, keeping them grouped by path
+        let per_path: Vec<Vec<Result<T, TreebankError>>> = chunk
+            .par_iter()
+            .map(|path| {
+                match TreeIterator::from_file(path) {
+                    Ok(it) => it
+                        .flat_map(|result| match result {
+                            Ok(tree) => process_tree(tree),
+                            Err(e) => vec![Err(TreebankError::from(e))],
+                        })
+                        .collect(),
+                    Err(e) => vec![Err(TreebankError::FileOpen {
+                        path: path.clone(),
+                        source: e,
+                    })],
+                }
+            })
+            .collect();
+
+        // Send batches in deterministic order: path order, then result order within each path
+        for batch in per_path {
+            if !batch.is_empty() && tx.send(batch).is_err() {
+                return;
+            }
+        }
+    }
+}
+
+/// Process files in unordered mode with full parallelism (for match_iter and filter)
+fn process_files_unordered_batched<T, F>(
+    paths: Vec<PathBuf>,
+    tx: crossbeam_channel::Sender<Vec<Result<T, TreebankError>>>,
+    process_tree: F,
+) where
+    T: Send,
+    F: Fn(Tree) -> Vec<Result<T, TreebankError>> + Send + Sync,
+{
+    paths.par_iter().for_each(|path| {
+        let tx = tx.clone();
+        match TreeIterator::from_file(path) {
+            Ok(reader) => {
+                let mut batch = BatchAccumulator::new(MATCH_BATCH_SIZE);
+                for result in reader {
+                    let items = match result {
+                        Ok(tree) => process_tree(tree),
+                        Err(e) => vec![Err(TreebankError::from(e))],
+                    };
+                    for item in items {
+                        if let Some(full_batch) = batch.push(item) {
+                            if tx.send(full_batch).is_err() {
+                                return;
+                            }
+                        }
+                    }
+                }
+                if let Some(final_batch) = batch.flush() {
+                    let _ = tx.send(final_batch);
+                }
+            }
+            Err(e) => {
+                let _ = tx.send(vec![Err(TreebankError::FileOpen {
+                    path: path.clone(),
+                    source: e,
+                })]);
+            }
+        }
+    });
+}
+
+/// Build a parallel iterator with batching (for match_iter and filter)
+fn build_parallel_iter_batched<T, F>(
+    source: TreeSource,
+    ordered: bool,
+    chunk_size: usize,
+    process_tree: F,
+) -> impl Iterator<Item = Result<T, TreebankError>>
+where
+    T: Send + 'static,
+    F: Fn(Tree) -> Vec<Result<T, TreebankError>> + Send + Sync + Clone + 'static,
+{
+    let (tx, rx) = crossbeam_channel::bounded(CHANNEL_BUFFER_SIZE);
+
+    thread::spawn(move || match source {
+        TreeSource::String(text) => {
+            process_string_source_batched(&text, &tx, process_tree);
+        }
+        TreeSource::Files(paths) => {
+            if ordered {
+                process_files_ordered_batched(paths, &tx, process_tree, chunk_size);
+            } else {
+                process_files_unordered_batched(paths, tx, process_tree);
+            }
+        }
+    });
+
+    rx.into_iter().flatten()
+}
+
 /// Source of trees for a collection
 #[derive(Debug, Clone)]
 enum TreeSource {
@@ -253,165 +425,12 @@ impl Treebank {
         pattern: Pattern,
         ordered: bool,
     ) -> impl Iterator<Item = Result<Match, TreebankError>> {
-        if ordered {
-            // Ordered mode: maintain deterministic ordering via chunking
-            // Smaller chunks (2 files) improve load balancing for heterogeneous file sizes
-            let (tx, rx) = crossbeam_channel::bounded(CHANNEL_BUFFER_SIZE); // batches, not individual matches
-
-            thread::spawn(move || match self.source {
-                TreeSource::String(text) => {
-                    let mut batch = Vec::with_capacity(MATCH_BATCH_SIZE);
-                    for result in TreeIterator::from_string(&text) {
-                        match result {
-                            Ok(tree) => {
-                                for m in search_tree(tree, &pattern) {
-                                    batch.push(Ok(m));
-                                    if batch.len() >= MATCH_BATCH_SIZE {
-                                        if tx.send(batch).is_err() {
-                                            return;
-                                        }
-                                        batch = Vec::with_capacity(MATCH_BATCH_SIZE);
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                batch.push(Err(TreebankError::from(e)));
-                                if batch.len() >= MATCH_BATCH_SIZE {
-                                    if tx.send(batch).is_err() {
-                                        return;
-                                    }
-                                    batch = Vec::with_capacity(MATCH_BATCH_SIZE);
-                                }
-                            }
-                        }
-                    }
-                    if !batch.is_empty() {
-                        let _ = tx.send(batch);
-                    }
-                }
-                TreeSource::Files(paths) => {
-                    for chunk in paths.chunks(4) {
-                        // 1) compute per-path results in parallel, but keep them grouped by path
-                        let per_path: Vec<Vec<Result<Match, TreebankError>>> = chunk
-                            .par_iter()
-                            .map(|path| {
-                                let it = match TreeIterator::from_file(path) {
-                                    Ok(it) => it,
-                                    Err(e) => {
-                                        return vec![Err(TreebankError::FileOpen {
-                                            path: path.clone(),
-                                            source: e,
-                                        })];
-                                    }
-                                };
-
-                                it.flat_map(|result| {
-                                    match result {
-                                        Ok(tree) => {
-                                            // search yields matches in order, wrap each in Ok
-                                            search_tree(tree, &pattern)
-                                                .into_iter()
-                                                .map(Ok)
-                                                .collect::<Vec<_>>()
-                                        }
-                                        Err(e) => vec![Err(TreebankError::from(e))],
-                                    }
-                                })
-                                .collect::<Vec<_>>() // per-file ordered vec
-                            })
-                            .collect(); // for slices, Rayon collects in the original order of `chunk`
-
-                        // 2) send batches in deterministic order: path order, then match order within each path
-                        for batch in per_path {
-                            if !batch.is_empty() && tx.send(batch).is_err() {
-                                return;
-                            }
-                        }
-                    }
-                }
-            });
-            rx.into_iter().flatten()
-        } else {
-            // Unordered mode: maximum concurrency by performing search in parallel workers
-            let (tx, rx) = crossbeam_channel::bounded(CHANNEL_BUFFER_SIZE); // batches for higher throughput
-
-            thread::spawn(move || match self.source {
-                TreeSource::String(text) => {
-                    let mut batch = Vec::with_capacity(MATCH_BATCH_SIZE);
-                    for result in TreeIterator::from_string(&text) {
-                        match result {
-                            Ok(tree) => {
-                                for m in search_tree(tree, &pattern) {
-                                    batch.push(Ok(m));
-                                    if batch.len() >= MATCH_BATCH_SIZE {
-                                        if tx.send(batch).is_err() {
-                                            return;
-                                        }
-                                        batch = Vec::with_capacity(MATCH_BATCH_SIZE);
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                batch.push(Err(TreebankError::from(e)));
-                                if batch.len() >= MATCH_BATCH_SIZE {
-                                    if tx.send(batch).is_err() {
-                                        return;
-                                    }
-                                    batch = Vec::with_capacity(MATCH_BATCH_SIZE);
-                                }
-                            }
-                        }
-                    }
-                    if !batch.is_empty() {
-                        let _ = tx.send(batch);
-                    }
-                }
-                TreeSource::Files(paths) => {
-                    paths.par_iter().for_each(|path| {
-                        let tx = tx.clone();
-                        match TreeIterator::from_file(path) {
-                            Ok(reader) => {
-                                let mut batch = Vec::with_capacity(MATCH_BATCH_SIZE);
-                                for result in reader {
-                                    match result {
-                                        Ok(tree) => {
-                                            for m in search_tree(tree, &pattern) {
-                                                batch.push(Ok(m));
-                                                if batch.len() >= MATCH_BATCH_SIZE {
-                                                    if tx.send(batch).is_err() {
-                                                        return;
-                                                    }
-                                                    batch = Vec::with_capacity(MATCH_BATCH_SIZE);
-                                                }
-                                            }
-                                        }
-                                        Err(e) => {
-                                            batch.push(Err(TreebankError::from(e)));
-                                            if batch.len() >= MATCH_BATCH_SIZE {
-                                                if tx.send(batch).is_err() {
-                                                    return;
-                                                }
-                                                batch = Vec::with_capacity(MATCH_BATCH_SIZE);
-                                            }
-                                        }
-                                    }
-                                }
-                                if !batch.is_empty() {
-                                    let _ = tx.send(batch);
-                                }
-                            }
-                            Err(e) => {
-                                let _ = tx.send(vec![Err(TreebankError::FileOpen {
-                                    path: path.clone(),
-                                    source: e,
-                                })]);
-                            }
-                        }
-                    });
-                }
-            });
-            rx.into_iter().flatten()
-        }
+        build_parallel_iter_batched(
+            self.source,
+            ordered,
+            4, // chunk_size for ordered mode
+            move |tree| search_tree(tree, &pattern).into_iter().map(Ok).collect(),
+        )
     }
 
     /// Filter trees that match a pattern.
@@ -428,140 +447,18 @@ impl Treebank {
         pattern: Pattern,
         ordered: bool,
     ) -> impl Iterator<Item = Result<Tree, TreebankError>> {
-        if ordered {
-            let (tx, rx) = crossbeam_channel::bounded(CHANNEL_BUFFER_SIZE);
-
-            thread::spawn(move || match self.source {
-                TreeSource::String(text) => {
-                    let mut batch = Vec::with_capacity(MATCH_BATCH_SIZE);
-                    for result in TreeIterator::from_string(&text) {
-                        match result {
-                            Ok(tree) => {
-                                if tree_matches(tree.clone(), &pattern) {
-                                    batch.push(Ok(tree));
-                                    if batch.len() >= MATCH_BATCH_SIZE {
-                                        if tx.send(batch).is_err() {
-                                            return;
-                                        }
-                                        batch = Vec::with_capacity(MATCH_BATCH_SIZE);
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                batch.push(Err(TreebankError::from(e)));
-                            }
-                        }
-                    }
-                    if !batch.is_empty() {
-                        let _ = tx.send(batch);
-                    }
+        build_parallel_iter_batched(
+            self.source,
+            ordered,
+            4, // chunk_size for ordered mode
+            move |tree| {
+                if tree_matches(tree.clone(), &pattern) {
+                    vec![Ok(tree)]
+                } else {
+                    vec![]
                 }
-                TreeSource::Files(paths) => {
-                    for chunk in paths.chunks(4) {
-                        let per_path: Vec<Vec<Result<Tree, TreebankError>>> = chunk
-                            .par_iter()
-                            .map(|path| {
-                                let it = match TreeIterator::from_file(path) {
-                                    Ok(it) => it,
-                                    Err(e) => {
-                                        return vec![Err(TreebankError::FileOpen {
-                                            path: path.clone(),
-                                            source: e,
-                                        })];
-                                    }
-                                };
-
-                                it.filter_map(|result| match result {
-                                    Ok(tree) => {
-                                        if tree_matches(tree.clone(), &pattern) {
-                                            Some(Ok(tree))
-                                        } else {
-                                            None
-                                        }
-                                    }
-                                    Err(e) => Some(Err(TreebankError::from(e))),
-                                })
-                                .collect()
-                            })
-                            .collect();
-
-                        for batch in per_path {
-                            if !batch.is_empty() && tx.send(batch).is_err() {
-                                return;
-                            }
-                        }
-                    }
-                }
-            });
-            rx.into_iter().flatten()
-        } else {
-            let (tx, rx) = crossbeam_channel::bounded(CHANNEL_BUFFER_SIZE);
-
-            thread::spawn(move || match self.source {
-                TreeSource::String(text) => {
-                    let mut batch = Vec::with_capacity(MATCH_BATCH_SIZE);
-                    for result in TreeIterator::from_string(&text) {
-                        match result {
-                            Ok(tree) => {
-                                if tree_matches(tree.clone(), &pattern) {
-                                    batch.push(Ok(tree));
-                                    if batch.len() >= MATCH_BATCH_SIZE {
-                                        if tx.send(batch).is_err() {
-                                            return;
-                                        }
-                                        batch = Vec::with_capacity(MATCH_BATCH_SIZE);
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                batch.push(Err(TreebankError::from(e)));
-                            }
-                        }
-                    }
-                    if !batch.is_empty() {
-                        let _ = tx.send(batch);
-                    }
-                }
-                TreeSource::Files(paths) => {
-                    paths.par_iter().for_each(|path| {
-                        let tx = tx.clone();
-                        match TreeIterator::from_file(path) {
-                            Ok(reader) => {
-                                let mut batch = Vec::with_capacity(MATCH_BATCH_SIZE);
-                                for result in reader {
-                                    match result {
-                                        Ok(tree) => {
-                                            if tree_matches(tree.clone(), &pattern) {
-                                                batch.push(Ok(tree));
-                                                if batch.len() >= MATCH_BATCH_SIZE {
-                                                    if tx.send(batch).is_err() {
-                                                        return;
-                                                    }
-                                                    batch = Vec::with_capacity(MATCH_BATCH_SIZE);
-                                                }
-                                            }
-                                        }
-                                        Err(e) => {
-                                            batch.push(Err(TreebankError::from(e)));
-                                        }
-                                    }
-                                }
-                                if !batch.is_empty() {
-                                    let _ = tx.send(batch);
-                                }
-                            }
-                            Err(e) => {
-                                let _ = tx.send(vec![Err(TreebankError::FileOpen {
-                                    path: path.clone(),
-                                    source: e,
-                                })]);
-                            }
-                        }
-                    });
-                }
-            });
-            rx.into_iter().flatten()
-        }
+            },
+        )
     }
 }
 
