@@ -1,6 +1,10 @@
 //! Python bindings for treesearch
 //!
 //! This module provides PyO3-based Python bindings for the Rust core.
+//!
+//! We use `py.detach()` to release the GIL (in GIL-enabled Python) or detach from
+//! the Python thread state (in free-threaded Python) during expensive Rust operations,
+//! allowing better parallel performance.
 
 use pyo3::exceptions::{PyIOError, PyIndexError, PyValueError};
 use pyo3::prelude::*;
@@ -72,12 +76,8 @@ impl PyTree {
         }
 
         let num_to_show = n.min(3);
-        let words: Vec<String> = self
-            .inner
-            .words
-            .iter()
-            .take(num_to_show)
-            .map(|w| String::from_utf8_lossy(&self.inner.string_pool.resolve(w.form)).to_string())
+        let words: Vec<String> = (0..num_to_show)
+            .map(|i| self.word(i).unwrap().form())
             .collect();
 
         if n > 3 {
@@ -441,6 +441,10 @@ impl PyTreebank {
 }
 
 /// Iterator over trees from a treebank.
+///
+/// Note: Marked as unsendable because iterators have mutable state and shouldn't
+/// be shared across threads. However, we release the GIL during iteration to allow
+/// other Python threads to run in parallel.
 #[pyclass(name = "TreeIterator", unsendable)]
 struct PyTreeIterator {
     inner: Box<dyn Iterator<Item = Result<Arc<RustTree>, TreebankError>> + Send>,
@@ -452,8 +456,10 @@ impl PyTreeIterator {
         slf
     }
 
-    fn __next__(&mut self) -> PyResult<Option<PyTree>> {
-        match self.inner.next() {
+    fn __next__(&mut self, py: Python) -> PyResult<Option<PyTree>> {
+        // Release GIL during expensive tree parsing/iteration
+        let result = py.detach(|| self.inner.next());
+        match result {
             Some(Ok(tree)) => Ok(Some(PyTree { inner: tree })),
             Some(Err(e)) => Err(e.into()),
             None => Ok(None),
@@ -462,6 +468,10 @@ impl PyTreeIterator {
 }
 
 /// Iterator over (tree, match) tuples from a pattern search.
+///
+/// Note: Marked as unsendable because iterators have mutable state and shouldn't
+/// be shared across threads. However, we release the GIL during iteration to allow
+/// other Python threads to run in parallel.
 #[pyclass(name = "MatchIterator", unsendable)]
 struct PyMatchIterator {
     inner: Box<
@@ -480,8 +490,13 @@ impl PyMatchIterator {
         slf
     }
 
-    fn __next__(&mut self) -> PyResult<Option<(PyTree, std::collections::HashMap<String, usize>)>> {
-        match self.inner.next() {
+    fn __next__(
+        &mut self,
+        py: Python,
+    ) -> PyResult<Option<(PyTree, std::collections::HashMap<String, usize>)>> {
+        // Release GIL during expensive pattern matching
+        let result = py.detach(|| self.inner.next());
+        match result {
             Some(Ok((tree, bindings))) => Ok(Some((PyTree { inner: tree }, bindings))),
             Some(Err(e)) => Err(e.into()),
             None => Ok(None),
