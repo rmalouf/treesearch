@@ -452,7 +452,7 @@ impl Treebank {
             ordered,
             4, // chunk_size for ordered mode
             move |tree| {
-                if tree_matches(tree.clone(), &pattern) {
+                if tree_matches(&tree, &pattern) {
                     vec![Ok(tree)]
                 } else {
                     vec![]

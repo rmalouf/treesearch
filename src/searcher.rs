@@ -208,8 +208,8 @@ pub fn find_all_matches(tree: Tree, pattern: &Pattern) -> Vec<Match> {
 }
 
 /// Check if a tree has at least one match
-pub fn tree_matches(tree: Tree, pattern: &Pattern) -> bool {
-    !find_matches_impl(tree, pattern, true).is_empty()
+pub fn tree_matches(tree: &Tree, pattern: &Pattern) -> bool {
+    !find_matches_impl(tree.clone(), pattern, true).is_empty()
 }
 
 fn find_matches_impl(tree: Tree, pattern: &Pattern, first_only: bool) -> Vec<Match> {
@@ -1398,11 +1398,11 @@ mod tests {
         let tree = build_coord_tree();
         let pattern = compile_query("MATCH { N [upos=\"NOUN\"]; }").unwrap();
         assert_eq!(find_all_matches(tree.clone(), &pattern).len(), 2);
-        assert!(tree_matches(tree, &pattern));
+        assert!(tree_matches(&tree, &pattern));
 
         // No matches - tree_matches returns false
         let tree = build_test_tree();
-        assert!(!tree_matches(tree, &pattern));
+        assert!(!tree_matches(&tree, &pattern));
 
         // With EXCEPT block - still works correctly
         let tree = build_multi_verb_tree();
@@ -1410,7 +1410,7 @@ mod tests {
             r#"MATCH { V [upos="VERB"]; } EXCEPT { M [upos="ADV"]; V -[advmod]-> M; }"#,
         )
         .unwrap();
-        assert!(tree_matches(tree, &pattern));
+        assert!(tree_matches(&tree, &pattern));
     }
 
     /// Helper to build a tree with xpos values
