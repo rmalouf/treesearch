@@ -7,7 +7,7 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import Iterable
 
-__version__ = version("treesearch")
+__version__ = version("treesearch-ud")
 
 try:
     from .treesearch import (
