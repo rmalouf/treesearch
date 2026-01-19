@@ -92,6 +92,38 @@ VariableName [constraint];
 - `feats.Tense="Past"` - Morphological feature (dotted notation)
 - `misc.SpaceAfter="No"` - Miscellaneous feature (dotted notation)
 
+**Constraint values** can be either:
+- **Literal strings** (enclosed in double quotes): `lemma="run"`
+- **Regular expressions** (enclosed in forward slashes): `lemma=/run.*/`
+
+**Regular expression patterns:**
+
+Regex patterns are **automatically anchored** for full-string matching (consistent with literal behavior). This means `/run/` matches exactly "run", not "running". Use `.*` for partial matches:
+
+```
+# Match exactly "run" (equivalent to lemma="run")
+V [lemma=/run/];
+
+# Match lemmas starting with "run" (run, runs, running, etc.)
+V [lemma=/run.*/];
+
+# Match VERB or AUX using alternation
+W [upos=/VERB|AUX/];
+
+# Match words ending in "ing"
+W [form=/.*ing/];
+
+# Match words containing "el"
+W [form=/.*el.*/];
+
+# Match past or present tense
+V [feats.Tense=/Past|Pres/];
+
+# Combine literal and regex constraints
+V [upos="VERB" & lemma=/(be|have).*/];
+```
+
+**Note:** Patterns are compiled with implicit `^...$` anchors, so you don't need to add them manually. `/run/` becomes `/^run$/` internally. Regular expressions use Rust's [regex syntax](https://docs.rs/regex/latest/regex/#syntax). Invalid patterns are caught during query compilation with a clear error message.
 
 **Multiple constraints** (AND):
 ```
@@ -113,6 +145,20 @@ MATCH {
 MATCH {
     # Plural nominative noun
     Noun [feats.Number="Plur" & feats.Case="Nom"];
+}
+```
+
+**Negation** works with both literals and regex:
+```
+MATCH {
+    # NOT a noun
+    W [upos!="NOUN"];
+
+    # Does NOT start with "be"
+    V [lemma!=/be.*/];
+
+    # NOT past or present tense
+    V [feats.Tense!=/Past|Pres/];
 }
 ```
 
@@ -558,7 +604,9 @@ for tree, match in ts.search("data/*.conllu", pattern):
     print(f"Found: {verb.form}")
 ```
 
-## Complete Example
+## Complete Examples
+
+### Example 1: Control Verbs
 
 ```python
 import treesearch as ts
@@ -603,6 +651,53 @@ for tree in treebank.trees():
         print(f"{main.form} → {comp.form}")
 ```
 
+### Example 2: Using Regular Expressions
+
+```python
+import treesearch as ts
+
+# Find progressive forms (verbs ending in -ing)
+# Regex patterns are automatically anchored, so /.*ing/ matches full words ending in "ing"
+query = """
+MATCH {
+    V [upos="VERB" & form=/.*ing/];
+}
+"""
+
+treebank = ts.load("corpus.conllu")
+for tree, match in treebank.search(query):
+    verb = tree.word(match["V"])
+    print(f"Progressive: {verb.form} (lemma: {verb.lemma})")
+
+# Find modal verbs (can, could, may, might, must, shall, should, will, would)
+# Alternation matches any of the options (full string match)
+modal_query = """
+MATCH {
+    Modal [lemma=/(can|may|must|shall|will|could|might|should|would)/];
+    Verb [upos="VERB"];
+    Modal -> Verb;
+}
+"""
+
+for tree, match in treebank.search(modal_query):
+    modal = tree.word(match["Modal"])
+    verb = tree.word(match["Verb"])
+    print(f"Modal construction: {modal.form} + {verb.form}")
+    print(f"  Sentence: {tree.sentence_text}")
+
+# Find words that are NOT common auxiliaries
+# Negated regex with alternation
+non_aux_query = """
+MATCH {
+    V [upos=/VERB|AUX/ & lemma!=/(be|have|do|will|would|can|could|may|might|must|shall|should)/];
+}
+"""
+
+for tree, match in treebank.search(non_aux_query):
+    verb = tree.word(match["V"])
+    print(f"Content verb: {verb.form} (lemma: {verb.lemma})")
+```
+
 ## Error Handling
 
 All operations raise Python exceptions on error:
@@ -613,6 +708,13 @@ try:
     pattern = ts.compile_query("Invalid [syntax")
 except Exception as e:
     print(f"Query parse error: {e}")
+
+try:
+    # Invalid regex pattern
+    pattern = ts.compile_query('MATCH { V [lemma=/[unclosed/]; }')
+except Exception as e:
+    print(f"Regex error: {e}")
+    # Error: Query error: Invalid regex pattern '[unclosed': regex parse error...
 
 try:
     # File not found
@@ -629,12 +731,19 @@ except Exception as e:
     print(f"Parse error: {e}")
 ```
 
+**Note:** Regular expression patterns are validated and compiled during query compilation (via `compile_query()` or when passing a query string to `search()`), so invalid regex patterns are caught immediately with a clear error message.
+
 ## Performance Tips
 
 - **Query compilation**:
   - Pass query strings directly for one-off searches: `treebank.search('MATCH { V [upos="VERB"]; }')`
   - Compile once with `compile_query()` when reusing the same pattern multiple times
+  - Regular expressions are compiled during query compilation, so reusing a compiled pattern is especially beneficial for regex-heavy queries
 - **Use `filter()` for existence checks**: When you only need matching trees (not bindings), use `filter()` instead of `search()`—it stops after finding the first match in each tree
+- **Regex vs. literals**: Literal string matching is faster than regex matching. Use literals when exact matches suffice:
+  - Prefer `lemma="run"` over `lemma=/run/` (both match exactly "run", but literal is faster)
+  - Use `upos="VERB"` instead of `upos=/VERB/`
+  - Use regex when you need pattern matching: `form=/.*ing/`, `lemma=/(be|have).*/`, `upos=/VERB|AUX/`
 - **Automatic parallel processing**: Multi-file operations automatically process files in parallel for better performance
 - **Memory efficient**: Iterator-based API streams results without loading entire corpus
 - **Use gzipped files**: Store CoNLL-U files as `.conllu.gz` to reduce I/O time and disk usage (decompression is automatic)

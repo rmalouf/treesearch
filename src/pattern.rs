@@ -3,6 +3,7 @@
 //! This module defines the AST for dependency tree patterns used
 //! in the CSP-based matching algorithm.
 
+use regex::Regex;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::fmt::Debug;
@@ -10,16 +11,44 @@ use std::fmt::Debug;
 /// Type alias for pattern variable identifiers (indices into Pattern.vars)
 pub type VarId = usize;
 
+/// Value in a constraint: either a literal string or a regex pattern
+#[derive(Clone)]
+pub enum ConstraintValue {
+    Literal(String),
+    Regex(String, Regex), // Pattern string + compiled regex
+}
+
+// Manual Debug implementation
+impl Debug for ConstraintValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConstraintValue::Literal(s) => f.debug_tuple("Literal").field(s).finish(),
+            ConstraintValue::Regex(pattern, _) => f.debug_tuple("Regex").field(pattern).finish(),
+        }
+    }
+}
+
+// Manual PartialEq implementation (compare pattern strings, not compiled regex)
+impl PartialEq for ConstraintValue {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (ConstraintValue::Literal(a), ConstraintValue::Literal(b)) => a == b,
+            (ConstraintValue::Regex(a, _), ConstraintValue::Regex(b, _)) => a == b,
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Constraint {
     Any,
-    Lemma(String),
-    UPOS(String),
-    XPOS(String),
-    Form(String),
-    DepRel(String),
-    Feature(String, String),
-    Misc(String, String),
+    Lemma(ConstraintValue),
+    UPOS(ConstraintValue),
+    XPOS(ConstraintValue),
+    Form(ConstraintValue),
+    DepRel(ConstraintValue),
+    Feature(String, ConstraintValue),
+    Misc(String, ConstraintValue),
     And(Vec<Constraint>),
     Not(Box<Constraint>),
     IsChild(Option<String>),
@@ -190,7 +219,10 @@ impl BasePattern {
                 self.add_var(&edge_constraint.from, Constraint::Any);
                 if let Some(label) = &edge_constraint.label {
                     if !edge_constraint.negated {
-                        self.add_var(&edge_constraint.to, Constraint::DepRel(label.clone()));
+                        self.add_var(
+                            &edge_constraint.to,
+                            Constraint::DepRel(ConstraintValue::Literal(label.clone())),
+                        );
                     } else {
                         self.add_var(&edge_constraint.to, Constraint::Any);
                     }
@@ -227,11 +259,17 @@ mod tests {
         let mut vars = HashMap::new();
         vars.insert(
             "verb".to_string(),
-            PatternVar::new("verb", Constraint::UPOS("VERB".to_string())),
+            PatternVar::new(
+                "verb",
+                Constraint::UPOS(ConstraintValue::Literal("VERB".to_string())),
+            ),
         );
         vars.insert(
             "noun".to_string(),
-            PatternVar::new("noun", Constraint::UPOS("NOUN".to_string())),
+            PatternVar::new(
+                "noun",
+                Constraint::UPOS(ConstraintValue::Literal("NOUN".to_string())),
+            ),
         );
 
         let edges = vec![EdgeConstraint {

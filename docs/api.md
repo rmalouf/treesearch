@@ -159,10 +159,16 @@ Compiled query pattern (opaque). Created by `compile_query()`, used with search 
 MATCH {
     # Node constraints
     V [upos="VERB"];              # by POS
-    V [lemma="run"];              # by lemma
+    V [lemma="run"];              # by lemma (exact)
+    V [lemma=/run.*/];            # by regex (starts with "run")
     V [upos="VERB" & lemma="run"]; # multiple (AND)
     V [feats.Tense="Past"];       # by feature
     V [];                         # any word
+
+    # Regular expressions (automatically anchored)
+    V [form=/.*ing/];             # ends with -ing
+    V [upos=/VERB|AUX/];          # VERB or AUX
+    V [lemma!=/(be|have)/];       # not be or have
 
     # Negation
     V [upos!="VERB"];             # not a verb
@@ -177,5 +183,7 @@ MATCH {
     V << N;                       # V anywhere before N
 }
 ```
+
+**Regex patterns** use `/pattern/` syntax and are automatically anchored for full-string matching. Use `.*` for partial matches: `/run.*/` matches "run", "runs", "running".
 
 See [Query Language Reference](query-language.md) for complete syntax.

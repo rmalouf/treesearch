@@ -8,7 +8,10 @@ use pest_derive::Parser;
 use std::collections::HashMap;
 use thiserror::Error;
 
-use crate::pattern::{BasePattern, Constraint, EdgeConstraint, Pattern, PatternVar, RelationType};
+use crate::pattern::{
+    BasePattern, Constraint, ConstraintValue, EdgeConstraint, Pattern, PatternVar, RelationType,
+};
+use regex::Regex;
 
 #[derive(Parser)]
 #[grammar = "query_grammar.pest"]
@@ -30,6 +33,9 @@ pub enum QueryError {
 
     #[error("Query error: Variable '{0}' already defined in another EXCEPT/OPTIONAL block")]
     DuplicateExtensionVariable(String),
+
+    #[error("Query error: Invalid regex pattern '{0}': {1}")]
+    InvalidRegex(String, String),
 }
 
 pub fn compile_query(input: &str) -> Result<Pattern, QueryError> {
@@ -158,12 +164,13 @@ fn compile_feature_constraint<F>(
     make_constraint: F,
 ) -> Result<Constraint, QueryError>
 where
-    F: FnOnce(String, String) -> Constraint,
+    F: FnOnce(String, ConstraintValue) -> Constraint,
 {
     let mut inner = pair.into_inner();
     let feature_key = inner.next().unwrap().as_str().to_string();
     let operator = inner.next().unwrap().as_str();
-    let value = inner.next().unwrap().into_inner().as_str().to_string();
+    let value_pair = inner.next().unwrap(); // constraint_value
+    let value = parse_constraint_value(value_pair)?;
 
     let constraint = make_constraint(feature_key, value);
 
@@ -174,12 +181,37 @@ where
     }
 }
 
+fn parse_constraint_value(pair: Pair<Rule>) -> Result<ConstraintValue, QueryError> {
+    // pair is a constraint_value, which contains either string_literal or regex_literal
+    let inner = pair.into_inner().next().unwrap();
+    let rule = inner.as_rule();
+    let value_str = inner.into_inner().as_str().to_string();
+
+    match rule {
+        Rule::string_literal => Ok(ConstraintValue::Literal(value_str)),
+        Rule::regex_literal => {
+            // Add anchors for full string matching (consistent with literal behavior)
+            // lemma=/run/ matches exactly "run", not "running"
+            // Users can use /.*ing/ for partial matches
+            let anchored_pattern = format!("^{}$", value_str);
+
+            // Compile regex during parsing
+            match Regex::new(&anchored_pattern) {
+                Ok(regex) => Ok(ConstraintValue::Regex(value_str, regex)),
+                Err(e) => Err(QueryError::InvalidRegex(value_str, e.to_string())),
+            }
+        }
+        _ => unreachable!(),
+    }
+}
+
 fn compile_regular_constraint(pair: Pair<Rule>) -> Result<Constraint, QueryError> {
     let mut inner = pair.into_inner();
 
     let key = inner.next().unwrap().as_str();
     let operator = inner.next().unwrap().as_str();
-    let value = inner.next().unwrap().into_inner().as_str().to_string();
+    let value_pair = inner.next().unwrap(); // constraint_value
+    let value = parse_constraint_value(value_pair)?;
 
     let constraint = match key {
         "lemma" => Constraint::Lemma(value),
@@ -277,7 +309,7 @@ mod tests {
         assert_eq!(*pattern.match_pattern.var_ids.get("Verb").unwrap(), 0);
         assert_eq!(
             pattern.match_pattern.var_constraints[0],
-            Constraint::UPOS("VERB".to_string())
+            Constraint::UPOS(ConstraintValue::Literal("VERB".to_string()))
         );
 
         let query = r#"MATCH { Help [lemma="help" & upos="VERB"]; }"#;
@@ -288,8 +320,14 @@ mod tests {
         match &pattern.match_pattern.var_constraints[0] {
             Constraint::And(constraints) => {
                 assert_eq!(constraints.len(), 2);
-                assert_eq!(constraints[0], Constraint::Lemma("help".to_string()));
-                assert_eq!(constraints[1], Constraint::UPOS("VERB".to_string()));
+                assert_eq!(
+                    constraints[0],
+                    Constraint::Lemma(ConstraintValue::Literal("help".to_string()))
+                );
+                assert_eq!(
+                    constraints[1],
+                    Constraint::UPOS(ConstraintValue::Literal("VERB".to_string()))
+                );
             }
             _ => panic!("Expected And constraint"),
         }
@@ -425,25 +463,33 @@ mod tests {
             pattern
                 .match_pattern
                 .var_constraints
-                .contains(&Constraint::Lemma("run".to_string()))
+                .contains(&Constraint::Lemma(ConstraintValue::Literal(
+                    "run".to_string()
+                )))
         );
         assert!(
             pattern
                 .match_pattern
                 .var_constraints
-                .contains(&Constraint::UPOS("VERB".to_string()))
+                .contains(&Constraint::UPOS(ConstraintValue::Literal(
+                    "VERB".to_string()
+                )))
         );
         assert!(
             pattern
                 .match_pattern
                 .var_constraints
-                .contains(&Constraint::Form("running".to_string()))
+                .contains(&Constraint::Form(ConstraintValue::Literal(
+                    "running".to_string()
+                )))
         );
         assert!(
             pattern
                 .match_pattern
                 .var_constraints
-                .contains(&Constraint::DepRel("nsubj".to_string()))
+                .contains(&Constraint::DepRel(ConstraintValue::Literal(
+                    "nsubj".to_string()
+                )))
         );
     }
 
@@ -628,9 +674,9 @@ MATCH {
         assert_eq!(pattern.match_pattern.var_constraints.len(), 1);
         assert_eq!(*pattern.match_pattern.var_ids.get("V").unwrap(), 0);
         match &pattern.match_pattern.var_constraints[0] {
-            Constraint::Feature(key, value) => {
+            Constraint::Feature(key, ConstraintValue::Literal(value)) => {
                 assert_eq!(key, "Tense");
-                assert_eq!(value, "Past");
+                assert_eq!(value.as_str(), "Past");
             }
             _ => panic!("Expected Feature constraint"),
         }
@@ -645,10 +691,10 @@ MATCH {
             Constraint::And(constraints) => {
                 assert_eq!(constraints.len(), 2);
                 assert!(constraints.iter().any(|c| matches!(
-                    c, Constraint::Feature(k, v) if k == "Number" && v == "Plur"
+                    c, Constraint::Feature(k, ConstraintValue::Literal(v)) if k == "Number" && v == "Plur"
                 )));
                 assert!(constraints.iter().any(|c| matches!(
-                    c, Constraint::Feature(k, v) if k == "Case" && v == "Nom"
+                    c, Constraint::Feature(k, ConstraintValue::Literal(v)) if k == "Case" && v == "Nom"
                 )));
             }
             _ => panic!("Expected And constraint"),
@@ -662,9 +708,13 @@ MATCH {
 
         match &pattern.match_pattern.var_constraints[0] {
             Constraint::And(constraints) => {
-                assert!(constraints.contains(&Constraint::Lemma("be".to_string())));
+                assert!(
+                    constraints.contains(&Constraint::Lemma(ConstraintValue::Literal(
+                        "be".to_string()
+                    )))
+                );
                 assert!(constraints.iter().any(|c| matches!(
-                    c, Constraint::Feature(k, v) if k == "Tense" && v == "Past"
+                    c, Constraint::Feature(k, ConstraintValue::Literal(v)) if k == "Tense" && v == "Past"
                 )));
             }
             _ => panic!("Expected And constraint"),
@@ -678,7 +728,7 @@ MATCH {
 
         match &pattern.match_pattern.var_constraints[0] {
             Constraint::Not(inner) => match inner.as_ref() {
-                Constraint::Lemma(lemma) => assert_eq!(lemma, "help"),
+                Constraint::Lemma(ConstraintValue::Literal(lemma)) => assert_eq!(lemma, "help"),
                 _ => panic!("Expected Lemma constraint inside Not"),
             },
             _ => panic!("Expected Not constraint"),
@@ -692,9 +742,9 @@ MATCH {
 
         match &pattern.match_pattern.var_constraints[0] {
             Constraint::Not(inner) => match inner.as_ref() {
-                Constraint::Feature(key, value) => {
+                Constraint::Feature(key, ConstraintValue::Literal(value)) => {
                     assert_eq!(key, "Tense");
-                    assert_eq!(value, "Past");
+                    assert_eq!(value.as_str(), "Past");
                 }
                 _ => panic!("Expected Feature constraint inside Not"),
             },
@@ -710,9 +760,13 @@ MATCH {
         match &pattern.match_pattern.var_constraints[0] {
             Constraint::And(constraints) => {
                 assert_eq!(constraints.len(), 2);
-                assert!(constraints.contains(&Constraint::Lemma("run".to_string())));
+                assert!(
+                    constraints.contains(&Constraint::Lemma(ConstraintValue::Literal(
+                        "run".to_string()
+                    )))
+                );
                 assert!(constraints.iter().any(|c| matches!(
-                    c, Constraint::Not(inner) if matches!(inner.as_ref(), Constraint::UPOS(pos) if pos == "NOUN")
+                    c, Constraint::Not(inner) if matches!(inner.as_ref(), Constraint::UPOS(ConstraintValue::Literal(pos)) if pos == "NOUN")
                 )));
             }
             _ => panic!("Expected And constraint"),
@@ -735,7 +789,11 @@ MATCH {
         match &pattern.match_pattern.var_constraints[0] {
             Constraint::And(constraints) => {
                 assert_eq!(constraints.len(), 2);
-                assert!(constraints.contains(&Constraint::UPOS("NOUN".to_string())));
+                assert!(
+                    constraints.contains(&Constraint::UPOS(ConstraintValue::Literal(
+                        "NOUN".to_string()
+                    )))
+                );
                 assert!(constraints.iter().any(|c| matches!(
                     c, Constraint::IsChild(Some(label)) if label == "obj"
                 )));
@@ -759,7 +817,11 @@ MATCH {
         match &pattern.match_pattern.var_constraints[0] {
             Constraint::And(constraints) => {
                 assert_eq!(constraints.len(), 2);
-                assert!(constraints.contains(&Constraint::UPOS("VERB".to_string())));
+                assert!(
+                    constraints.contains(&Constraint::UPOS(ConstraintValue::Literal(
+                        "VERB".to_string()
+                    )))
+                );
                 assert!(constraints.iter().any(|c| matches!(
                     c, Constraint::HasChild(Some(label)) if label == "nsubj"
                 )));
@@ -795,7 +857,11 @@ MATCH {
         match &pattern.match_pattern.var_constraints[0] {
             Constraint::And(constraints) => {
                 assert_eq!(constraints.len(), 3); // UPOS + 2 HasIncomingEdge
-                assert!(constraints.contains(&Constraint::UPOS("NOUN".to_string())));
+                assert!(
+                    constraints.contains(&Constraint::UPOS(ConstraintValue::Literal(
+                        "NOUN".to_string()
+                    )))
+                );
                 assert!(
                     constraints
                         .iter()
@@ -905,5 +971,134 @@ MATCH {
         let query = r#"MATCH { V [upos="VERB"]; } // trailing comment"#;
         let pattern = compile_query(query).unwrap();
         assert_eq!(pattern.match_pattern.var_ids.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_regex_constraint() {
+        // Test basic regex (anchors added automatically)
+        let query = r#"MATCH { V [lemma=/run.*/]; }"#;
+        let pattern = compile_query(query).unwrap();
+
+        assert_eq!(pattern.match_pattern.var_constraints.len(), 1);
+        match &pattern.match_pattern.var_constraints[0] {
+            Constraint::Lemma(ConstraintValue::Regex(pattern_str, _)) => {
+                // Pattern string is stored without anchors (anchors are in compiled regex)
+                assert_eq!(pattern_str, "run.*");
+            }
+            _ => panic!("Expected Lemma with Regex constraint"),
+        }
+    }
+
+    #[test]
+    fn test_parse_regex_upos() {
+        // Test regex with alternation
+        let query = r#"MATCH { W [upos=/VERB|AUX/]; }"#;
+        let pattern = compile_query(query).unwrap();
+
+        match &pattern.match_pattern.var_constraints[0] {
+            Constraint::UPOS(ConstraintValue::Regex(pattern_str, _)) => {
+                assert_eq!(pattern_str, "VERB|AUX");
+            }
+            _ => panic!("Expected UPOS with Regex constraint"),
+        }
+    }
+
+    #[test]
+    fn test_parse_regex_with_escapes() {
+        // Test regex with escaped forward slash
+        let query = r#"MATCH { W [form=/\w+ing/]; }"#;
+        let pattern = compile_query(query).unwrap();
+
+        match &pattern.match_pattern.var_constraints[0] {
+            Constraint::Form(ConstraintValue::Regex(pattern_str, _)) => {
+                assert_eq!(pattern_str, r"\w+ing");
+            }
+            _ => panic!("Expected Form with Regex constraint"),
+        }
+    }
+
+    #[test]
+    fn test_parse_mixed_literal_and_regex() {
+        // Test mixing literal and regex constraints
+        let query = r#"MATCH { W [lemma="help" & upos=/VERB|AUX/]; }"#;
+        let pattern = compile_query(query).unwrap();
+
+        match &pattern.match_pattern.var_constraints[0] {
+            Constraint::And(constraints) => {
+                assert_eq!(constraints.len(), 2);
+                assert!(
+                    constraints.contains(&Constraint::Lemma(ConstraintValue::Literal(
+                        "help".to_string()
+                    )))
+                );
+                assert!(constraints.iter().any(|c| matches!(
+                    c, Constraint::UPOS(ConstraintValue::Regex(p, _)) if p == "VERB|AUX"
+                )));
+            }
+            _ => panic!("Expected And constraint"),
+        }
+    }
+
+    #[test]
+    fn test_parse_regex_feature() {
+        // Test regex in feature constraint
+        let query = r#"MATCH { V [feats.Tense=/Past|Pres/]; }"#;
+        let pattern = compile_query(query).unwrap();
+
+        match &pattern.match_pattern.var_constraints[0] {
+            Constraint::Feature(key, ConstraintValue::Regex(pattern_str, _)) => {
+                assert_eq!(key, "Tense");
+                assert_eq!(pattern_str, "Past|Pres");
+            }
+            _ => panic!("Expected Feature with Regex constraint"),
+        }
+    }
+
+    #[test]
+    fn test_parse_negative_regex() {
+        // Test negated regex (anchors added automatically)
+        let query = r#"MATCH { V [lemma!=/be.*/]; }"#;
+        let pattern = compile_query(query).unwrap();
+
+        match &pattern.match_pattern.var_constraints[0] {
+            Constraint::Not(inner) => match inner.as_ref() {
+                Constraint::Lemma(ConstraintValue::Regex(pattern_str, _)) => {
+                    assert_eq!(pattern_str, "be.*");
+                }
+                _ => panic!("Expected Lemma with Regex inside Not"),
+            },
+            _ => panic!("Expected Not constraint"),
+        }
+    }
+
+    #[test]
+    fn test_parse_invalid_regex() {
+        // Test that invalid regex patterns are rejected during compilation
+        let query = r#"MATCH { V [lemma=/[unclosed/]; }"#;
+        let result = compile_query(query);
+        assert!(matches!(result, Err(QueryError::InvalidRegex(_, _))));
+
+        // Invalid regex with unbalanced parentheses
+        let query = r#"MATCH { V [upos=/VERB(/]; }"#;
+        let result = compile_query(query);
+        assert!(matches!(result, Err(QueryError::InvalidRegex(_, _))));
+    }
+
+    #[test]
+    fn test_regex_anchor_behavior() {
+        // Test to understand anchor behavior
+        use regex::Regex;
+
+        // Double anchor - Rust regex treats ^^ as ^, so it's redundant
+        let re1 = Regex::new("^^w.*$").unwrap();
+        assert!(re1.is_match("win")); // Matches "win" (^^ is treated as ^)
+
+        // Single anchor
+        let re2 = Regex::new("^w.*$").unwrap();
+        assert!(re2.is_match("win")); // Matches "win"
+
+        // Both are equivalent
+        assert_eq!(re1.is_match("win"), re2.is_match("win"));
+        assert_eq!(re1.is_match("running"), re2.is_match("running"));
     }
 }

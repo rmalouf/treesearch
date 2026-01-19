@@ -64,6 +64,32 @@ MATCH {
 'MATCH { NotVerb [upos!="VERB"]; }'
 ```
 
+### Regular Expressions
+
+Use `/pattern/` for regex matching (automatically anchored for full-string match):
+
+```python
+# Words ending in -ing
+'MATCH { Prog [form=/.*ing/]; }'
+
+# Lemmas starting with "run"
+'MATCH { V [lemma=/run.*/]; }'
+
+# Match VERB or AUX
+'MATCH { V [upos=/VERB|AUX/]; }'
+
+# Modal verbs
+'MATCH { M [lemma=/(can|may|must|will|could|might|should|would)/]; }'
+
+# NOT starting with "be"
+'MATCH { V [lemma!=/be.*/]; }'
+
+# Past or present tense
+'MATCH { V [feats.Tense=/Past|Pres/]; }'
+```
+
+**Note:** Patterns are anchored automatically, so `/run/` matches exactly "run" (not "running"). Use `.*` for partial matches: `/run.*/` matches "run", "runs", "running".
+
 ### Edge Constraints
 
 ```python
@@ -203,6 +229,33 @@ for tree, match in ts.search("corpus/*.conllu", query):
 
 with open("examples.json", "w") as f:
     json.dump(examples, f, indent=2)
+```
+
+## Example: Progressive Constructions (with Regex)
+
+```python
+import treesearch as ts
+from collections import Counter
+
+# Find all progressive constructions (be + -ing)
+query = """
+MATCH {
+    Aux [lemma=/be.*/];        # be, is, was, were, etc.
+    Prog [form=/.*ing/];       # any -ing form
+    Aux -[aux]-> Prog;
+}
+"""
+
+treebank = ts.load("corpus/*.conllu")
+verbs = Counter()
+
+for tree, match in treebank.search(query):
+    prog = tree.word(match["Prog"])
+    verbs[prog.lemma] += 1
+
+print("Most common progressive verbs:")
+for lemma, count in verbs.most_common(20):
+    print(f"{lemma}: {count}")
 ```
 
 ## Performance Tips

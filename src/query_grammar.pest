@@ -33,12 +33,15 @@ constraint_list = { (constraint ~ ("&" ~ constraint)*)? }
 // Single constraint: either feature or regular
 constraint = { feature_constraint | misc_constraint | regular_constraint }
 
-// Feature constraint: feats.Key="Value" or feats.Key!="Value"
-feature_constraint = { "feats" ~ "." ~ feature_key ~ constraint_op ~ string_literal }
-misc_constraint = { "misc" ~ "." ~ feature_key ~ constraint_op ~ string_literal }
+// Feature constraint: feats.Key="Value" or feats.Key!="Value" or feats.Key=/regex/
+feature_constraint = { "feats" ~ "." ~ feature_key ~ constraint_op ~ constraint_value }
+misc_constraint = { "misc" ~ "." ~ feature_key ~ constraint_op ~ constraint_value }
 
-// Regular constraint: key="value" or key!="value"
-regular_constraint = { constraint_key ~ constraint_op ~ string_literal }
+// Regular constraint: key="value" or key!="value" or key=/regex/
+regular_constraint = { constraint_key ~ constraint_op ~ constraint_value }
+
+// Constraint value: string literal or regex
+constraint_value = { regex_literal | string_literal }
 
 // Constraint operators
 constraint_op = { "!=" | "=" }
@@ -62,6 +65,10 @@ ident = @{ ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")* }
 // String literal
 string_literal = ${ "\"" ~ string_inner ~ "\"" }
 string_inner = @{ (!("\"" | "\\") ~ ANY)* }
+
+// Regex literal
+regex_literal = ${ "/" ~ regex_inner ~ "/" }
+regex_inner = @{ (!("/" | "\\") ~ ANY | "\\" ~ ANY)* }
 
 // Whitespace (implicit between tokens)
 WHITESPACE = _{ " " | "\t" | "\n" | "\r" }

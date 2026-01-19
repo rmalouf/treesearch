@@ -7,7 +7,8 @@
 //!
 
 use crate::RelationType;
-use crate::pattern::{BasePattern, Constraint, EdgeConstraint, Pattern};
+use crate::bytes::Sym;
+use crate::pattern::{BasePattern, Constraint, ConstraintValue, EdgeConstraint, Pattern};
 use crate::query::{QueryError, compile_query};
 use crate::tree::Word;
 use crate::tree::{Tree, WordId};
@@ -22,29 +23,46 @@ pub struct Match {
     pub bindings: Bindings,
 }
 
+/// Check if a string (from string pool) matches a constraint value (literal or regex)
+fn matches_constraint_value(tree: &Tree, str_id: Sym, value: &ConstraintValue) -> bool {
+    match value {
+        ConstraintValue::Literal(literal) => {
+            tree.string_pool.compare_bytes(str_id, literal.as_bytes())
+        }
+        ConstraintValue::Regex(_pattern, regex) => {
+            // Use pre-compiled regex
+            let bytes = tree.string_pool.resolve(str_id);
+            // Convert bytes to string (CoNLL-U is UTF-8)
+            if let Ok(s) = std::str::from_utf8(&bytes) {
+                regex.is_match(s)
+            } else {
+                false // Invalid UTF-8 never matches
+            }
+        }
+    }
+}
+
 /// Check if a tree word satisfies a pattern variable's constraint
 fn satisfies_var_constraint(tree: &Tree, word: &Word, constraint: &Constraint) -> bool {
     match constraint {
-        Constraint::Lemma(lemma) => tree.string_pool.compare_bytes(word.lemma, lemma.as_bytes()),
-        Constraint::UPOS(pos) => tree.string_pool.compare_bytes(word.upos, pos.as_bytes()),
-        Constraint::XPOS(pos) => tree.string_pool.compare_bytes(word.xpos, pos.as_bytes()),
-        Constraint::Form(form) => tree.string_pool.compare_bytes(word.form, form.as_bytes()),
-        Constraint::DepRel(deprel) => tree
-            .string_pool
-            .compare_bytes(word.deprel, deprel.as_bytes()),
+        Constraint::Lemma(value) => matches_constraint_value(tree, word.lemma, value),
+        Constraint::UPOS(value) => matches_constraint_value(tree, word.upos, value),
+        Constraint::XPOS(value) => matches_constraint_value(tree, word.xpos, value),
+        Constraint::Form(value) => matches_constraint_value(tree, word.form, value),
+        Constraint::DepRel(value) => matches_constraint_value(tree, word.deprel, value),
         Constraint::Feature(key, value) => {
             let key_bytes = key.as_bytes();
-            let value_bytes = value.as_bytes();
-            word.feats
-                .iter()
-                .any(|(k, v)| tree.string_pool.compare_kv(*k, *v, key_bytes, value_bytes))
+            word.feats.iter().any(|(k, v)| {
+                tree.string_pool.compare_bytes(*k, key_bytes)
+                    && matches_constraint_value(tree, *v, value)
+            })
         }
         Constraint::Misc(key, value) => {
             let key_bytes = key.as_bytes();
-            let value_bytes = value.as_bytes();
-            word.misc
-                .iter()
-                .any(|(k, v)| tree.string_pool.compare_kv(*k, *v, key_bytes, value_bytes))
+            word.misc.iter().any(|(k, v)| {
+                tree.string_pool.compare_bytes(*k, key_bytes)
+                    && matches_constraint_value(tree, *v, value)
+            })
         }
         Constraint::And(constraints) => constraints
             .iter()
@@ -1471,5 +1489,59 @@ mod tests {
         let matches: Vec<_> =
             search_tree_query(tree.clone(), r#"MATCH { A []; B []; A << B; }"#).unwrap();
         assert_eq!(matches.len(), 0); // AllDifferent means A != B, so no pairs
+    }
+
+    #[test]
+    fn test_regex_constraints() {
+        let tree = build_test_tree();
+        // Tree has: "helped" (lemma: help), "us" (lemma: we), "to" (lemma: to), "win" (lemma: win)
+
+        // Basic regex - match lemmas starting with "w" (anchors added automatically)
+        let matches: Vec<_> =
+            search_tree_query(tree.clone(), r#"MATCH { W [lemma=/w.*/]; }"#).unwrap();
+        assert_eq!(matches.len(), 2); // "we" and "win"
+        let word_ids: Vec<_> = matches.iter().map(|m| m.bindings["W"]).collect();
+        assert!(word_ids.contains(&1)); // "us" (lemma: we)
+        assert!(word_ids.contains(&3)); // "win"
+
+        // Regex with alternation - match exactly VERB or PRON
+        let matches: Vec<_> =
+            search_tree_query(tree.clone(), r#"MATCH { W [upos=/VERB|PRON/]; }"#).unwrap();
+        assert_eq!(matches.len(), 3); // "helped", "us", "win"
+        let word_ids: Vec<_> = matches.iter().map(|m| m.bindings["W"]).collect();
+        assert!(word_ids.contains(&0)); // helped (VERB)
+        assert!(word_ids.contains(&1)); // us (PRON)
+        assert!(word_ids.contains(&3)); // win (VERB)
+
+        // Regex with .* - match words containing "el"
+        let matches: Vec<_> =
+            search_tree_query(tree.clone(), r#"MATCH { W [form=/.*el.*/]; }"#).unwrap();
+        assert_eq!(matches.len(), 1); // "helped"
+        assert_eq!(matches[0].bindings["W"], 0);
+
+        // Negated regex - match lemmas NOT starting with "w"
+        let matches: Vec<_> =
+            search_tree_query(tree.clone(), r#"MATCH { W [lemma!=/w.*/]; }"#).unwrap();
+        assert_eq!(matches.len(), 2); // "help" and "to"
+        let word_ids: Vec<_> = matches.iter().map(|m| m.bindings["W"]).collect();
+        assert!(word_ids.contains(&0)); // helped (lemma: help)
+        assert!(word_ids.contains(&2)); // to
+
+        // Mixed literal and regex
+        let matches: Vec<_> =
+            search_tree_query(tree.clone(), r#"MATCH { V [upos="VERB" & lemma=/h.*/]; }"#).unwrap();
+        assert_eq!(matches.len(), 1); // "helped"
+        assert_eq!(matches[0].bindings["V"], 0);
+
+        // Regex in edge constraints - this tests that deprel constraints work with literals
+        // (regex in edge labels would require grammar changes)
+        let matches: Vec<_> = search_tree_query(
+            tree.clone(),
+            r#"MATCH { V []; O [lemma=/w.*/]; V -[obj]-> O; }"#,
+        )
+        .unwrap();
+        assert_eq!(matches.len(), 1); // helped -> us (lemma: we)
+        assert_eq!(matches[0].bindings["V"], 0);
+        assert_eq!(matches[0].bindings["O"], 1);
     }
 }

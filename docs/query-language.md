@@ -36,6 +36,42 @@ A query consists of a required MATCH block followed by zero or more EXCEPT and O
 
 **Negation**: `V [upos!="VERB"];`
 
+### Constraint Values
+
+Constraint values can be:
+- **Literal strings** (in quotes): `lemma="run"` - exact match
+- **Regular expressions** (in slashes): `lemma=/run.*/` - pattern match
+
+### Regular Expressions
+
+Regex patterns are **automatically anchored** for full-string matching (consistent with literal behavior):
+
+| Pattern | Matches | Description |
+|---------|---------|-------------|
+| `/run/` | "run" only | Exact match (like `"run"`) |
+| `/run.*/` | "run", "runs", "running" | Starts with "run" |
+| `/.*ing/` | "running", "helping" | Ends with "ing" |
+| `/.*el.*/` | "helped", "hello" | Contains "el" |
+| `/VERB\|AUX/` | "VERB" or "AUX" | Alternation |
+
+**Examples:**
+
+```
+# Find progressive verbs (ending in -ing)
+V [upos="VERB" & form=/.*ing/];
+
+# Find modal verbs
+M [lemma=/(can|may|must|will|shall|could|might|should|would)/];
+
+# Find verbs NOT starting with "be"
+V [upos="VERB" & lemma!=/be.*/];
+
+# Find past or present tense
+V [feats.Tense=/Past|Pres/];
+```
+
+**Note:** Patterns use Rust [regex syntax](https://docs.rs/regex/latest/regex/#syntax). Invalid patterns cause a compile error.
+
 ## Edge Constraints
 
 ### Positive Edges
@@ -117,6 +153,26 @@ MATCH {
     Obj [upos="NOUN"];
     V -[obj]-> Obj;
     V < Obj;          # verb before object
+}
+```
+
+### Progressive Construction (with Regex)
+
+```
+MATCH {
+    Aux [lemma=/be.*/];     # be, is, was, were, etc.
+    V [form=/.*ing/];       # any word ending in -ing
+    Aux -[aux]-> V;
+}
+```
+
+### Modal Verb Construction (with Regex)
+
+```
+MATCH {
+    Modal [lemma=/(can|may|must|will|shall|could|might|should|would)/];
+    Verb [upos="VERB"];
+    Modal -> Verb;
 }
 ```
 

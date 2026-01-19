@@ -29,10 +29,20 @@ Forward checking typically reduces search space by 90%+.
 
 ## Constraint Types
 
-- **Node constraints** (lemma, upos, form, deprel): Direct string pool comparison
-- **Feature constraints** (feats.X, misc.X): Iterate word features for key-value match
+- **Node constraints** (lemma, upos, form, deprel):
+  - Literals: Direct string pool comparison (O(1) via interned strings)
+  - Regex: Pre-compiled patterns matched against resolved UTF-8 strings
+- **Feature constraints** (feats.X, misc.X): Iterate word features for key-value match (supports both literals and regex)
 - **Edge constraints**: Check parent/children relationships
 - **Anonymous variables** (`_`): Create HasIncomingEdge/HasOutgoingEdge constraints without bindings
+
+### Regex Implementation
+
+Regex patterns are compiled once during query parsing with automatic `^...$` anchoring for full-string matching:
+- `/run/` → compiled as `^run$` (exact match)
+- `/run.*/` → compiled as `^run.*$` (starts with "run")
+- Pattern compilation errors are caught during query parsing with clear error messages
+- Compiled regex stored in `ConstraintValue::Regex(pattern, compiled_regex)` for reuse
 
 ## Parallelization
 
@@ -54,10 +64,12 @@ Results streamed through channels with backpressure. Use `ordered=False` for max
 
 | File | Purpose |
 |------|---------|
-| `src/query.rs` | Query parser (Pest grammar) |
-| `src/pattern.rs` | Pattern AST and constraints |
-| `src/searcher.rs` | CSP solver |
+| `src/query.rs` | Query parser (Pest grammar), regex compilation |
+| `src/query_grammar.pest` | PEG grammar for query language |
+| `src/pattern.rs` | Pattern AST and constraints (ConstraintValue) |
+| `src/searcher.rs` | CSP solver with regex matching |
 | `src/tree.rs` | Tree/Word data structures |
+| `src/bytes.rs` | String interning pool (BytestringPool) |
 | `src/conllu.rs` | CoNLL-U parsing |
 | `src/iterators.rs` | Parallel iteration |
 | `src/python.rs` | Python bindings |
