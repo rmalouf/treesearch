@@ -59,7 +59,10 @@ impl<T> BatchAccumulator<T> {
     fn push(&mut self, item: T) -> Option<Vec<T>> {
         self.batch.push(item);
         if self.batch.len() >= self.capacity {
-            Some(std::mem::replace(&mut self.batch, Vec::with_capacity(self.capacity)))
+            Some(std::mem::replace(
+                &mut self.batch,
+                Vec::with_capacity(self.capacity),
+            ))
         } else {
             None
         }
@@ -117,19 +120,17 @@ fn process_files_ordered_batched<T, F>(
         // Compute per-path results in parallel, keeping them grouped by path
         let per_path: Vec<Vec<Result<T, TreebankError>>> = chunk
             .par_iter()
-            .map(|path| {
-                match TreeIterator::from_file(path) {
-                    Ok(it) => it
-                        .flat_map(|result| match result {
-                            Ok(tree) => process_tree(tree),
-                            Err(e) => vec![Err(TreebankError::from(e))],
-                        })
-                        .collect(),
-                    Err(e) => vec![Err(TreebankError::FileOpen {
-                        path: path.clone(),
-                        source: e,
-                    })],
-                }
+            .map(|path| match TreeIterator::from_file(path) {
+                Ok(it) => it
+                    .flat_map(|result| match result {
+                        Ok(tree) => process_tree(tree),
+                        Err(e) => vec![Err(TreebankError::from(e))],
+                    })
+                    .collect(),
+                Err(e) => vec![Err(TreebankError::FileOpen {
+                    path: path.clone(),
+                    source: e,
+                })],
             })
             .collect();
 
