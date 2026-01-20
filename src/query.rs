@@ -190,12 +190,7 @@ fn parse_constraint_value(pair: Pair<Rule>) -> Result<ConstraintValue, QueryErro
     match rule {
         Rule::string_literal => Ok(ConstraintValue::Literal(value_str)),
         Rule::regex_literal => {
-            // Add anchors for full string matching (consistent with literal behavior)
-            // lemma=/run/ matches exactly "run", not "running"
-            // Users can use /.*ing/ for partial matches
             let anchored_pattern = format!("^{}$", value_str);
-
-            // Compile regex during parsing
             match Regex::new(&anchored_pattern) {
                 Ok(regex) => Ok(ConstraintValue::Regex(value_str, regex)),
                 Err(e) => Err(QueryError::InvalidRegex(value_str, e.to_string())),
@@ -242,9 +237,7 @@ fn compile_edge_decl(pair: Pair<Rule>) -> Result<EdgeConstraint, QueryError> {
 
     let negated = matches!(op_rule, Rule::neg_labeled_edge | Rule::neg_unlabeled_edge);
 
-    // Check if there's a label inside the actual operator
     let label = if matches!(op_rule, Rule::neg_labeled_edge | Rule::labeled_edge) {
-        // Extract the edge_label from within the labeled edge operator
         actual_op
             .into_inner()
             .next()
@@ -282,7 +275,7 @@ fn compile_precedence_constraint(pair: Pair<Rule>) -> Result<EdgeConstraint, Que
         to,
         relation,
         label: None,
-        negated: false, // Negation not supported for precedence
+        negated: false,
     })
 }
 

@@ -30,9 +30,7 @@ fn matches_constraint_value(tree: &Tree, str_id: Sym, value: &ConstraintValue) -
             tree.string_pool.compare_bytes(str_id, literal.as_bytes())
         }
         ConstraintValue::Regex(_pattern, regex) => {
-            // Use pre-compiled regex
             let bytes = tree.string_pool.resolve(str_id);
-            // Convert bytes to string (CoNLL-U is UTF-8)
             if let Ok(s) = std::str::from_utf8(&bytes) {
                 regex.is_match(s)
             } else {

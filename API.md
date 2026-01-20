@@ -731,8 +731,6 @@ except Exception as e:
     print(f"Parse error: {e}")
 ```
 
-**Note:** Regular expression patterns are validated and compiled during query compilation (via `compile_query()` or when passing a query string to `search()`), so invalid regex patterns are caught immediately with a clear error message.
-
 ## Performance Tips
 
 - **Query compilation**:
@@ -742,7 +740,6 @@ except Exception as e:
 - **Use `filter()` for existence checks**: When you only need matching trees (not bindings), use `filter()` instead of `search()`—it stops after finding the first match in each tree
 - **Regex vs. literals**: Literal string matching is faster than regex matching. Use literals when exact matches suffice:
   - Prefer `lemma="run"` over `lemma=/run/` (both match exactly "run", but literal is faster)
-  - Use `upos="VERB"` instead of `upos=/VERB/`
   - Use regex when you need pattern matching: `form=/.*ing/`, `lemma=/(be|have).*/`, `upos=/VERB|AUX/`
 - **Automatic parallel processing**: Multi-file operations automatically process files in parallel for better performance
 - **Memory efficient**: Iterator-based API streams results without loading entire corpus
