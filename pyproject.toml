@@ -27,8 +27,7 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 keywords = ["nlp", "linguistics", "dependency-parsing", "corpus-linguistics", "treebank"]
-dependencies = [
-]
+dependencies = ["textual"]
 
 [project.urls]
 Homepage = "https://github.com/rmalouf/treesearch"
@@ -36,7 +35,7 @@ Repository = "https://github.com/rmalouf/treesearch"
 Documentation = "https://rmalouf.github.io/treesearch/"
 Issues = "https://github.com/rmalouf/treesearch/issues"
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "maturin>=1.10.1",
     "pytest>=9.0",
