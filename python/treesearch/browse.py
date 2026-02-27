@@ -3,14 +3,21 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, ContentSwitcher, Footer, Input, Label, ListItem, ListView, LoadingIndicator, Static, TextArea
+from textual.widgets import (
+    Button,
+    ContentSwitcher,
+    Footer,
+    Input,
+    Label,
+    ListItem,
+    ListView,
+    LoadingIndicator,
+    Static,
+    TextArea,
+)
 import treesearch
 import asyncio
 from pathlib import Path
-
-
-
-
 
 
 class DetailPane(Vertical):
@@ -168,7 +175,6 @@ class FileModal(ModalScreen[str | None]):
 
 
 class TermconcApp(App):
-
     CSS = """
     Static {
         padding: 0;
@@ -324,10 +330,10 @@ class TermconcApp(App):
             text = []
             for j in range(len(tree)):
                 if j in matches:
-                    text.append(f'[orange bold]{tree[j].form}[/orange bold]')
+                    text.append(f"[orange bold]{tree[j].form}[/orange bold]")
                 else:
                     text.append(tree[j].form)
-            text = ' '.join(text)
+            text = " ".join(text)
             styled_row = Static(text)
             batch.append(ListItem(styled_row))
 
@@ -345,7 +351,6 @@ class TermconcApp(App):
             await lv.extend(batch)
 
         await self.overlay.remove()
-
 
 
 if __name__ == "__main__":
