@@ -306,23 +306,22 @@ fn dfs(
         }
 
         let mut new_assign = assign.to_vec();
-        //let mut new_domains = domains.to_vec();
-        let new_domains = domains;
+        let mut new_domains = domains.to_vec();
 
         // Assign var <- word_id and update bitset
         new_assign[next_var] = Some(word_id);
         let mut new_assigned_words = assigned_words.clone();
         new_assigned_words.set(word_id);
 
-        // AllDifferent: Remove word_id from all other unassigned variable domains
-        // for domain in &mut new_domains {
-        //     domain.set(word_id, false);
-        // }
-        // if !(0..pattern.n_vars)
-        //     .all(|var_id| new_assign[var_id].is_some() || new_domains[var_id].count_ones(..) > 0)
-        // {
-        //     continue;
-        // }
+        // AllDifferent: Remove word_id from all variable domains
+        for domain in &mut new_domains {
+             domain.reset(word_id);
+        }
+        if !(0..pattern.n_vars)
+            .all(|var_id| new_assign[var_id].is_some() || new_domains[var_id].count_ones() > 0)
+        {
+            continue;
+        }
 
         // Forward-check: Propagate along edge constraints touching next_var
         // if !forward_check(
@@ -341,7 +340,7 @@ fn dfs(
             tree,
             pattern,
             &new_assign,
-            new_domains,
+            &new_domains,
             &new_assigned_words,
             first_only,
         ));

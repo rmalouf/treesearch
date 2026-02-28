@@ -11,7 +11,7 @@ fn main() {
     divan::main();
 }
 
-#[divan::bench(sample_count = 3)]
+#[divan::bench(sample_count = 5)]
 fn help(bencher: Bencher) {
     let query = r#"   MATCH {
         Head [upos="VERB" & lemma="help"];
