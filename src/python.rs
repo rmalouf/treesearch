@@ -361,7 +361,7 @@ impl PyTreebank {
             inner: Box::new(
                 self.inner
                     .clone()
-                    .tree_iter(ordered)
+                    .trees(ordered)
                     .map(|result| result.map(Arc::new)),
             ),
         }
@@ -396,7 +396,8 @@ impl PyTreebank {
             inner: Box::new(
                 self.inner
                     .clone()
-                    .match_iter(compiled.inner, ordered)
+                    .search(compiled.inner, ordered)
+                    .unwrap()
                     .map(|result| result.map(|m| (m.tree, m.bindings))),
             ),
         })
@@ -429,6 +430,7 @@ impl PyTreebank {
                 self.inner
                     .clone()
                     .filter(compiled.inner, ordered)
+                    .unwrap()
                     .map(|result| result.map(Arc::new)),
             ),
         })

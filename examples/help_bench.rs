@@ -16,7 +16,7 @@ fn main() {
     let pattern = compile_query(query).unwrap();
     let treebank = Treebank::from_glob(path).unwrap();
     // Note: parallel processing is now handled internally by match_iter()
-    let count = treebank.match_iter(pattern, true).count();
+    let count = treebank.search(pattern, true).unwrap().count();
 
     println!("{}", count);
 }

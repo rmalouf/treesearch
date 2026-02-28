@@ -17,8 +17,8 @@ pub mod tree; // Tree data structures with full CoNLL-U support
 
 // Re-exports for convenience
 pub use conllu::TreeIterator;
-pub use iterators::{Treebank, TreebankError};
+pub use iterators::{IntoPattern, Treebank, TreebankError, load};
 pub use pattern::{Constraint, EdgeConstraint, Pattern, PatternVar, RelationType, VarId};
-pub use query::compile_query;
-pub use searcher::{Match, search_tree, search_tree_query, tree_matches};
+pub use query::{QueryError, compile_query};
+pub use searcher::{Match, find_all_matches, search_tree, search_tree_query, tree_matches};
 pub use tree::{Features, TokenId, Tree, Word, WordId};

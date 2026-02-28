@@ -1,12 +1,39 @@
-//! Iterators for trees and matches
+//! Iterator interfaces for trees and pattern matches.
 //!
-//! Provides convenient collection interfaces for:
-//! - Iterating over trees from a string, file, or glob pattern
-//! - Searching patterns across trees from a string, file, or glob pattern
-//! - Sequential and parallel iteration via standard traits
+//! The main entry points are:
+//!
+//! - [`load`] — load a [`Treebank`] from a glob pattern (convenience wrapper)
+//! - [`Treebank`] — collection of trees with [`trees`](Treebank::trees),
+//!   [`search`](Treebank::search), and [`filter`](Treebank::filter) iterators
+//! - [`IntoPattern`] — conversion trait that lets `search`/`filter` accept
+//!   either a pre-compiled [`Pattern`] or a raw `&str`/`String`
+//!
+//! # Quick start
+//!
+//! ```no_run
+//! use treesearch::{load, compile_query};
+//!
+//! let tb = load("data/*.conllu")?;
+//!
+//! // Iterate every tree
+//! for tree in tb.clone().trees(true).filter_map(Result::ok) {
+//!     println!("{}", tree.words.len());
+//! }
+//!
+//! // Search with an inline query string — no separate compile step needed
+//! for m in tb.clone().search("MATCH { V [upos=\"VERB\"]; }", true)? {
+//!     let m = m?;
+//! }
+//!
+//! // Or pre-compile when reusing the same pattern
+//! let pattern = compile_query("MATCH { V [upos=\"VERB\"]; }")?;
+//! for m in tb.search(pattern, true)? { }
+//! # Ok::<_, Box<dyn std::error::Error>>(())
+//! ```
 
 use crate::conllu::{ParseError, TreeIterator};
 use crate::pattern::Pattern;
+use crate::query::{QueryError, compile_query};
 use crate::searcher::{Match, search_tree, tree_matches};
 use crate::tree::Tree;
 use rayon::prelude::*;
@@ -14,6 +41,40 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::sync_channel;
 use std::thread;
 use thiserror::Error;
+
+/// Conversion trait for search patterns.
+///
+/// Allows [`Treebank::search`] and [`Treebank::filter`] to accept either a
+/// pre-compiled [`Pattern`] or a raw query string (`&str` / `String`), following
+/// the same idiom as `AsRef<Path>` for file paths.
+///
+/// Pre-compiling is worth it when the same pattern is used across many calls;
+/// passing a string is more ergonomic for one-off searches.
+pub trait IntoPattern {
+    /// Convert `self` into a [`Pattern`], compiling from a string if necessary.
+    ///
+    /// Returns `Err(QueryError)` if `self` is a string that fails to parse.
+    /// The conversion is infallible when `self` is already a `Pattern`.
+    fn into_pattern(self) -> Result<Pattern, QueryError>;
+}
+
+impl IntoPattern for Pattern {
+    fn into_pattern(self) -> Result<Pattern, QueryError> {
+        Ok(self)
+    }
+}
+
+impl IntoPattern for &str {
+    fn into_pattern(self) -> Result<Pattern, QueryError> {
+        compile_query(self)
+    }
+}
+
+impl IntoPattern for String {
+    fn into_pattern(self) -> Result<Pattern, QueryError> {
+        compile_query(&self)
+    }
+}
 
 /// Errors that can occur during treebank iteration
 #[derive(Debug, Error)]
@@ -222,30 +283,37 @@ enum TreeSource {
     Files(Vec<PathBuf>),
 }
 
+/// A collection of dependency trees with parallel iteration support.
 ///
-/// Provides iterator-based access to trees with parallel processing.
-/// Errors (file open, parse errors) are returned in the iterator for proper handling.
+/// A `Treebank` is a lazy handle over one or more CoNLL-U sources (an in-memory
+/// string, a single file, a list of files, or a glob pattern).  No I/O happens
+/// at construction time; work begins when you call [`trees`](Self::trees),
+/// [`search`](Self::search), or [`filter`](Self::filter).
 ///
-/// # Examples
+/// File-level parallelism is handled automatically via rayon.  I/O and parse
+/// errors are surfaced as `Err` items in the iterator rather than panicking, so
+/// callers decide how to handle them.
+///
+/// # Constructors
+///
+/// | Method | Source |
+/// |--------|--------|
+/// | [`from_string`](Self::from_string) | In-memory CoNLL-U text |
+/// | [`from_path`](Self::from_path)     | Single file |
+/// | [`from_paths`](Self::from_paths)   | Explicit list of files |
+/// | [`from_glob`](Self::from_glob)     | Glob pattern (e.g. `"data/*.conllu"`) |
+///
+/// The free function [`load`] is a short alias for [`from_glob`](Self::from_glob).
+///
+/// # Example
 ///
 /// ```no_run
 /// use treesearch::Treebank;
 ///
-/// // Iterate over trees from a file
-/// let trees = Treebank::from_path("data.conllu");
-/// for result in trees.tree_iter(true) {
-///     match result {
-///         Ok(tree) => println!("Tree with {} words", tree.words.len()),
-///         Err(e) => eprintln!("Error: {}", e),
-///     }
-/// }
+/// let tb = Treebank::from_glob("data/*.conllu").unwrap();
 ///
-/// // Count trees from multiple files (parallel processing handled internally)
-/// let count = Treebank::from_glob("data/*.conllu")
-///     .unwrap()
-///     .tree_iter(true)
-///     .filter_map(Result::ok)
-///     .count();
+/// let count = tb.trees(true).filter_map(Result::ok).count();
+/// println!("{count} trees");
 /// ```
 #[derive(Clone)]
 pub struct Treebank {
@@ -253,29 +321,41 @@ pub struct Treebank {
 }
 
 impl Treebank {
-    /// Create from an in-memory CoNLL-U string
+    /// Create a treebank from an in-memory CoNLL-U string.
+    ///
+    /// Useful for testing or when corpus data is already loaded into memory.
+    /// The string is cloned once; iteration is single-threaded (no files to parallelize).
     pub fn from_string(text: &str) -> Self {
         Self {
             source: TreeSource::String(text.to_string()),
         }
     }
 
-    /// Create from a single file path
+    /// Create a treebank from a single file path.
+    ///
+    /// Accepts anything that implements `AsRef<Path>` (`&str`, `PathBuf`, etc.).
+    /// For multiple files use [`from_paths`](Self::from_paths) or [`from_glob`](Self::from_glob).
     pub fn from_path(path: impl AsRef<Path>) -> Self {
         let path_vec = vec![path.as_ref().to_path_buf()];
         Self::from_paths(path_vec)
     }
 
-    /// Create from explicit file paths
+    /// Create a treebank from an explicit list of file paths.
+    ///
+    /// Files are processed in the order given. Use [`from_glob`](Self::from_glob)
+    /// when a filename pattern is more convenient.
     pub fn from_paths(file_paths: Vec<PathBuf>) -> Self {
         Self {
             source: TreeSource::Files(file_paths),
         }
     }
 
-    /// Create from a glob pattern
+    /// Create a treebank from a glob pattern (e.g. `"data/**/*.conllu.gz"`).
     ///
-    /// Files are processed in sorted order for deterministic results.
+    /// Matching files are sorted before processing so results are deterministic
+    /// across runs. Returns `Err` if the glob pattern itself is malformed.
+    ///
+    /// The free function [`load`] is a short alias for this method.
     pub fn from_glob(pattern: &str) -> Result<Self, glob::PatternError> {
         let mut file_paths: Vec<PathBuf> = glob::glob(pattern)?.filter_map(Result::ok).collect();
         file_paths.sort();
@@ -298,7 +378,7 @@ impl Treebank {
     /// let treebank = Treebank::from_glob("data/*.conllu").unwrap();
     ///
     /// // Ordered iteration (deterministic)
-    /// for result in treebank.clone().tree_iter(true) {
+    /// for result in treebank.clone().trees(true) {
     ///     match result {
     ///         Ok(tree) => println!("Tree: {}", tree.words.len()),
     ///         Err(e) => eprintln!("Error: {}", e),
@@ -306,11 +386,11 @@ impl Treebank {
     /// }
     ///
     /// // Unordered iteration (faster for large corpora), ignoring errors
-    /// for tree in treebank.tree_iter(false).filter_map(Result::ok) {
+    /// for tree in treebank.trees(false).filter_map(Result::ok) {
     ///     println!("Tree: {}", tree.words.len());
     /// }
     /// ```
-    pub fn tree_iter(self, ordered: bool) -> impl Iterator<Item = Result<Tree, TreebankError>> {
+    pub fn trees(self, ordered: bool) -> impl Iterator<Item = Result<Tree, TreebankError>> {
         if ordered {
             // Ordered mode: maintain deterministic ordering via chunking
             // Smaller chunks (2 files) improve load balancing for heterogeneous file sizes
@@ -391,64 +471,88 @@ impl Treebank {
         }
     }
 
-    /// Search for pattern matches with optional ordering.
+    /// Search for all pattern matches across the treebank.
     ///
-    /// Returns an iterator over `Result<Match, TreebankError>`. Errors from file I/O
-    /// or parsing are returned in the iterator rather than being silently logged.
+    /// Returns every [`Match`] found; a single tree can produce multiple matches if the
+    /// pattern can be satisfied by different variable assignments within that tree.
+    ///
+    /// Accepts a pre-compiled [`Pattern`] or a raw query `&str`/`String` via [`IntoPattern`].
     ///
     /// # Arguments
-    /// * `pattern` - The pattern to search for
+    /// * `query` - Pattern or query string
     /// * `ordered` - If true (default), maintains file and tree order for deterministic results.
     ///   If false, matches may arrive in any order for better performance.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(QueryError)` if `query` is a string that fails to compile.
+    /// Infallible when `query` is a pre-compiled `Pattern`.
     ///
     /// # Examples
     /// ```no_run
     /// use treesearch::{Treebank, compile_query};
     ///
     /// let treebank = Treebank::from_glob("data/*.conllu").unwrap();
+    ///
+    /// // With pre-compiled pattern
     /// let pattern = compile_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
+    /// for result in treebank.clone().search(pattern, true).unwrap() { }
     ///
-    /// // Ordered iteration (deterministic)
-    /// for result in treebank.clone().match_iter(pattern.clone(), true) {
-    ///     match result {
-    ///         Ok(m) => println!("Match found"),
-    ///         Err(e) => eprintln!("Error: {}", e),
-    ///     }
-    /// }
-    ///
-    /// // Unordered iteration (faster for large corpora), ignoring errors
-    /// for m in treebank.match_iter(pattern, false).filter_map(Result::ok) {
-    ///     println!("Match found");
-    /// }
+    /// // With inline string
+    /// for result in treebank.search("MATCH { V [upos=\"VERB\"]; }", true).unwrap() { }
     /// ```
-    pub fn match_iter(
+    pub fn search<Q: IntoPattern>(
         self,
-        pattern: Pattern,
+        query: Q,
         ordered: bool,
-    ) -> impl Iterator<Item = Result<Match, TreebankError>> {
-        build_parallel_iter_batched(
+    ) -> Result<impl Iterator<Item = Result<Match, TreebankError>>, QueryError> {
+        let pattern = query.into_pattern()?;
+        Ok(build_parallel_iter_batched(
             self.source,
             ordered,
             4, // chunk_size for ordered mode
             move |tree| search_tree(tree, &pattern).into_iter().map(Ok).collect(),
-        )
+        ))
     }
 
-    /// Filter trees that match a pattern.
+    /// Filter to only trees that contain at least one match for a pattern.
     ///
-    /// Returns an iterator over trees that have at least one match for the pattern.
-    /// Uses early termination for efficiency - stops searching each tree after finding
-    /// the first match.
+    /// More efficient than [`search`](Self::search) when you need the matching trees
+    /// but not the specific bindings — each tree is checked with early termination
+    /// so the solver stops after the first match.
+    ///
+    /// Accepts a pre-compiled [`Pattern`] or a raw query `&str`/`String` via [`IntoPattern`].
     ///
     /// # Arguments
-    /// * `pattern` - The pattern to match against
+    /// * `query` - Pattern or query string
     /// * `ordered` - If true, maintains file and tree order. If false, may be faster.
-    pub fn filter(
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(QueryError)` if `query` is a string that fails to compile.
+    /// Infallible when `query` is a pre-compiled `Pattern`.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use treesearch::Treebank;
+    ///
+    /// let tb = Treebank::from_glob("data/*.conllu").unwrap();
+    ///
+    /// // Count sentences containing a passive construction
+    /// let count = tb
+    ///     .filter("MATCH { V []; V -[aux:pass]-> _; }", true)
+    ///     .unwrap()
+    ///     .filter_map(Result::ok)
+    ///     .count();
+    /// ```
+    pub fn filter<Q: IntoPattern>(
         self,
-        pattern: Pattern,
+        query: Q,
         ordered: bool,
-    ) -> impl Iterator<Item = Result<Tree, TreebankError>> {
-        build_parallel_iter_batched(
+    ) -> Result<impl Iterator<Item = Result<Tree, TreebankError>>, QueryError> {
+        let pattern = query.into_pattern()?;
+        Ok(build_parallel_iter_batched(
             self.source,
             ordered,
             4, // chunk_size for ordered mode
@@ -459,8 +563,22 @@ impl Treebank {
                     vec![]
                 }
             },
-        )
+        ))
     }
+}
+
+/// Load a treebank from a glob pattern.
+///
+/// Convenience entry point equivalent to `Treebank::from_glob`.
+///
+/// # Example
+/// ```no_run
+/// use treesearch::load;
+/// let tb = load("data/*.conllu")?;
+/// # Ok::<_, glob::PatternError>(())
+/// ```
+pub fn load(glob_pattern: &str) -> Result<Treebank, glob::PatternError> {
+    Treebank::from_glob(glob_pattern)
 }
 
 #[cfg(test)]
@@ -492,7 +610,7 @@ mod tests {
     #[test]
     fn test_treebank_from_string() {
         let trees: Vec<_> = Treebank::from_string(TWO_TREE_CONLLU)
-            .tree_iter(true)
+            .trees(true)
             .filter_map(Result::ok)
             .collect();
 
@@ -506,7 +624,8 @@ mod tests {
         let pattern = compile_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
         let tree_set = Treebank::from_string(THREE_VERB_CONLLU);
         let matches: Vec<_> = tree_set
-            .match_iter(pattern, true)
+            .search(pattern, true)
+            .unwrap()
             .filter_map(Result::ok)
             .collect();
 
@@ -522,7 +641,8 @@ mod tests {
         let pattern = compile_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
         let tree_set = Treebank::from_string(conllu);
         let matches: Vec<_> = tree_set
-            .match_iter(pattern, true)
+            .search(pattern, true)
+            .unwrap()
             .filter_map(Result::ok)
             .collect();
 
@@ -537,7 +657,8 @@ mod tests {
         let pattern = compile_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
         let tree_set = Treebank::from_string(conllu);
         let matches: Vec<_> = tree_set
-            .match_iter(pattern, true)
+            .search(pattern, true)
+            .unwrap()
             .filter_map(Result::ok)
             .collect();
 
@@ -555,7 +676,8 @@ mod tests {
             compile_query("MATCH { V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 -> V2; }").unwrap();
         let tree_set = Treebank::from_string(conllu);
         let matches: Vec<_> = tree_set
-            .match_iter(pattern, true)
+            .search(pattern, true)
+            .unwrap()
             .filter_map(Result::ok)
             .collect();
 
@@ -570,6 +692,7 @@ mod tests {
         // All 3 trees match the pattern
         let trees: Vec<_> = Treebank::from_string(THREE_VERB_CONLLU)
             .filter(pattern.clone(), true)
+            .unwrap()
             .filter_map(Result::ok)
             .collect();
         assert_eq!(trees.len(), 3);
@@ -578,6 +701,7 @@ mod tests {
         let pattern = compile_query("MATCH { V [lemma=\"help\"]; }").unwrap();
         let trees: Vec<_> = Treebank::from_string(THREE_VERB_CONLLU)
             .filter(pattern, true)
+            .unwrap()
             .filter_map(Result::ok)
             .collect();
         assert_eq!(trees.len(), 1);
@@ -586,6 +710,7 @@ mod tests {
         let pattern = compile_query("MATCH { N [upos=\"NOUN\"]; }").unwrap();
         let trees: Vec<_> = Treebank::from_string(THREE_VERB_CONLLU)
             .filter(pattern, true)
+            .unwrap()
             .filter_map(Result::ok)
             .collect();
         assert_eq!(trees.len(), 0);
@@ -628,7 +753,7 @@ mod tests {
             ]);
 
             let results: Vec<_> = Treebank::from_paths(paths)
-                .tree_iter(true)
+                .trees(true)
                 .filter_map(Result::ok)
                 .collect();
 
@@ -654,7 +779,7 @@ mod tests {
             let pattern = format!("{}/*.conllu", dir.path().display());
             let results: Vec<_> = Treebank::from_glob(&pattern)
                 .unwrap()
-                .tree_iter(true)
+                .trees(true)
                 .filter_map(Result::ok)
                 .collect();
 
@@ -677,7 +802,8 @@ mod tests {
             let pattern = compile_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
             let tree_set = Treebank::from_paths(paths);
             let results: Vec<_> = tree_set
-                .match_iter(pattern, true)
+                .search(pattern, true)
+                .unwrap()
                 .filter_map(Result::ok)
                 .collect();
 
@@ -698,7 +824,8 @@ mod tests {
             let glob_pattern = format!("{}/*.conllu", dir.path().display());
             let tree_set = Treebank::from_glob(&glob_pattern).unwrap();
             let results: Vec<_> = tree_set
-                .match_iter(pattern, true)
+                .search(pattern, true)
+                .unwrap()
                 .filter_map(Result::ok)
                 .collect();
 
@@ -716,7 +843,7 @@ mod tests {
             let bad_file = dir.path().join("nonexistent.conllu");
             paths = vec![good_file.clone(), bad_file, good_file];
 
-            let results: Vec<_> = Treebank::from_paths(paths).tree_iter(true).collect();
+            let results: Vec<_> = Treebank::from_paths(paths).trees(true).collect();
 
             // Should get 2 Ok results and 1 Err result
             assert_eq!(results.len(), 3);
@@ -739,12 +866,12 @@ mod tests {
             let treebank = Treebank::from_paths(paths.clone());
             let run1: Vec<_> = treebank
                 .clone()
-                .tree_iter(true)
+                .trees(true)
                 .filter_map(Result::ok)
                 .collect();
             let run2: Vec<_> = treebank
                 .clone()
-                .tree_iter(true)
+                .trees(true)
                 .filter_map(Result::ok)
                 .collect();
 
@@ -772,7 +899,7 @@ mod tests {
             ]);
 
             let treebank = Treebank::from_paths(paths);
-            let results: Vec<_> = treebank.tree_iter(false).filter_map(Result::ok).collect();
+            let results: Vec<_> = treebank.trees(false).filter_map(Result::ok).collect();
 
             // Should still get all trees, just possibly in different order
             assert_eq!(results.len(), 3);
@@ -801,7 +928,8 @@ mod tests {
             let pattern = compile_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
             let treebank = Treebank::from_paths(paths);
             let results: Vec<_> = treebank
-                .match_iter(pattern, true)
+                .search(pattern, true)
+                .unwrap()
                 .filter_map(Result::ok)
                 .collect();
 
@@ -821,7 +949,8 @@ mod tests {
             let pattern = compile_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
             let treebank = Treebank::from_paths(paths);
             let results: Vec<_> = treebank
-                .match_iter(pattern, false)
+                .search(pattern, false)
+                .unwrap()
                 .filter_map(Result::ok)
                 .collect();
 

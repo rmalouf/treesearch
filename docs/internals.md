@@ -10,7 +10,7 @@ Treesearch treats pattern matching as a **Constraint Satisfaction Problem (CSP)*
 2. **CSP Solver** (`src/searcher.rs`) - DFS with forward checking and MRV heuristic
 3. **Tree Storage** (`src/tree.rs`) - String interning (lasso + FxHash) for memory efficiency
 4. **CoNLL-U Parser** (`src/conllu.rs`) - Streaming parser with automatic gzip detection
-5. **Parallelization** (`src/iterators.rs`) - File-level parallelism via rayon + channels
+5. **Parallelization** (`src/iterators.rs`) - `Treebank` with `trees`/`search`/`filter`; file-level parallelism via rayon + channels
 6. **Python Bindings** (`src/python.rs`) - PyO3 with zero-copy Arc sharing
 
 ## Search Algorithm
@@ -71,5 +71,5 @@ Results streamed through channels with backpressure. Use `ordered=False` for max
 | `src/tree.rs` | Tree/Word data structures |
 | `src/bytes.rs` | String interning pool (BytestringPool) |
 | `src/conllu.rs` | CoNLL-U parsing |
-| `src/iterators.rs` | Parallel iteration |
+| `src/iterators.rs` | `Treebank`, `IntoPattern`, `load()`, parallel iteration |
 | `src/python.rs` | Python bindings |
