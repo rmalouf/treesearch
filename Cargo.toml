@@ -49,3 +49,7 @@ harness = false
 [[bench]]
 name = "coha_io"
 harness = false
+
+[[bench]]
+name = "help_bench"
+harness = false
