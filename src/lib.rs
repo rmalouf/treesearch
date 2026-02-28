@@ -1,4 +1,4 @@
-#![allow(clippy::large_enum_variant, clippy::result_large_err)]
+// #![allow(clippy::large_enum_variant, clippy::result_large_err)]
 
 //! Treesearch: High-performance dependency tree pattern matching
 //!
