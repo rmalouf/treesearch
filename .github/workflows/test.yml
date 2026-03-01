@@ -43,7 +43,7 @@ jobs:
             pip install uv
             uv venv
             source .venv/bin/activate
-            uv pip install treesearch-ud --no-index --find-links dist --force-reinstall
-            uv pip install pytest
+            uv pip install treesearch-ud --no-index --no-deps --find-links dist --force-reinstall
+            uv pip install --group test
             # Run Python tests
             pytest
