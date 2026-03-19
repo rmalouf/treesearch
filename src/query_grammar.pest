@@ -28,10 +28,10 @@ precedence_decl = { ident ~ precedence_op ~ ident ~ ";"? }
 precedence_op = { "<<" | "<" }
 
 // Constraint list (can be empty)
-constraint_list = { (constraint ~ ("&" ~ constraint)*)? }
-
-// Single constraint: either feature or regular
-constraint = { feature_constraint | misc_constraint | regular_constraint }
+constraint_list = { or_constraint? }
+or_constraint   = { and_constraint ~ ("|" ~ and_constraint)* }
+and_constraint  = { atom_constraint ~ ("&" ~ atom_constraint)* }
+atom_constraint = { "(" ~ or_constraint ~ ")" | feature_constraint | misc_constraint | regular_constraint }
 
 // Feature constraint: feats.Key="Value" or feats.Key!="Value" or feats.Key=/regex/
 feature_constraint = { "feats" ~ "." ~ feature_key ~ constraint_op ~ constraint_value }

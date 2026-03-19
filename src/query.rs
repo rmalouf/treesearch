@@ -136,11 +136,28 @@ fn compile_var_decl(pair: Pair<Rule>) -> Result<PatternVar, QueryError> {
 }
 
 fn compile_constraint_list(pair: Pair<Rule>) -> Result<Constraint, QueryError> {
+    match pair.into_inner().next() {
+        None => Ok(Constraint::Any),
+        Some(or_pair) => compile_or_constraint(or_pair),
+    }
+}
+
+fn compile_or_constraint(pair: Pair<Rule>) -> Result<Constraint, QueryError> {
+    let branches: Vec<Constraint> = pair
+        .into_inner()
+        .map(compile_and_constraint)
+        .collect::<Result<_, _>>()?;
+    match branches.len() {
+        1 => Ok(branches.into_iter().next().unwrap()),
+        _ => Ok(Constraint::Or(branches)),
+    }
+}
+
+fn compile_and_constraint(pair: Pair<Rule>) -> Result<Constraint, QueryError> {
     let constraints: Vec<Constraint> = pair
         .into_inner()
-        .map(compile_constraint)
-        .collect::<Result<Vec<_>, _>>()?;
-
+        .map(compile_atom_constraint)
+        .collect::<Result<_, _>>()?;
     match constraints.len() {
         0 => Ok(Constraint::Any),
         1 => Ok(constraints.into_iter().next().unwrap()),
@@ -148,10 +165,10 @@ fn compile_constraint_list(pair: Pair<Rule>) -> Result<Constraint, QueryError> {
     }
 }
 
-fn compile_constraint(pair: Pair<Rule>) -> Result<Constraint, QueryError> {
+fn compile_atom_constraint(pair: Pair<Rule>) -> Result<Constraint, QueryError> {
     let inner = pair.into_inner().next().unwrap();
-
     match inner.as_rule() {
+        Rule::or_constraint => compile_or_constraint(inner),
         Rule::feature_constraint => compile_feature_constraint(inner, Constraint::Feature),
         Rule::misc_constraint => compile_feature_constraint(inner, Constraint::Misc),
         Rule::regular_constraint => compile_regular_constraint(inner),
@@ -1061,6 +1078,65 @@ MATCH {
                 _ => panic!("Expected Lemma with Regex inside Not"),
             },
             _ => panic!("Expected Not constraint"),
+        }
+    }
+
+    #[test]
+    fn test_parse_or_constraint() {
+        let query = r#"MATCH { N [upos="NOUN" | upos="PROPN"]; }"#;
+        let pattern = compile_query(query).unwrap();
+        match &pattern.match_pattern.var_constraints[0] {
+            Constraint::Or(branches) => {
+                assert_eq!(branches.len(), 2);
+                assert!(
+                    branches.contains(&Constraint::UPOS(ConstraintValue::Literal("NOUN".into())))
+                );
+                assert!(
+                    branches.contains(&Constraint::UPOS(ConstraintValue::Literal("PROPN".into())))
+                );
+            }
+            _ => panic!("Expected Or constraint"),
+        }
+    }
+
+    #[test]
+    fn test_parse_or_with_and_precedence() {
+        // (lemma="be" & upos="VERB") | (lemma="have" & upos="AUX")
+        let query = r#"MATCH { V [lemma="be" & upos="VERB" | lemma="have" & upos="AUX"]; }"#;
+        let pattern = compile_query(query).unwrap();
+        match &pattern.match_pattern.var_constraints[0] {
+            Constraint::Or(branches) => {
+                assert_eq!(branches.len(), 2);
+                assert!(matches!(&branches[0], Constraint::And(c) if c.len() == 2));
+                assert!(matches!(&branches[1], Constraint::And(c) if c.len() == 2));
+            }
+            _ => panic!("Expected Or constraint"),
+        }
+    }
+
+    #[test]
+    fn test_parse_single_constraint_no_wrapping() {
+        // Single constraint should not be wrapped in Or or And
+        let query = r#"MATCH { V [upos="VERB"]; }"#;
+        let pattern = compile_query(query).unwrap();
+        assert!(matches!(
+            &pattern.match_pattern.var_constraints[0],
+            Constraint::UPOS(_)
+        ));
+    }
+
+    #[test]
+    fn test_parse_paren_grouping() {
+        // (A | B) & C — parens override default precedence
+        let query = r#"MATCH { N [(upos="NOUN" | upos="PROPN") & deprel="nsubj"]; }"#;
+        let pattern = compile_query(query).unwrap();
+        match &pattern.match_pattern.var_constraints[0] {
+            Constraint::And(parts) => {
+                assert_eq!(parts.len(), 2);
+                assert!(matches!(&parts[0], Constraint::Or(_)));
+                assert!(matches!(&parts[1], Constraint::DepRel(_)));
+            }
+            _ => panic!("Expected And(Or(...), DepRel(...))"),
         }
     }
 

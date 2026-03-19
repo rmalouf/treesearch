@@ -65,9 +65,9 @@ fn satisfies_var_constraint(tree: &Tree, word: &Word, constraint: &Constraint) -
         Constraint::And(constraints) => constraints
             .iter()
             .all(|constraint| satisfies_var_constraint(tree, word, constraint)),
-        //        Constraint::Or(constraints) => constraints
-        //            .iter()
-        //            .any(|constraint| satisfies_var_constraint(tree, word, constraint)),
+        Constraint::Or(constraints) => constraints
+            .iter()
+            .any(|constraint| satisfies_var_constraint(tree, word, constraint)),
         Constraint::Not(inner_constraint) => {
             !satisfies_var_constraint(tree, word, inner_constraint)
         }
@@ -1540,5 +1540,35 @@ mod tests {
         assert_eq!(matches.len(), 1); // helped -> us (lemma: we)
         assert_eq!(matches[0].bindings["V"], 0);
         assert_eq!(matches[0].bindings["O"], 1);
+    }
+
+    #[test]
+    fn test_or_constraint_matches_either() {
+        // build_multi_verb_tree has VERB (saw), PROPN (John), VERB (running), ADV (quickly)
+        let tree = build_multi_verb_tree();
+
+        // NOUN | PROPN should match John (PROPN)
+        let matches: Vec<_> =
+            search_tree_query(tree.clone(), r#"MATCH { N [upos="NOUN" | upos="PROPN"]; }"#)
+                .unwrap();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].bindings["N"], 1); // John is PROPN
+
+        // VERB | AUX should match both verbs
+        let matches: Vec<_> =
+            search_tree_query(tree.clone(), r#"MATCH { V [upos="VERB" | upos="AUX"]; }"#)
+                .unwrap();
+        assert_eq!(matches.len(), 2);
+    }
+
+    #[test]
+    fn test_or_constraint_no_match() {
+        let tree = build_test_tree(); // VERB, PRON, PART, VERB
+
+        // NOUN | ADJ should not match anything
+        let matches: Vec<_> =
+            search_tree_query(tree.clone(), r#"MATCH { N [upos="NOUN" | upos="ADJ"]; }"#)
+                .unwrap();
+        assert_eq!(matches.len(), 0);
     }
 }

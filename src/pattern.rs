@@ -50,6 +50,7 @@ pub enum Constraint {
     Feature(String, ConstraintValue),
     Misc(String, ConstraintValue),
     And(Vec<Constraint>),
+    Or(Vec<Constraint>),
     Not(Box<Constraint>),
     IsChild(Option<String>),
     HasChild(Option<String>),

@@ -15,6 +15,9 @@ from textual.widgets import (
     Static,
     TextArea,
 )
+if __name__ == "__main__":
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import treesearch
 import asyncio
 from pathlib import Path
@@ -223,7 +226,7 @@ class TermconcApp(App):
         yield Footer()
 
     def on_mount(self):
-        path = "/Volumes/Corpora/NA_NEWS/parsed/latwp/**/*.conll.gz"
+        path = "/Volumes/Corpora/COCA/conllu/*.conllu.gz"
         self.treebank = treesearch.load(path)
         self.query_one("#query-editor", TextArea).focus()
 

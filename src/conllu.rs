@@ -242,7 +242,6 @@ impl<R: BufRead> Iterator for TreeIterator<R> {
                     // Optimization: read_until includes '\n' at end, use O(1) suffix check
                     // instead of O(n) scan through entire buffer
                     let line = buffer.strip_suffix(b"\n").unwrap_or(&buffer);
-
                     if line.is_empty() {
                         // Blank line = sentence boundary if we have content
                         if has_content {

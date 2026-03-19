@@ -1137,13 +1137,13 @@ dependencies = [
 ]
 
 [package.dev-dependencies]
-dev = [
-    { name = "maturin" },
-    { name = "pytest" },
-]
 docs = [
     { name = "mkdocs" },
     { name = "mkdocs-material" },
+]
+test = [
+    { name = "maturin" },
+    { name = "pytest" },
 ]
 viz = [
     { name = "spacy" },
@@ -1153,13 +1153,13 @@ viz = [
 requires-dist = [{ name = "textual" }]
 
 [package.metadata.requires-dev]
-dev = [
-    { name = "maturin", specifier = ">=1.10.1" },
-    { name = "pytest", specifier = ">=9.0" },
-]
 docs = [
     { name = "mkdocs", specifier = ">=1.5.0" },
     { name = "mkdocs-material", specifier = ">=9.0.0" },
+]
+test = [
+    { name = "maturin", specifier = ">=1.10.1" },
+    { name = "pytest", specifier = ">=9.0" },
 ]
 viz = [{ name = "spacy", specifier = ">=3.0.0" }]
 
