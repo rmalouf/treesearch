@@ -52,8 +52,8 @@ pub enum Constraint {
     And(Vec<Constraint>),
     Or(Vec<Constraint>),
     Not(Box<Constraint>),
-    IsChild(Option<String>),
-    HasChild(Option<String>),
+    IsChild(Option<ConstraintValue>),
+    HasChild(Option<ConstraintValue>),
 }
 
 pub fn merge_constraints(a: &Constraint, b: &Constraint) -> Constraint {
@@ -102,7 +102,7 @@ pub struct EdgeConstraint {
     pub from: String,
     pub to: String,
     pub relation: RelationType,
-    pub label: Option<String>,
+    pub label: Option<ConstraintValue>,
     pub negated: bool,
 }
 
@@ -222,7 +222,7 @@ impl BasePattern {
                     if !edge_constraint.negated {
                         self.add_var(
                             &edge_constraint.to,
-                            Constraint::DepRel(ConstraintValue::Literal(label.clone())),
+                            Constraint::DepRel(label.clone()),
                         );
                     } else {
                         self.add_var(&edge_constraint.to, Constraint::Any);
@@ -277,7 +277,7 @@ mod tests {
             from: "verb".to_string(),
             to: "noun".to_string(),
             relation: RelationType::Child,
-            label: Some("nsubj".to_string()),
+            label: Some(ConstraintValue::Literal("nsubj".to_string())),
             negated: false,
         }];
 

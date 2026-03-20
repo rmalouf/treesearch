@@ -17,8 +17,10 @@ node_decl = { ident ~ "[" ~ constraint_list ~ "]" ~ ";"? }
 edge_decl = { edge_ident ~ edge_op ~ edge_ident ~ ";"? }
 
 // Edge operators (order matters - longer patterns first)
-edge_op = { neg_labeled_edge | labeled_edge | neg_unlabeled_edge | unlabeled_edge }
+edge_op = { neg_regex_edge | neg_labeled_edge | regex_edge | labeled_edge | neg_unlabeled_edge | unlabeled_edge }
+neg_regex_edge = { "!-" ~ regex_literal ~ "->" }
 neg_labeled_edge = { "!-[" ~ edge_label ~ "]->" }
+regex_edge = { "-" ~ regex_literal ~ "->" }
 labeled_edge = { "-[" ~ edge_label ~ "]->" }
 neg_unlabeled_edge = { "!->" }
 unlabeled_edge = { "->" }

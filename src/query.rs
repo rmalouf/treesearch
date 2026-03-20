@@ -252,15 +252,26 @@ fn compile_edge_decl(pair: Pair<Rule>) -> Result<EdgeConstraint, QueryError> {
     let actual_op = op_inner.next().unwrap(); // Get the actual operator (labeled_edge, etc.)
     let op_rule = actual_op.as_rule();
 
-    let negated = matches!(op_rule, Rule::neg_labeled_edge | Rule::neg_unlabeled_edge);
+    let negated = matches!(
+        op_rule,
+        Rule::neg_labeled_edge | Rule::neg_unlabeled_edge | Rule::neg_regex_edge
+    );
 
-    let label = if matches!(op_rule, Rule::neg_labeled_edge | Rule::labeled_edge) {
-        actual_op
+    let label = match op_rule {
+        Rule::labeled_edge | Rule::neg_labeled_edge => actual_op
             .into_inner()
             .next()
-            .map(|p| p.as_str().to_string())
-    } else {
-        None
+            .map(|p| ConstraintValue::Literal(p.as_str().to_string())),
+        Rule::regex_edge | Rule::neg_regex_edge => {
+            let regex_lit = actual_op.into_inner().next().unwrap();
+            let pattern = regex_lit.into_inner().as_str().to_string();
+            let anchored = format!("^{}$", pattern);
+            match Regex::new(&anchored) {
+                Ok(regex) => Some(ConstraintValue::Regex(pattern, regex)),
+                Err(e) => return Err(QueryError::InvalidRegex(pattern, e.to_string())),
+            }
+        }
+        _ => None,
     };
 
     let to = inner.next().unwrap().as_str().to_string();
@@ -359,7 +370,7 @@ mod tests {
         assert_eq!(edge_constraint.from, "Help");
         assert_eq!(edge_constraint.to, "To");
         assert_eq!(edge_constraint.relation, RelationType::Child);
-        assert_eq!(edge_constraint.label, Some("xcomp".to_string()));
+        assert_eq!(edge_constraint.label, Some(ConstraintValue::Literal("xcomp".to_string())));
     }
 
     #[test]
@@ -415,7 +426,7 @@ mod tests {
         assert_eq!(edge_constraint.from, "Help");
         assert_eq!(edge_constraint.to, "To");
         assert_eq!(edge_constraint.relation, RelationType::Child);
-        assert_eq!(edge_constraint.label, Some("xcomp".to_string()));
+        assert_eq!(edge_constraint.label, Some(ConstraintValue::Literal("xcomp".to_string())));
         assert_eq!(edge_constraint.negated, true);
     }
 
@@ -805,7 +816,7 @@ MATCH {
                     )))
                 );
                 assert!(constraints.iter().any(|c| matches!(
-                    c, Constraint::IsChild(Some(label)) if label == "obj"
+                    c, Constraint::IsChild(Some(ConstraintValue::Literal(label))) if label == "obj"
                 )));
             }
             _ => panic!("Expected And constraint"),
@@ -833,7 +844,7 @@ MATCH {
                     )))
                 );
                 assert!(constraints.iter().any(|c| matches!(
-                    c, Constraint::HasChild(Some(label)) if label == "nsubj"
+                    c, Constraint::HasChild(Some(ConstraintValue::Literal(label))) if label == "nsubj"
                 )));
             }
             _ => panic!("Expected And constraint"),
@@ -922,7 +933,7 @@ MATCH {
         match x_constraints {
             Constraint::And(constraints) => {
                 assert!(constraints.iter().any(|c| matches!(
-                    c, Constraint::IsChild(Some(label)) if label == "obj"
+                    c, Constraint::IsChild(Some(ConstraintValue::Literal(label))) if label == "obj"
                 )));
             }
             _ => panic!("Expected And constraint for X"),
@@ -1169,5 +1180,46 @@ MATCH {
         // Both are equivalent
         assert_eq!(re1.is_match("win"), re2.is_match("win"));
         assert_eq!(re1.is_match("running"), re2.is_match("running"));
+    }
+
+    #[test]
+    fn test_parse_regex_edge() {
+        let query = r#"MATCH { V [upos="VERB"]; N [upos="NOUN"]; V -/nsubj.*/-> N; }"#;
+        let pattern = compile_query(query).unwrap();
+
+        assert_eq!(pattern.match_pattern.edge_constraints.len(), 1);
+        let edge = &pattern.match_pattern.edge_constraints[0];
+        assert_eq!(edge.from, "V");
+        assert_eq!(edge.to, "N");
+        assert!(!edge.negated);
+        assert!(matches!(&edge.label, Some(ConstraintValue::Regex(pat, _)) if pat == "nsubj.*"));
+    }
+
+    #[test]
+    fn test_parse_negated_regex_edge() {
+        let query = r#"MATCH { V [upos="VERB"]; N [upos="NOUN"]; V !-/obj|iobj/-> N; }"#;
+        let pattern = compile_query(query).unwrap();
+
+        assert_eq!(pattern.match_pattern.edge_constraints.len(), 1);
+        let edge = &pattern.match_pattern.edge_constraints[0];
+        assert!(edge.negated);
+        assert!(matches!(&edge.label, Some(ConstraintValue::Regex(pat, _)) if pat == "obj|iobj"));
+    }
+
+    #[test]
+    fn test_parse_anonymous_regex_edge() {
+        let query = r#"MATCH { X [upos="NOUN"]; _ -/nsubj.*/-> X; }"#;
+        let pattern = compile_query(query).unwrap();
+
+        let x_id = *pattern.match_pattern.var_ids.get("X").unwrap();
+        let constraint = &pattern.match_pattern.var_constraints[x_id];
+        match constraint {
+            Constraint::And(constraints) => {
+                assert!(constraints.iter().any(|c| matches!(
+                    c, Constraint::IsChild(Some(ConstraintValue::Regex(pat, _))) if pat == "nsubj.*"
+                )));
+            }
+            _ => panic!("Expected And constraint"),
+        }
     }
 }

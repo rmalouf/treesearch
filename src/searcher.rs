@@ -73,18 +73,17 @@ fn satisfies_var_constraint(tree: &Tree, word: &Word, constraint: &Constraint) -
         }
         Constraint::Any => true, // No filtering
         Constraint::IsChild(label) => {
-            if let Some(required_label) = label {
-                word.head.is_some()
-                    && tree
-                        .string_pool
-                        .compare_bytes(word.deprel, required_label.as_bytes())
+            if let Some(cv) = label {
+                word.head.is_some() && matches_constraint_value(tree, word.deprel, cv)
             } else {
                 word.head.is_some()
             }
         }
         Constraint::HasChild(label) => {
-            if let Some(required_label) = label {
-                !word.children_by_deprel(tree, required_label).is_empty()
+            if let Some(cv) = label {
+                word.children
+                    .iter()
+                    .any(|&child_id| matches_constraint_value(tree, tree.words[child_id].deprel, cv))
             } else {
                 !word.children.is_empty()
             }
@@ -104,10 +103,9 @@ fn satisfies_arc_constraint(
                 && edge_constraint
                     .label
                     .as_ref()
-                    .is_none_or(|expected_deprel| {
+                    .is_none_or(|cv| {
                         let actual_deprel = tree.word(to_word_id).unwrap().deprel;
-                        tree.string_pool
-                            .compare_bytes(actual_deprel, expected_deprel.as_bytes())
+                        matches_constraint_value(tree, actual_deprel, cv)
                     })
         }
         RelationType::Precedes => from_word_id < to_word_id,
@@ -1540,6 +1538,47 @@ mod tests {
         assert_eq!(matches.len(), 1); // helped -> us (lemma: we)
         assert_eq!(matches[0].bindings["V"], 0);
         assert_eq!(matches[0].bindings["O"], 1);
+    }
+
+    #[test]
+    fn test_regex_edge_constraints() {
+        let tree = build_test_tree();
+        // Tree: helped(0) -obj-> us(1), win(3) -xcomp-> helped(0), to(2) -mark-> win(3)
+
+        // Regex edge matching obj or xcomp
+        let matches: Vec<_> = search_tree_query(
+            tree.clone(),
+            r#"MATCH { V [upos="VERB"]; C []; V -/obj|xcomp/-> C; }"#,
+        )
+        .unwrap();
+        assert_eq!(matches.len(), 2); // helped->us (obj) and helped->win (xcomp)
+
+        // Regex edge with wildcard
+        let matches: Vec<_> = search_tree_query(
+            tree.clone(),
+            r#"MATCH { V [upos="VERB"]; C []; V -/x.*/-> C; }"#,
+        )
+        .unwrap();
+        assert_eq!(matches.len(), 1); // helped->win (xcomp)
+        assert_eq!(matches[0].bindings["C"], 3);
+
+        // Negated regex edge: V is parent of C but deprel does NOT match obj|xcomp
+        // Use VERB constraint on V to limit combinations
+        let matches: Vec<_> = search_tree_query(
+            tree.clone(),
+            r#"MATCH { V []; C []; V -/obj|xcomp/-> C; }"#,
+        )
+        .unwrap();
+        // Only helped(0)->us(1, obj) and helped(0)->win(3, xcomp) match
+        assert_eq!(matches.len(), 2);
+
+        // Anonymous regex edge
+        let matches: Vec<_> = search_tree_query(
+            tree.clone(),
+            r#"MATCH { C []; _ -/obj|xcomp/-> C; }"#,
+        )
+        .unwrap();
+        assert_eq!(matches.len(), 2); // us (obj) and win (xcomp)
     }
 
     #[test]
