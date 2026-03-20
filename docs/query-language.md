@@ -78,6 +78,7 @@ V [feats.Tense=/Past|Pres/];
 
 ```
 V -[nsubj]-> N;     # V has nsubj edge to N
+V -/nsubj.*/-> N;   # V has edge matching regex to N
 V -> N;             # V has any edge to N
 ```
 
@@ -85,8 +86,20 @@ V -> N;             # V has any edge to N
 
 ```
 V !-[obj]-> N;      # V does NOT have obj edge to N
+V !-/obj|iobj/-> N; # V does NOT have edge matching regex to N
 V !-> N;            # V has no edge to N
 ```
+
+### Regex Edge Labels
+
+Edge labels support the same regex syntax as node constraints. Patterns are enclosed in `/slashes/` and automatically anchored with `^...$`:
+
+| Edge Pattern | Matches |
+|--------------|---------|
+| `-[nsubj]->` | Exactly "nsubj" |
+| `-/nsubj.*/->` | "nsubj", "nsubj:pass", etc. |
+| `-/obj\|iobj/->` | "obj" or "iobj" |
+| `-/.*mod/->` | "amod", "advmod", "nummod", etc. |
 
 ### Anonymous Variable
 
@@ -96,6 +109,7 @@ Use `_` to check existence without binding:
 V -[obj]-> _;       # V has some object
 V !-[obj]-> _;      # V has no object (intransitive)
 _ !-> Root;         # Root has no incoming edge
+_ -/nsubj.*/-> N;   # N has some subject relation (regex)
 ```
 
 ## Precedence Constraints
@@ -175,6 +189,30 @@ MATCH {
     Modal -> Verb;
 }
 ```
+
+### Any Subject Relation (Regex Edge)
+
+```
+MATCH {
+    V [upos="VERB"];
+    S [upos="NOUN" | upos="PROPN"];
+    V -/nsubj.*/-> S;
+}
+```
+
+This matches `nsubj`, `nsubj:pass`, and any other subject relation.
+
+### Verb with Any Object (Regex Edge)
+
+```
+MATCH {
+    V [upos="VERB"];
+    O [];
+    V -/.*obj.*/-> O;
+}
+```
+
+This matches `obj`, `iobj`, and subtypes like `obj:lvc`.
 
 ## EXCEPT Blocks
 

@@ -91,7 +91,7 @@ MATCH {
 
 **Node constraints**: `upos`, `xpos`, `lemma`, `form`, `deprel`, `feats.*` (morphological features), `misc.*` (miscellaneous features)
 
-**Edge constraints**: `->` (child), `-[label]->` (labeled edge), `!->` (negative), `!-[label]->` (negative labeled edge)
+**Edge constraints**: `->` (child), `-[label]->` (labeled edge), `-/regex/->` (regex edge), `!->` (negative), `!-[label]->` (negative labeled), `!-/regex/->` (negative regex)
 
 **Precedence**: `<` (immediately precedes), `<<` (precedes)
 

@@ -96,11 +96,17 @@ Use `/pattern/` for regex matching (automatically anchored for full-string match
 # Specific dependency relation
 'MATCH { V []; N []; V -[obj]-> N; }'
 
+# Regex match on dependency relation
+'MATCH { V []; N []; V -/nsubj.*/-> N; }'
+
 # Any dependency
 'MATCH { V []; N []; V -> N; }'
 
 # Negative: V does NOT have obj edge to N
 'MATCH { V []; N []; V !-[obj]-> N; }'
+
+# Negative regex: V does NOT have obj or iobj edge to N
+'MATCH { V []; N []; V !-/obj|iobj/-> N; }'
 ```
 
 ### Precedence

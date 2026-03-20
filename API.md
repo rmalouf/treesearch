@@ -172,9 +172,33 @@ Parent -[deprel]-> Child;
 
 **Dependency types:**
 - `-[nsubj]->` - Specific dependency relation
+- `-/regex/->` - Regex match on dependency relation
 - `->` - Any child (no relation specified)
 - `!-[obj]->` - Negative constraint (does NOT have this edge)
+- `!-/regex/->` - Negative regex constraint
 - `!->` - Does NOT have any child
+
+**Regex edge examples:**
+
+```
+MATCH {
+    # Match any subject relation (nsubj, nsubj:pass, etc.)
+    V [upos="VERB"];
+    N [upos="NOUN"];
+    V -/nsubj.*/-> N;
+}
+```
+
+```
+MATCH {
+    # Match obj or iobj
+    V [upos="VERB"];
+    N [];
+    V -/obj|iobj/-> N;
+}
+```
+
+Regex patterns in edges follow the same rules as node constraint regex: automatically anchored with `^...$`, using Rust [regex syntax](https://docs.rs/regex/latest/regex/#syntax).
 
 **Example patterns:**
 
