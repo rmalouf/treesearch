@@ -1,31 +1,47 @@
+## collect data for help_to paper
+##   20-Mar-2026
+
 import treesearch
 import polars as pl
 import time
 
-def xcomps():
-    xcomp_query = """
-    MATCH {
-        Head [upos="VERB"];
-        XComp [upos="VERB" & feats.VerbForm="Inf"];
-        Head -[xcomp]-> XComp;
-    }
-    """
+PATH = "/Volumes/Corpora/CCOHA/conllu/*.conllu.gz"
 
+# VERB_QUERY = """
+# MATCH {
+#     Head [upos="VERB"];
+#     XComp [upos="VERB" & feats.VerbForm="Inf"];
+#     Head -/[xc]comp/-> XComp;
+# }
+# """
+
+VERB_QUERY = """
+MATCH {
+    Head [upos="VERB"];
+}
+"""
+
+def verbs():
     data = []
-    path = "/Volumes/Corpora/CCOHA/conll/*.conllu.gz"
-    pattern = treesearch.compile_query(xcomp_query)
+    pattern = treesearch.compile_query(VERB_QUERY)
 
-    treebank = treesearch.load(path)
+    treebank = treesearch.load(PATH)
     for tree, match in treebank.search(pattern, ordered=False):
-        head = tree[match["Head"]]
-        xcomp = tree[match["XComp"]]
-        data.append({"head_lemma": head.lemma,
-                     "xcomp_lemma": xcomp.lemma,
-                     "transitive": check_dep(tree, head, "obj") or check_dep(tree, xcomp, "nsubj"),
-                     "doc_id": tree.metadata["doc_id"],
-                     })
-    df = pl.DataFrame(data)
-    df.write_parquet("xcomps.parquet")
+        head = tree[match["Head"]].lemma
+        doc_id = tree.metadata["doc_id"]
+        data.append({"verb": head, "year": doc_id})
+
+        if head == "clearp":
+            print(doc_id)
+            print(tree.sentence_text)
+            print(tree.metadata["sent_id"])
+
+    df = (
+        pl.DataFrame(data)
+        .with_columns(pl.col("year").str.extract(r"_([0-9]+)", group_index=1))
+        .sort("year")
+    )
+    df.write_parquet("verbs.parquet")
 
 
 def check_dep(tree, node, deprel, tag=None):
@@ -36,48 +52,123 @@ def check_dep(tree, node, deprel, tag=None):
     return False
 
 
+HELP_QUERY = """
+MATCH {
+    Head [upos="VERB" & lemma="help"];
+    XComp [upos="VERB" & feats.VerbForm="Inf"];
+    Head -/[cx]comp/-> XComp;
+    Head !-[auxpass]-> _;
+    _ !-[conj]-> Head;
+    Head !-[conj]-> _;
+    _ !-[conj]-> XComp;
+    XComp !-[conj]-> _;
+    Head << XComp;
+}
+EXCEPT {
+    But [lemma="but"];
+    XComp -[cc]-> But;
+    Head !-[neg]-> _;
+}
+OPTIONAL {
+    HeadTo [lemma="to"];
+    Head -[aux]-> HeadTo;
+}
+OPTIONAL {
+    XCompTo [lemma="to"];
+    XComp -[aux]-> XCompTo;
+}
+OPTIONAL {
+    XCompNeg [lemma="not"];
+    XComp -[neg]-> XCompNeg;
+}
+OPTIONAL {
+    HeadNeg [lemma="not"];
+    Head -[neg]-> HeadNeg;
+}
+"""
+
+
 def helps():
-    help_query = """
-    MATCH {
-        Head [upos="VERB" & lemma="help"];
-        XComp [upos="VERB" & feats.VerbForm="Inf"];
-        Head -[xcomp]-> XComp;
-        Head !-[aux:pass]-> _;
-        _ !-[conj]-> Head;
-        Head !-[conj]-> _;
-        _ !-[conj]-> XComp;
-        XComp !-[conj]-> _;
-        Head << XComp;
-    }
-    OPTIONAL {
-        HeadTo [lemma="to"];
-        Head -[mark]-> HeadTo;
-    }
-    OPTIONAL {
-        XCompTo [lemma="to"];
-        XComp -[mark]-> XCompTo;
-    }
-    OPTIONAL {
-        XCompNeg [lemma="not"];
-        XComp -[advmod]-> XCompNeg;
-    }
-    OPTIONAL {
-        HeadNeg [lemma="not"];
-        Head -[advmod]-> HeadNeg;
-    }
-    """
-
-    path = "/Volumes/Corpora/CCOHA/conll/*.conllu.gz"
     data = []
-    pattern = treesearch.compile_query(help_query)
+    pattern = treesearch.compile_query(HELP_QUERY)
 
-    treebank = treesearch.load(path)
+    treebank = treesearch.load(PATH)
     for tree, match in treebank.search(pattern, ordered=False):
         head = tree[match["Head"]]
         xcomp = tree[match["XComp"]]
         head_neg = "HeadNeg" in match
         xcomp_neg = "XCompNeg" in match
 
+        data.append(
+            {
+                "head_form": head.form.lower(),
+                "transitive": check_dep(tree, head, "dobj") or check_dep(tree, xcomp, "nsubj"),
+                "head_to": "HeadTo" in match,
+                "head_aux": check_dep(tree, head, "aux"),
+                "head_neg": head_neg,
+                "xcomp_neg": xcomp_neg,
+                "xcomp_lemma": xcomp.lemma,
+                "bare_inf": "XCompTo" not in match,
+                "xcomp_transitive": check_dep(tree, xcomp, "dobj")
+                or check_dep(tree, xcomp, "ccomp"),
+                "distance": int(xcomp.id - head.id),
+                "doc_id": tree.metadata["doc_id"],
+                "sent_id": tree.metadata["sent_id"],
+                "text": tree.sentence_text,
+            }
+        )
+    df = pl.DataFrame(data)
+    df.write_parquet("help.parquet")
+
+
+DARE_QUERY = """
+MATCH {
+    Head [upos="VERB" & lemma="dare"];
+    XComp [upos="VERB" & feats.VerbForm="Inf"];
+    Head -/[xc]comp/-> XComp;
+    Head !-[auxpass]-> _;
+    Head !-[dobj]-> _;
+    XComp !-[nsubj]-> _;
+    _ !-[conj]-> Head;
+    Head !-[conj]-> _;
+    _ !-[conj]-> XComp;
+    XComp !-[conj]-> _;
+    Head << XComp;        
+}
+EXCEPT {
+    Head [form="dare"];
+    XComp [form="say"];
+}
+OPTIONAL {
+    HeadTo [lemma="to"];
+    Head -[aux]-> HeadTo;
+}
+OPTIONAL {
+    XCompTo [lemma="to"];
+    XComp -[aux]-> XCompTo;
+}
+OPTIONAL {
+    XCompNeg [lemma="not"];
+    XComp -[neg]-> XCompNeg;
+}
+OPTIONAL {
+    HeadNeg [lemma="not"];
+    Head -[neg]-> HeadNeg;
+}
+"""
+
+
+def dares():
+
+    data = []
+    pattern = treesearch.compile_query(DARE_QUERY)
+
+    treebank = treesearch.load(PATH)
+    for tree, match in treebank.search(pattern, ordered=False):
+        head = tree[match["Head"]]
+        xcomp = tree[match["XComp"]]
+        head_neg = "HeadNeg" in match
+        xcomp_neg = "XCompNeg" in match
         data.append(
             {
                 "head_form": head.form.lower(),
@@ -97,80 +188,14 @@ def helps():
             }
         )
     df = pl.DataFrame(data)
-    df.write_parquet("help.parquet")
-
-def dares():
-    dare_query = """
-   MATCH {
-        Head [upos="VERB" & lemma="dare"];
-        XComp [upos="VERB" & feats.VerbForm="Inf"];
-        Head -[xcomp]-> XComp;
-        Head !-[aux:pass]-> _;
-        Head !-[obj]-> _;
-        _ !-[conj]-> Head;
-        Head !-[conj]-> _;
-        _ !-[conj]-> XComp;
-        XComp !-[conj]-> _;
-        Head << XComp;        
-    }
-    EXCEPT {
-        Head [form="dare"];
-        XComp [form="say"];
-    }
-    OPTIONAL {
-        HeadTo [lemma="to"];
-        Head -[mark]-> HeadTo;
-    }
-    OPTIONAL {
-        XCompTo [lemma="to"];
-        XComp -[mark]-> XCompTo;
-    }
-    OPTIONAL {
-        XCompNeg [lemma="not"];
-        XComp -[advmod]-> XCompNeg;
-    }
-    OPTIONAL {
-        HeadNeg [lemma="not"];
-        Head -[advmod]-> HeadNeg;
-    }
-     """
-
-    path = "/Volumes/Corpora/CCOHA/conll/*.conllu.gz"
-    data = []
-    pattern = treesearch.compile_query(dare_query)
-
-    treebank = treesearch.load(path)
-    for tree, match in treebank.search(pattern, ordered=False):
-        head = tree[match["Head"]]
-        xcomp = tree[match["XComp"]]
-        head_neg = "HeadNeg" in match
-        xcomp_neg = "XCompNeg" in match
-        data.append(
-            {
-                "head_form": head.form.lower(),
-                "transitive": check_dep(tree, head, "obj") or check_dep(tree, xcomp, "nsubj"),
-                "head_to": "HeadTo" in match,
-                "head_aux": check_dep(tree, head, "aux"),
-                "head_neg": head_neg,
-                "xcomp_neg": xcomp_neg,
-                "xcomp_lemma": xcomp.lemma,
-                "bare_inf": "XCompTo" not in match,
-                "xcomp_transitive": check_dep(tree, xcomp, "obj")
-                                    or check_dep(tree, xcomp, "ccomp"),
-                "distance": int(xcomp.id - head.id),
-                "doc_id": tree.metadata["doc_id"],
-                "sent_id": tree.metadata["sent_id"],
-                "text": tree.sentence_text,
-            }
-        )
-    df = pl.DataFrame(data)
     print(len(df))
     df.write_parquet("dare.parquet")
 
+
 if __name__ == "__main__":
-    print('xcomps')
-    xcomps()
-    print('helps')
+    print("verbs")
+    verbs()
+    print("helps")
     helps()
-    print('dares')
+    print("dares")
     dares()
