@@ -9,6 +9,7 @@
 use crate::bytes::{BytestringPool, bs_atoi, bs_split_once};
 use crate::tree::{Dep, Features, Misc, TokenId, Tree, WordId};
 use flate2::read::GzDecoder;
+use zstd::stream::read::Decoder as ZstdDecoder;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
@@ -185,15 +186,17 @@ impl<R: BufRead> TreeIterator<R> {
 }
 
 impl TreeIterator<BufReader<Box<dyn Read + Send>>> {
-    /// Create a reader from a file path (transparently handles gzip compression)
+    /// Create a reader from a file path (transparently handles gzip and zstd compression)
     pub fn from_file(path: &Path) -> std::io::Result<Self> {
         let file = File::open(path)?;
         let mut reader = BufReader::new(file);
 
-        // Peek at the magic bytes to detect gzip
+        // Peek at the magic bytes to detect compression format
         let buf = reader.fill_buf()?;
         let reader: Box<dyn Read + Send> = if buf.starts_with(&[0x1f, 0x8b]) {
             Box::new(GzDecoder::new(reader))
+        } else if buf.starts_with(&[0x28, 0xB5, 0x2F, 0xFD]) {
+            Box::new(ZstdDecoder::new(reader)?)
         } else {
             Box::new(reader)
         };

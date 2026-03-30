@@ -33,7 +33,7 @@ for tree, match in ts.search("corpus/*.conllu", query):
 - **Exhaustive search** finds all matches using CSP solving
 - **Automatic parallelism** for multi-file processing
 - **Memory efficient** streaming with string interning
-- **Transparent gzip** support
+- **Transparent gzip/zstd** support
 
 ## Quick Examples
 

@@ -101,7 +101,7 @@ MATCH {
 
 ## Data Format
 
-Reads treebanks in [CoNLL-U format](https://universaldependencies.org/format.html). Supports plain text (`.conllu`) and gzip-compressed files (`.conllu.gz`) with automatic decompression.
+Reads treebanks in [CoNLL-U format](https://universaldependencies.org/format.html). Supports plain text (`.conllu`), gzip-compressed (`.conllu.gz`), and zstd-compressed files (`.conllu.zst`) with automatic decompression.
 
 ## Documentation
 

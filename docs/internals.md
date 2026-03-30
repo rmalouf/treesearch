@@ -9,7 +9,7 @@ Treesearch treats pattern matching as a **Constraint Satisfaction Problem (CSP)*
 1. **Query Parser** (`src/query.rs`) - Pest-based parser converts query strings to Pattern AST
 2. **CSP Solver** (`src/searcher.rs`) - DFS with forward checking and MRV heuristic
 3. **Tree Storage** (`src/tree.rs`) - String interning (lasso + FxHash) for memory efficiency
-4. **CoNLL-U Parser** (`src/conllu.rs`) - Streaming parser with automatic gzip detection
+4. **CoNLL-U Parser** (`src/conllu.rs`) - Streaming parser with automatic gzip/zstd detection
 5. **Parallelization** (`src/iterators.rs`) - `Treebank` with `trees`/`search`/`filter`; file-level parallelism via rayon + channels
 6. **Python Bindings** (`src/python.rs`) - PyO3 with zero-copy Arc sharing
 

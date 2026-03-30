@@ -290,7 +290,7 @@ for lemma, count in verbs.most_common(20):
        ...
    ```
 
-4. **Use gzip** - `.conllu.gz` files often faster due to less I/O
+4. **Use compression** - `.conllu.gz` or `.conllu.zst` files often faster due to less I/O
 
 5. **Stream results** - don't collect into lists unless needed
 

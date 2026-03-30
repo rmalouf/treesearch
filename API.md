@@ -243,7 +243,7 @@ Represents a collection of dependency trees from one or more files.
 
 ##### `Treebank.from_file(path: str) -> Treebank`
 
-Create a treebank from a single CoNLL-U file (supports gzip).
+Create a treebank from a single CoNLL-U file (supports gzip and zstd).
 
 ```python
 treebank = ts.Treebank.from_file("corpus.conllu")
@@ -767,6 +767,6 @@ except Exception as e:
   - Use regex when you need pattern matching: `form=/.*ing/`, `lemma=/(be|have).*/`, `upos=/VERB|AUX/`
 - **Automatic parallel processing**: Multi-file operations automatically process files in parallel for better performance
 - **Memory efficient**: Iterator-based API streams results without loading entire corpus
-- **Use gzipped files**: Store CoNLL-U files as `.conllu.gz` to reduce I/O time and disk usage (decompression is automatic)
+- **Use compressed files**: Store CoNLL-U files as `.conllu.gz` or `.conllu.zst` to reduce I/O time and disk usage (decompression is automatic)
 - **Unordered iteration**: Use `ordered=False` for better performance when order doesn't matter
 

@@ -289,7 +289,7 @@ mod treesearch {
 
         /// Create a Treebank from a CoNLL-U file.
         ///
-        /// Automatically detects and handles gzip-compressed files (.conllu.gz).
+        /// Automatically detects and handles gzip-compressed (.conllu.gz) and zstd-compressed (.conllu.zst) files.
         ///
         /// Args:
         ///     path: Path to CoNLL-U file
