@@ -1,24 +1,21 @@
 //! Pattern representation and compilation
 //!
-//! This module defines the AST for dependency tree patterns used
-//! in the CSP-based matching algorithm.
+//! This module defines the constraint graph for dependency tree patterns used in
+//! the CSP-based matching algorithm.
 
 use regex::Regex;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::fmt::Debug;
 
-/// Type alias for pattern variable identifiers (indices into Pattern.vars)
 pub type VarId = usize;
 
-/// Value in a constraint: either a literal string or a regex pattern
 #[derive(Clone)]
 pub enum ConstraintValue {
     Literal(String),
     Regex(String, Regex), // Pattern string + compiled regex
 }
 
-// Manual Debug implementation
 impl Debug for ConstraintValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -28,7 +25,6 @@ impl Debug for ConstraintValue {
     }
 }
 
-// Manual PartialEq implementation (compare pattern strings, not compiled regex)
 impl PartialEq for ConstraintValue {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -119,7 +115,6 @@ pub struct Pattern {
     pub optional_patterns: Vec<BasePattern>,
 }
 
-/// A complete pattern to match against dependency trees
 #[derive(Debug, Clone)]
 pub struct BasePattern {
     pub n_vars: usize,
@@ -176,7 +171,6 @@ impl BasePattern {
         }
     }
 
-    /// Add an edge constraint between variables
     pub fn add_edge_constraint(&mut self, edge_constraint: EdgeConstraint) {
         let from_is_anon = edge_constraint.from == "_";
         let to_is_anon = edge_constraint.to == "_";
