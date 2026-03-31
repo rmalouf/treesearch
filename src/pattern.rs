@@ -125,8 +125,6 @@ pub struct BasePattern {
     pub n_vars: usize,
     pub var_ids: HashMap<String, VarId>,
     pub var_names: Vec<String>,
-    pub out_edges: Vec<Vec<usize>>,
-    pub in_edges: Vec<Vec<usize>>,
     pub incident_edges: Vec<Vec<DirectedEdge>>,
     pub var_constraints: Vec<Constraint>,
     pub edge_constraints: Vec<EdgeConstraint>,
@@ -138,8 +136,6 @@ impl BasePattern {
             n_vars: 0,
             var_ids: HashMap::new(),
             var_names: Vec::new(),
-            in_edges: Vec::new(),
-            out_edges: Vec::new(),
             incident_edges: Vec::new(),
             var_constraints: Vec::new(),
             edge_constraints: Vec::new(),
@@ -175,9 +171,7 @@ impl BasePattern {
                 e.insert(var_id);
                 self.var_names.push(var_name.to_string());
                 self.var_constraints.push(constr);
-                self.out_edges.push(Vec::new());
-                self.in_edges.push(Vec::new());
-                self.incident_edges.push(Vec::new()); // TODO: replace in_edges, out_edges someday
+                self.incident_edges.push(Vec::new());
             }
         }
     }
@@ -235,8 +229,6 @@ impl BasePattern {
                 let from_var_id = self.var_ids.get(&edge_constraint.from).unwrap();
                 let to_var_id = self.var_ids.get(&edge_constraint.to).unwrap();
 
-                self.out_edges[*from_var_id].push(edge_id);
-                self.in_edges[*to_var_id].push(edge_id);
                 self.incident_edges[*from_var_id].push(DirectedEdge::Out(edge_id));
                 self.incident_edges[*to_var_id].push(DirectedEdge::In(edge_id));
                 self.edge_constraints.push(edge_constraint);

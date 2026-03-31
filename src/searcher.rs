@@ -8,7 +8,7 @@
 
 use crate::RelationType;
 use crate::bytes::Sym;
-use crate::pattern::{BasePattern, Constraint, ConstraintValue, EdgeConstraint, Pattern};
+use crate::pattern::{BasePattern, Constraint, ConstraintValue, DirectedEdge, EdgeConstraint, Pattern};
 use crate::query::{QueryError, compile_query};
 use crate::tree::Word;
 use crate::tree::{Tree, WordId};
@@ -360,35 +360,30 @@ fn forward_check(
     new_domains: &mut [BitFixed<u64>],
 ) -> bool {
     // Propagate along edge constraints incident to next_var
-    for &edge_idx in &pattern.out_edges[next_var] {
-        let edge_constraint = &pattern.edge_constraints[edge_idx];
-        let target_var_id = pattern.var_ids[&edge_constraint.to];
-        if new_assign[target_var_id].is_some() {
+    for directed_edge in &pattern.incident_edges[next_var] {
+        let (ec, neighbor_var_id) = match *directed_edge {
+            DirectedEdge::Out(eid) => {
+                let ec = &pattern.edge_constraints[eid];
+                (ec, pattern.var_ids[&ec.to])
+            }
+            DirectedEdge::In(eid) => {
+                let ec = &pattern.edge_constraints[eid];
+                (ec, pattern.var_ids[&ec.from])
+            }
+        };
+        if new_assign[neighbor_var_id].is_some() {
             continue;
         }
-        // Remove words from domain that don't satisfy the arc constraint
-        for w in new_domains[target_var_id].iter().collect::<Vec<_>>() {
-            if !satisfies_arc_constraint(tree, word_id, w, edge_constraint) {
-                new_domains[target_var_id].reset(w);
+        for w in new_domains[neighbor_var_id].iter().collect::<Vec<_>>() {
+            let ok = match *directed_edge {
+                DirectedEdge::Out(_) => satisfies_arc_constraint(tree, word_id, w, ec),
+                DirectedEdge::In(_) => satisfies_arc_constraint(tree, w, word_id, ec),
+            };
+            if !ok {
+                new_domains[neighbor_var_id].reset(w);
             }
         }
-        if new_domains[target_var_id].count_ones() == 0 {
-            return false;
-        }
-    }
-
-    for &edge_idx in &pattern.in_edges[next_var] {
-        let edge_constraint = &pattern.edge_constraints[edge_idx];
-        let source_var_id = pattern.var_ids[&edge_constraint.from];
-        if new_assign[source_var_id].is_some() {
-            continue;
-        }
-        for w in new_domains[source_var_id].iter().collect::<Vec<_>>() {
-            if !satisfies_arc_constraint(tree, w, word_id, edge_constraint) {
-                new_domains[source_var_id].reset(w);
-            }
-        }
-        if new_domains[source_var_id].count_ones() == 0 {
+        if new_domains[neighbor_var_id].count_ones() == 0 {
             return false;
         }
     }
@@ -403,22 +398,26 @@ fn check_arc_consistency(
     word_id: WordId,
 ) -> bool {
     // Check arc consistency with already-assigned neighbors (early prune)
-    for &edge_id in &pattern.out_edges[next_var] {
-        let edge_constraint = &pattern.edge_constraints[edge_id];
-        let target_var_id = pattern.var_ids[&edge_constraint.to];
-        if assign[target_var_id].is_some_and(|target_word_id| {
-            !satisfies_arc_constraint(tree, word_id, target_word_id, edge_constraint)
-        }) {
-            return false;
-        }
-    }
-    for &edge_id in &pattern.in_edges[next_var] {
-        let edge_constraint = &pattern.edge_constraints[edge_id];
-        let source_var_id = pattern.var_ids[&edge_constraint.from];
-        if assign[source_var_id].is_some_and(|source_word_id| {
-            !satisfies_arc_constraint(tree, source_word_id, word_id, edge_constraint)
-        }) {
-            return false;
+    for directed_edge in &pattern.incident_edges[next_var] {
+        match *directed_edge {
+            DirectedEdge::Out(edge_id) => {
+                let ec = &pattern.edge_constraints[edge_id];
+                let target_var_id = pattern.var_ids[&ec.to];
+                if assign[target_var_id].is_some_and(|tw| {
+                    !satisfies_arc_constraint(tree, word_id, tw, ec)
+                }) {
+                    return false;
+                }
+            }
+            DirectedEdge::In(edge_id) => {
+                let ec = &pattern.edge_constraints[edge_id];
+                let source_var_id = pattern.var_ids[&ec.from];
+                if assign[source_var_id].is_some_and(|sw| {
+                    !satisfies_arc_constraint(tree, sw, word_id, ec)
+                }) {
+                    return false;
+                }
+            }
         }
     }
     true
