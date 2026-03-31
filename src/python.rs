@@ -36,7 +36,7 @@ impl From<TreebankError> for PyErr {
 mod treesearch {
     use super::*;
 
-    #[pyclass(name = "Tree")]
+    #[pyclass(name = "Tree", from_py_object)]
     #[derive(Clone)]
     pub struct PyTree {
         pub(crate) inner: Arc<RustTree>,
@@ -220,7 +220,7 @@ mod treesearch {
         }
     }
 
-    #[pyclass(name = "Pattern")]
+    #[pyclass(name = "Pattern", from_py_object)]
     #[derive(Clone)]
     pub struct PyPattern {
         pub(crate) inner: RustPattern,
@@ -265,7 +265,7 @@ mod treesearch {
     ///
     /// Provides methods for iterating over trees and searching for patterns.
     /// Supports multiple iterations by cloning internally.
-    #[pyclass(name = "Treebank")]
+    #[pyclass(name = "Treebank", from_py_object)]
     #[derive(Clone)]
     pub struct PyTreebank {
         inner: Treebank,
