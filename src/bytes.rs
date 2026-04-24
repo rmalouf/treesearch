@@ -3,7 +3,8 @@ use hashbrown::hash_map::RawEntryMut;
 use rustc_hash::{FxBuildHasher, FxHasher};
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroU32;
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 pub const STRING_POOL_CAPACITY: usize = 5000;
 
@@ -25,17 +26,17 @@ impl BytestringPool {
 
     #[inline]
     pub fn get_or_intern(&mut self, bytes: &[u8]) -> Sym {
-        self.0.lock().unwrap().get_or_intern(bytes)
+        self.0.lock().get_or_intern(bytes)
     }
 
     #[inline]
     pub fn resolve(&self, sym: Sym) -> Arc<[u8]> {
-        self.0.lock().unwrap().resolve(sym)
+        self.0.lock().resolve(sym)
     }
 
     #[inline(always)]
     pub fn compare_bytes(&self, sym: Sym, bytes: &[u8]) -> bool {
-        self.0.lock().unwrap().compare_bytes(sym, bytes)
+        self.0.lock().compare_bytes(sym, bytes)
     }
 
     #[inline(always)]
@@ -48,7 +49,6 @@ impl BytestringPool {
     ) -> bool {
         self.0
             .lock()
-            .unwrap()
             .compare_kv(key_sym, val_sym, key_bytes, val_bytes)
     }
 }
