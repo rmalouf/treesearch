@@ -17,12 +17,13 @@ pest_derive = "2.8"
 rustc-hash = "2.1"
 flate2 = { version = "1.1", features = ["zlib-rs"] }
 zstd = "0.13"
-hashbrown = "0.16"
+hashbrown = "0.17"
 rayon = "1.11"
 glob = "0.3"
 thiserror = "2.0"
 crossbeam-channel = "0.5"
 fastbit = "0.11"
+memchr = "2"
 regex = "1.12"
 
 [features]

@@ -82,50 +82,45 @@ impl<R: BufRead> TreeIterator<R> {
         line: &[u8],
         word_id: WordId,
     ) -> Result<(), ParseError> {
-        let mut fields = line.split(|b| *b == b'\t');
-        let mut field_num = 0;
-
-        // Helper macro to consume the next field with error handling
-        macro_rules! next_field {
-            () => {{
-                let result = fields.next().ok_or_else(|| {
-                    let num = field_num;
-                    field_num += 1;
-                    ParseError::MissingField { field_num: num }
-                })?;
-                field_num += 1;
-                let _ = field_num;
-                result
-            }};
+        // Find the 9 tab positions that delimit 10 fields.
+        let mut tabs = [0usize; 9];
+        let mut n = 0;
+        for pos in memchr::memchr_iter(b'\t', line) {
+            if n == 9 {
+                return Err(ParseError::TooManyFields);
+            }
+            tabs[n] = pos;
+            n += 1;
+        }
+        if n != 9 {
+            return Err(ParseError::MissingField { field_num: n + 1 });
         }
 
-        let token_id_field = next_field!();
+        let token_id_field = &line[..tabs[0]];
+        let form          = &line[tabs[0] + 1..tabs[1]];
+        let lemma         = &line[tabs[1] + 1..tabs[2]];
+        let upos          = &line[tabs[2] + 1..tabs[3]];
+        let xpos          = &line[tabs[3] + 1..tabs[4]];
+        let feats_field   = &line[tabs[4] + 1..tabs[5]];
+        let head_field    = &line[tabs[5] + 1..tabs[6]];
+        let deprel        = &line[tabs[6] + 1..tabs[7]];
+        let deps_field    = &line[tabs[7] + 1..tabs[8]];
+        let misc_field    = &line[tabs[8] + 1..];
 
         // Skip multiword tokens (e.g., "1-2")
-        if token_id_field.contains(&b'-') {
+        if memchr::memchr(b'-', token_id_field).is_some() {
             return Ok(());
         }
 
         let token_id = parse_id(token_id_field)?;
-        let form = next_field!();
-        let lemma = next_field!();
-        let upos = next_field!();
-        let xpos = next_field!();
-        let feats = self.parse_features(next_field!())?;
-        let head = parse_head(next_field!())?;
-        let deprel = next_field!();
-        if next_field!() != b"_" {
+        let feats = self.parse_features(feats_field)?;
+        let head = parse_head(head_field)?;
+        if deps_field != b"_" {
             return Err(ParseError::UnsupportedExtendedDeprels);
         }
-        let misc = self.parse_features(next_field!())?;
+        let misc = self.parse_features(misc_field)?;
 
-        if fields.next().is_some() {
-            return Err(ParseError::TooManyFields);
-        }
-
-        tree.add_word(
-            word_id, token_id, form, lemma, upos, xpos, feats, head, deprel, misc,
-        );
+        tree.add_word(word_id, token_id, form, lemma, upos, xpos, feats, head, deprel, misc);
         Ok(())
     }
 
@@ -136,9 +131,9 @@ impl<R: BufRead> TreeIterator<R> {
         }
 
         let mut feats = Features::new();
-        for pair in s.split(|b| *b == b'|') {
-            //            let mut kv = pair.split(|b| *b == b'=');
-            //            let (Some(k), Some(v)) = (kv.next(), kv.next()) else {
+        let mut start = 0;
+        for pipe_pos in memchr::memchr_iter(b'|', s).chain(std::iter::once(s.len())) {
+            let pair = &s[start..pipe_pos];
             let Some((k, v)) = bs_split_once(pair, b'=') else {
                 return Err(ParseError::InvalidFeatsPair {
                     pair: str::from_utf8(pair)?.to_string(),
@@ -148,6 +143,7 @@ impl<R: BufRead> TreeIterator<R> {
                 self.string_pool.get_or_intern(k),
                 self.string_pool.get_or_intern(v),
             ));
+            start = pipe_pos + 1;
         }
         Ok(feats)
     }

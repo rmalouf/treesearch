@@ -130,8 +130,8 @@ impl ByteInterner {
 // Divide a bytestring into two at delim
 #[inline]
 pub fn bs_split_once(bytes: &[u8], delim: u8) -> Option<(&[u8], &[u8])> {
-    let mut pair = bytes.splitn(2, |b| *b == delim);
-    Some((pair.next()?, pair.next()?))
+    let pos = memchr::memchr(delim, bytes)?;
+    Some((&bytes[..pos], &bytes[pos + 1..]))
 }
 
 #[inline]
