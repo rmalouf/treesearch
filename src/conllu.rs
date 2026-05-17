@@ -9,12 +9,12 @@
 use crate::bytes::{BytestringPool, bs_atoi, bs_split_once};
 use crate::tree::{Dep, Features, Misc, TokenId, Tree, WordId};
 use flate2::read::GzDecoder;
-use zstd::stream::read::Decoder as ZstdDecoder;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use thiserror::Error;
+use zstd::stream::read::Decoder as ZstdDecoder;
 
 /// Error during CoNLL-U parsing
 #[derive(Debug, Error)]
@@ -97,15 +97,15 @@ impl<R: BufRead> TreeIterator<R> {
         }
 
         let token_id_field = &line[..tabs[0]];
-        let form          = &line[tabs[0] + 1..tabs[1]];
-        let lemma         = &line[tabs[1] + 1..tabs[2]];
-        let upos          = &line[tabs[2] + 1..tabs[3]];
-        let xpos          = &line[tabs[3] + 1..tabs[4]];
-        let feats_field   = &line[tabs[4] + 1..tabs[5]];
-        let head_field    = &line[tabs[5] + 1..tabs[6]];
-        let deprel        = &line[tabs[6] + 1..tabs[7]];
-        let deps_field    = &line[tabs[7] + 1..tabs[8]];
-        let misc_field    = &line[tabs[8] + 1..];
+        let form = &line[tabs[0] + 1..tabs[1]];
+        let lemma = &line[tabs[1] + 1..tabs[2]];
+        let upos = &line[tabs[2] + 1..tabs[3]];
+        let xpos = &line[tabs[3] + 1..tabs[4]];
+        let feats_field = &line[tabs[4] + 1..tabs[5]];
+        let head_field = &line[tabs[5] + 1..tabs[6]];
+        let deprel = &line[tabs[6] + 1..tabs[7]];
+        let deps_field = &line[tabs[7] + 1..tabs[8]];
+        let misc_field = &line[tabs[8] + 1..];
 
         // Skip multiword tokens (e.g., "1-2")
         if memchr::memchr(b'-', token_id_field).is_some() {
@@ -120,7 +120,9 @@ impl<R: BufRead> TreeIterator<R> {
         }
         let misc = self.parse_features(misc_field)?;
 
-        tree.add_word(word_id, token_id, form, lemma, upos, xpos, feats, head, deprel, misc);
+        tree.add_word(
+            word_id, token_id, form, lemma, upos, xpos, feats, head, deprel, misc,
+        );
         Ok(())
     }
 

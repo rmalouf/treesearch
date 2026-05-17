@@ -15,8 +15,10 @@ from textual.widgets import (
     Static,
     TextArea,
 )
+
 if __name__ == "__main__":
     import sys, os
+
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import treesearch
 import asyncio

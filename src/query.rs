@@ -370,7 +370,10 @@ mod tests {
         assert_eq!(edge_constraint.from, "Help");
         assert_eq!(edge_constraint.to, "To");
         assert_eq!(edge_constraint.relation, RelationType::Child);
-        assert_eq!(edge_constraint.label, Some(ConstraintValue::Literal("xcomp".to_string())));
+        assert_eq!(
+            edge_constraint.label,
+            Some(ConstraintValue::Literal("xcomp".to_string()))
+        );
     }
 
     #[test]
@@ -426,7 +429,10 @@ mod tests {
         assert_eq!(edge_constraint.from, "Help");
         assert_eq!(edge_constraint.to, "To");
         assert_eq!(edge_constraint.relation, RelationType::Child);
-        assert_eq!(edge_constraint.label, Some(ConstraintValue::Literal("xcomp".to_string())));
+        assert_eq!(
+            edge_constraint.label,
+            Some(ConstraintValue::Literal("xcomp".to_string()))
+        );
         assert_eq!(edge_constraint.negated, true);
     }
 

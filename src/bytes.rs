@@ -1,9 +1,9 @@
 use hashbrown::HashMap;
 use hashbrown::hash_map::RawEntryMut;
+use parking_lot::Mutex;
 use rustc_hash::{FxBuildHasher, FxHasher};
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroU32;
-use parking_lot::Mutex;
 use std::sync::Arc;
 
 pub const STRING_POOL_CAPACITY: usize = 5000;

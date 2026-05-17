@@ -8,7 +8,9 @@
 
 use crate::RelationType;
 use crate::bytes::Sym;
-use crate::pattern::{BasePattern, Constraint, ConstraintValue, DirectedEdge, EdgeConstraint, Pattern};
+use crate::pattern::{
+    BasePattern, Constraint, ConstraintValue, DirectedEdge, EdgeConstraint, Pattern,
+};
 use crate::query::{QueryError, compile_query};
 use crate::tree::Word;
 use crate::tree::{Tree, WordId};
@@ -81,9 +83,9 @@ fn satisfies_var_constraint(tree: &Tree, word: &Word, constraint: &Constraint) -
         }
         Constraint::HasChild(label) => {
             if let Some(cv) = label {
-                word.children
-                    .iter()
-                    .any(|&child_id| matches_constraint_value(tree, tree.words[child_id].deprel, cv))
+                word.children.iter().any(|&child_id| {
+                    matches_constraint_value(tree, tree.words[child_id].deprel, cv)
+                })
             } else {
                 !word.children.is_empty()
             }
@@ -100,13 +102,10 @@ fn satisfies_arc_constraint(
     let satisfies_constraint = match edge_constraint.relation {
         RelationType::Child => {
             tree.check_rel(from_word_id, to_word_id)
-                && edge_constraint
-                    .label
-                    .as_ref()
-                    .is_none_or(|cv| {
-                        let actual_deprel = tree.word(to_word_id).unwrap().deprel;
-                        matches_constraint_value(tree, actual_deprel, cv)
-                    })
+                && edge_constraint.label.as_ref().is_none_or(|cv| {
+                    let actual_deprel = tree.word(to_word_id).unwrap().deprel;
+                    matches_constraint_value(tree, actual_deprel, cv)
+                })
         }
         RelationType::Precedes => from_word_id < to_word_id,
         RelationType::ImmediatelyPrecedes => to_word_id == from_word_id + 1,
@@ -313,7 +312,7 @@ fn dfs(
 
         // AllDifferent: Remove word_id from all variable domains
         for domain in &mut new_domains {
-             domain.reset(word_id);
+            domain.reset(word_id);
         }
         if !(0..pattern.n_vars)
             .all(|var_id| new_assign[var_id].is_some() || new_domains[var_id].count_ones() > 0)
@@ -403,18 +402,18 @@ fn check_arc_consistency(
             DirectedEdge::Out(edge_id) => {
                 let ec = &pattern.edge_constraints[edge_id];
                 let target_var_id = pattern.var_ids[&ec.to];
-                if assign[target_var_id].is_some_and(|tw| {
-                    !satisfies_arc_constraint(tree, word_id, tw, ec)
-                }) {
+                if assign[target_var_id]
+                    .is_some_and(|tw| !satisfies_arc_constraint(tree, word_id, tw, ec))
+                {
                     return false;
                 }
             }
             DirectedEdge::In(edge_id) => {
                 let ec = &pattern.edge_constraints[edge_id];
                 let source_var_id = pattern.var_ids[&ec.from];
-                if assign[source_var_id].is_some_and(|sw| {
-                    !satisfies_arc_constraint(tree, sw, word_id, ec)
-                }) {
+                if assign[source_var_id]
+                    .is_some_and(|sw| !satisfies_arc_constraint(tree, sw, word_id, ec))
+                {
                     return false;
                 }
             }
@@ -1563,20 +1562,15 @@ mod tests {
 
         // Negated regex edge: V is parent of C but deprel does NOT match obj|xcomp
         // Use VERB constraint on V to limit combinations
-        let matches: Vec<_> = search_tree_query(
-            tree.clone(),
-            r#"MATCH { V []; C []; V -/obj|xcomp/-> C; }"#,
-        )
-        .unwrap();
+        let matches: Vec<_> =
+            search_tree_query(tree.clone(), r#"MATCH { V []; C []; V -/obj|xcomp/-> C; }"#)
+                .unwrap();
         // Only helped(0)->us(1, obj) and helped(0)->win(3, xcomp) match
         assert_eq!(matches.len(), 2);
 
         // Anonymous regex edge
-        let matches: Vec<_> = search_tree_query(
-            tree.clone(),
-            r#"MATCH { C []; _ -/obj|xcomp/-> C; }"#,
-        )
-        .unwrap();
+        let matches: Vec<_> =
+            search_tree_query(tree.clone(), r#"MATCH { C []; _ -/obj|xcomp/-> C; }"#).unwrap();
         assert_eq!(matches.len(), 2); // us (obj) and win (xcomp)
     }
 
@@ -1594,8 +1588,7 @@ mod tests {
 
         // VERB | AUX should match both verbs
         let matches: Vec<_> =
-            search_tree_query(tree.clone(), r#"MATCH { V [upos="VERB" | upos="AUX"]; }"#)
-                .unwrap();
+            search_tree_query(tree.clone(), r#"MATCH { V [upos="VERB" | upos="AUX"]; }"#).unwrap();
         assert_eq!(matches.len(), 2);
     }
 
@@ -1605,8 +1598,7 @@ mod tests {
 
         // NOUN | ADJ should not match anything
         let matches: Vec<_> =
-            search_tree_query(tree.clone(), r#"MATCH { N [upos="NOUN" | upos="ADJ"]; }"#)
-                .unwrap();
+            search_tree_query(tree.clone(), r#"MATCH { N [upos="NOUN" | upos="ADJ"]; }"#).unwrap();
         assert_eq!(matches.len(), 0);
     }
 }

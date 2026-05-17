@@ -208,10 +208,7 @@ impl BasePattern {
                 self.add_var(&edge_constraint.from, Constraint::Any);
                 if let Some(label) = &edge_constraint.label {
                     if !edge_constraint.negated {
-                        self.add_var(
-                            &edge_constraint.to,
-                            Constraint::DepRel(label.clone()),
-                        );
+                        self.add_var(&edge_constraint.to, Constraint::DepRel(label.clone()));
                     } else {
                         self.add_var(&edge_constraint.to, Constraint::Any);
                     }
