@@ -344,6 +344,25 @@ class TestWordNavigation:
         verb = tree.word(1)
         assert verb.children_by_deprel("nonexistent") == []
 
+    @pytest.mark.parametrize(
+        ("word_id", "expected_forms"),
+        [
+            (1, {"He", "us", "to", "win", "."}),  # "helped": whole rest of sentence
+            (4, {"to"}),  # "win": only its mark child
+            (0, set()),  # "He": leaf, no descendants
+        ],
+    )
+    def test_descendants(self, tree, word_id, expected_forms):
+        """word.descendants() returns all transitive dependents."""
+        word = tree.word(word_id)
+        forms = {w.form for w in word.descendants()}
+        assert forms == expected_forms
+
+    def test_descendant_ids(self, tree):
+        """word.descendant_ids returns ids matching descendants()."""
+        verb = tree.word(1)  # "helped"
+        assert sorted(verb.descendant_ids) == sorted(w.id for w in verb.descendants())
+
 
 # ==============================================================================
 # Search Tests - API Surface

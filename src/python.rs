@@ -207,6 +207,26 @@ mod treesearch {
                 .collect()
         }
 
+        #[getter]
+        fn descendant_ids(&self) -> Vec<usize> {
+            self.inner
+                .descendants(&self.tree)
+                .into_iter()
+                .map(|word| word.id)
+                .collect()
+        }
+
+        fn descendants(&self) -> Vec<PyWord> {
+            self.inner
+                .descendants(&self.tree)
+                .into_iter()
+                .map(|word| PyWord {
+                    inner: word.clone(),
+                    tree: Arc::clone(&self.tree),
+                })
+                .collect()
+        }
+
         // TODO: add xpos and head to these (but they're optional)
         fn __repr__(&self) -> String {
             format!(

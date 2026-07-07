@@ -107,6 +107,33 @@ impl Word {
     pub fn children<'a>(&self, tree: &'a Tree) -> Vec<&'a Word> {
         self.children.iter().map(|&id| &tree.words[id]).collect()
     }
+
+    /// All transitive dependents (children, grandchildren, etc.) of this word.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use treesearch::Tree;
+    /// let mut tree = Tree::default();
+    /// tree.add_minimal_word(0, b"runs", b"run", b"VERB", b"_", None, b"root");
+    /// tree.add_minimal_word(1, b"big", b"big", b"ADJ", b"_", Some(2), b"amod");
+    /// tree.add_minimal_word(2, b"dog", b"dog", b"NOUN", b"_", Some(0), b"nsubj");
+    /// tree.compile_tree();
+    ///
+    /// let root = &tree.words[0];
+    /// let descendants = root.descendants(&tree);
+    /// assert_eq!(descendants.len(), 2);
+    /// ```
+    pub fn descendants<'a>(&self, tree: &'a Tree) -> Vec<&'a Word> {
+        let mut result = Vec::new();
+        let mut stack = self.children.clone();
+        while let Some(id) = stack.pop() {
+            let word = &tree.words[id];
+            result.push(word);
+            stack.extend(&word.children);
+        }
+        result
+    }
 }
 
 /// A dependency tree (sentence)
@@ -243,6 +270,15 @@ impl Tree {
         Ok(self.word(word_id)?.children.clone())
     }
 
+    pub fn descendant_ids(&self, word_id: WordId) -> Result<Vec<WordId>, String> {
+        Ok(self
+            .word(word_id)?
+            .descendants(self)
+            .into_iter()
+            .map(|word| word.id)
+            .collect())
+    }
+
     pub fn check_rel(&self, from_id: WordId, to_id: WordId) -> bool {
         self.words[from_id].children.contains(&to_id)
     }
@@ -335,6 +371,37 @@ mod tests {
         assert_eq!(tree.words.len(), 2);
         assert_eq!(tree.head_id(1).unwrap(), Some(0));
         assert_eq!(tree.children_ids(0).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_descendants() {
+        // runs(0) -> dog(1) -> big(2)
+        //         -> fast(3)
+        let mut tree = Tree::default();
+        tree.add_minimal_word(0, b"runs", b"run", b"VERB", b"_", None, b"root");
+        tree.add_minimal_word(1, b"dog", b"dog", b"NOUN", b"_", Some(0), b"nsubj");
+        tree.add_minimal_word(2, b"big", b"big", b"ADJ", b"_", Some(1), b"amod");
+        tree.add_minimal_word(3, b"fast", b"fast", b"ADV", b"_", Some(0), b"advmod");
+        tree.compile_tree();
+
+        let mut root_descendants: Vec<WordId> = tree.words[0]
+            .descendants(&tree)
+            .iter()
+            .map(|w| w.id)
+            .collect();
+        root_descendants.sort_unstable();
+        assert_eq!(root_descendants, vec![1, 2, 3]);
+
+        let dog_descendants: Vec<WordId> = tree.words[1]
+            .descendants(&tree)
+            .iter()
+            .map(|w| w.id)
+            .collect();
+        assert_eq!(dog_descendants, vec![2]);
+
+        assert!(tree.words[2].descendants(&tree).is_empty());
+
+        assert_eq!(tree.descendant_ids(1).unwrap(), vec![2]);
     }
 
     #[test]

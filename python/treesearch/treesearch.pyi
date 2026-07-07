@@ -128,6 +128,15 @@ class Word:
         """
         ...
 
+    @property
+    def descendant_ids(self) -> list[int]:
+        """IDs of all transitive dependents (children, grandchildren, etc.)."""
+        ...
+
+    def descendants(self) -> list[Word]:
+        """Get all transitive dependents (children, grandchildren, etc.)."""
+        ...
+
     def __repr__(self) -> str: ...
 
 class Pattern:
