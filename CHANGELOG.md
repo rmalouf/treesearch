@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Free-threaded wheels (cp313t, cp314t) are published again for linux x86_64 and macOS arm64
+
 ## [0.2.1] - 2026-08-11
 
 ### Fixed
