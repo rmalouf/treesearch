@@ -34,6 +34,9 @@ jobs:
       - uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
+          # Distinct from the CI workflow's caches, which otherwise derive the
+          # same key and race to reserve it when both workflows run on a push.
+          cache-suffix: docs
 
       # --only-group installs mkdocs without building the Rust extension,
       # which the docs do not need.

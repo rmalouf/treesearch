@@ -33,6 +33,7 @@ jobs:
       - uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
+          cache-suffix: lint
       # Use the ruff pinned in uv.lock rather than `uvx ruff`, so a new ruff
       # release cannot fail an unrelated PR. Upgrade deliberately with
       # `uv lock --upgrade-package ruff`.
@@ -80,6 +81,7 @@ jobs:
       - uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
+          cache-suffix: test-${{ matrix.python-version }}
           python-version: ${{ matrix.python-version }}
       - name: Build extension and install dependencies
         run: uv sync --group dev
