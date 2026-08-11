@@ -105,18 +105,25 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # On linux the build runs inside a manylinux container, where the
+          # host's interpreters do not exist. Naming them with -i makes maturin
+          # fall back to its bundled sysconfig table, which has no free-threaded
+          # entry before 3.14; --find-interpreter uses the container's own.
           - name: linux x86_64
             runner: ubuntu-latest
             target: x86_64
             manylinux: auto
+            interpreters: --find-interpreter
           - name: linux aarch64
             runner: ubuntu-latest
             target: aarch64
             manylinux: auto
+            interpreters: --find-interpreter
           - name: macos aarch64
             runner: macos-latest
             target: aarch64
             manylinux: ''
+            interpreters: -i python3.13t python3.14t
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -128,8 +135,16 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist -i python3.13t python3.14t
+          args: --release --out dist ${{ matrix.interpreters }}
           manylinux: ${{ matrix.manylinux }}
+      # --find-interpreter also builds the abi3 wheel the other jobs already
+      # produce; drop it so the artifacts do not collide when they are merged.
+      - name: Keep only the free-threaded wheels
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f dist/*-abi3-*.whl
+          ls -l dist
       - uses: actions/upload-artifact@v7
         with:
           name: wheels-freethreaded-${{ matrix.target }}-${{ matrix.runner }}
