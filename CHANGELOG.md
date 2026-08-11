@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Wheels are now built with an explicit abi3 floor of Python 3.12. 
 - `pip install treesearch-ud[viz]` now installs spaCy. 
 
+### Changed
+- `load()` raises `TypeError` instead of `ValueError` for a bad `source` type
+
 ### Development
 - Update GitHub Actions workflows
 - `RELEASING.md` documents the workflows and release process
