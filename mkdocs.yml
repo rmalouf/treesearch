@@ -1,5 +1,6 @@
 site_name: Treesearch Documentation
 site_description: High-performance dependency treebank querying for corpus linguistics
+site_url: https://rmalouf.github.io/treesearch/
 repo_url: https://github.com/rmalouf/treesearch
 theme:
   name: material

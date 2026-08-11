@@ -1,150 +1,184 @@
 name: Publish to PyPI
 
+# Wheels are abi3 (see the abi3-py312 feature in Cargo.toml), so each platform
+# needs exactly one build that covers Python 3.12+.
+
 on:
   push:
-    branches:
-      - main
     tags:
-      - '*'
-  pull_request:
+      - 'v*'
   workflow_dispatch:
 
 permissions:
   contents: read
 
-env:
-  RUSTFLAGS: "-Dwarnings"
-
 jobs:
+  version-check:
+    name: Check tag matches version
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v5
+      - name: Compare tag to Cargo.toml version
+        run: |
+          set -euo pipefail
+          cargo_version=$(cargo metadata --no-deps --format-version 1 \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')
+          tag_version=${GITHUB_REF_NAME#v}
+          echo "Cargo.toml: $cargo_version / tag: $tag_version"
+          if [ "$cargo_version" != "$tag_version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match Cargo.toml version $cargo_version"
+            exit 1
+          fi
 
   linux:
-    runs-on: ${{ matrix.platform.runner }}
+    name: Wheel (linux ${{ matrix.target }})
+    runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        platform:
-          - runner: ubuntu-latest
-            target: x86_64
-          - runner: ubuntu-latest
-            target: aarch64
+        target: [x86_64, aarch64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Build wheels
+      - name: Build wheel
         uses: PyO3/maturin-action@v1
         with:
-          target: ${{ matrix.platform.target }}
-          args: --release --out dist --find-interpreter
-          sccache: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+          target: ${{ matrix.target }}
+          args: --release --out dist
           manylinux: auto
-      - name: Upload wheels
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: wheels-linux-${{ matrix.platform.target }}
-          path: dist
-
-  windows:
-    runs-on: ${{ matrix.platform.runner }}
-    strategy:
-      matrix:
-        platform:
-          - runner: windows-latest
-            target: x64
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          architecture: ${{ matrix.platform.target }}
-      - name: Build wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.platform.target }}
-          args: --release --out dist --find-interpreter
-          sccache: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-      - name: Upload wheels
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheels-windows-${{ matrix.platform.target }}
+          name: wheels-linux-${{ matrix.target }}
           path: dist
 
   macos:
-    runs-on: ${{ matrix.platform.runner }}
+    name: Wheel (macos ${{ matrix.target }})
+    runs-on: macos-latest
     strategy:
+      fail-fast: false
       matrix:
-        platform:
-          - runner: macos-latest
-            target: x86_64
-          - runner: macos-latest
-            target: aarch64
+        target: [x86_64, aarch64]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Build wheels
+      - name: Build wheel
         uses: PyO3/maturin-action@v1
         with:
-          target: ${{ matrix.platform.target }}
-          args: --release --out dist --find-interpreter
-          sccache: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-      - name: Upload wheels
-        uses: actions/upload-artifact@v4
+          target: ${{ matrix.target }}
+          args: --release --out dist
+      - uses: actions/upload-artifact@v4
         with:
-          name: wheels-macos-${{ matrix.platform.target }}
+          name: wheels-macos-${{ matrix.target }}
+          path: dist
+
+  windows:
+    name: Wheel (windows x64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          target: x64
+          args: --release --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-windows-x64
           path: dist
 
   sdist:
+    name: Source distribution
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
           command: sdist
           args: --out dist
-      - name: Upload sdist
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: wheels-sdist
           path: dist
 
+  smoke-test:
+    name: Install wheel (Python ${{ matrix.python-version }})
+    needs: [linux]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.12', '3.13', '3.14']
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheels-linux-x86_64
+          path: dist
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      # Proves the single abi3 wheel really is installable across 3.12-3.14.
+      - name: Install and test the built wheel
+        run: |
+          set -euo pipefail
+          uv venv
+          uv pip install --find-links dist --no-index --no-deps treesearch-ud
+          uv pip install textual pytest
+          .venv/bin/python -c "import treesearch; print(treesearch.__version__)"
+          .venv/bin/python -m pytest
+
   release:
     name: Release
+    needs: [version-check, linux, macos, windows, sdist, smoke-test]
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    if: ${{ startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' }}
-    needs: [ linux, windows, macos, sdist ]
-    environment: pypi
+    environment:
+      name: pypi
+      url: https://pypi.org/project/treesearch-ud/
     permissions:
-      # Use to sign the release artifacts
+      # Trusted Publishing to PyPI, and signing the build provenance
       id-token: write
-      # Used to upload release artifacts
+      # Creating the GitHub Release
       contents: write
-      # Used to generate artifact attestation
+      # Artifact attestation
       attestations: write
     steps:
       - uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          merge-multiple: true
+          path: dist
+
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: 'wheels-*/*'
+          subject-path: 'dist/*'
+
+      # Uses PyPI Trusted Publishing (OIDC) - no API token needed.
       - name: Publish to PyPI
-        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
-        uses: PyO3/maturin-action@v1
+        uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          command: upload
-          args: --non-interactive --skip-existing wheels-*/*
+          packages-dir: dist
+          skip-existing: true
+
       - name: Create GitHub Release
-        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            wheels-*/*
+          files: dist/*
+          generate_release_notes: true
           body: |
-            **Install (PyPI):**
+            **Install:**
 
             `pip install treesearch-ud`
 
             **PyPI:** https://pypi.org/project/treesearch-ud/
-            

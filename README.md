@@ -106,6 +106,7 @@ Reads treebanks in [CoNLL-U format](https://universaldependencies.org/format.htm
 ## Documentation
 
 - [API.md](API.md) - Complete Python API reference
+- [RELEASING.md](RELEASING.md) - CI workflows and release process (maintainers)
 - [GitHub repository](https://github.com/rmalouf/treesearch) - Source code and issue tracker
 
 ## License

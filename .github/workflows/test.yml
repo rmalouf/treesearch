@@ -4,46 +4,77 @@ on:
   push:
     branches:
       - main
-    tags:
-      - '*'
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
-  RUSTFLAGS: "-Dwarnings"
+  CARGO_TERM_COLOR: always
 
 jobs:
-  linux-test-only:
-    runs-on: ubuntu-22.04
-    strategy:
-      matrix:
-        python-version: ['3.14']
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "-Dwarnings"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
         with:
+          components: rustfmt
+      - name: cargo fmt
+        run: cargo fmt --all --check
+      - uses: astral-sh/setup-uv@v6
+      - name: ruff check
+        run: uvx ruff check python tests
+      - name: ruff format
+        run: uvx ruff format --check python tests
+
+  rust:
+    name: Rust tests
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "-Dwarnings"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo test
+        run: cargo test --lib --bins --tests
+
+      - name: cargo test --doc
+        run: cargo test --doc
+
+  python:
+    name: Python ${{ matrix.python-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ['3.12', '3.13', '3.14']
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
+      # Build the extension without LTO/codegen-units=1; tests do not need the
+      # release profile and the release build dominates CI time.
+      MATURIN_PEP517_ARGS: --profile dev
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
           python-version: ${{ matrix.python-version }}
-      - uses: mozilla-actions/sccache-action@v0.0.9
-      - name: Build Python package
-        uses: PyO3/maturin-action@v1
-        with:
-          args: --release --out dist
-          sccache: true
-          rust-toolchain: stable
-      - name: Run Rust and Python tests
-        shell: bash
-        run: |
-            set -e
-            # Run Rust tests
-            cargo test
-            # Install uv and set up Python environment
-            pip install uv
-            uv venv
-            source .venv/bin/activate
-            uv pip install treesearch-ud --no-index --no-deps --find-links dist --force-reinstall
-            uv pip install --group test
-            # Run Python tests
-            pytest
+      - name: Build extension and install dependencies
+        run: uv sync --group dev
+      - name: Run Python tests
+        run: uv run pytest

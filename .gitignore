@@ -53,3 +53,6 @@ plans/
 .env
 .claude/
 
+
+# mkdocs build output
+site/
