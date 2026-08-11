@@ -1161,6 +1161,11 @@ dependencies = [
     { name = "textual" },
 ]
 
+[package.optional-dependencies]
+viz = [
+    { name = "spacy" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "maturin" },
@@ -1171,12 +1176,13 @@ docs = [
     { name = "mkdocs" },
     { name = "mkdocs-material" },
 ]
-viz = [
-    { name = "spacy" },
-]
 
 [package.metadata]
-requires-dist = [{ name = "textual" }]
+requires-dist = [
+    { name = "spacy", marker = "extra == 'viz'", specifier = ">=3.0.0" },
+    { name = "textual" },
+]
+provides-extras = ["viz"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1188,7 +1194,6 @@ docs = [
     { name = "mkdocs", specifier = ">=1.5.0" },
     { name = "mkdocs-material", specifier = ">=9.0.0" },
 ]
-viz = [{ name = "spacy", specifier = ">=3.0.0" }]
 
 [[package]]
 name = "typer-slim"
