@@ -31,10 +31,17 @@ jobs:
       - name: cargo fmt
         run: cargo fmt --all --check
       - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      # Use the ruff pinned in uv.lock rather than `uvx ruff`, so a new ruff
+      # release cannot fail an unrelated PR. Upgrade deliberately with
+      # `uv lock --upgrade-package ruff`.
+      - name: Install ruff
+        run: uv sync --only-group dev
       - name: ruff check
-        run: uvx ruff check python tests
+        run: uv run --no-sync ruff check python tests
       - name: ruff format
-        run: uvx ruff format --check python tests
+        run: uv run --no-sync ruff format --check python tests
 
   rust:
     name: Rust tests
