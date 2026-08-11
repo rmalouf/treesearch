@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Wheels are now built with an explicit abi3 floor of Python 3.12. 
+- `pip install treesearch-ud[viz]` now installs spaCy. 
+
+### Development
+- Update GitHub Actions workflows
+- `RELEASING.md` documents the workflows and release process
+- Lint cleanly under ruff 0.16
+- Upgraded locked dependencies (notably textual 7.5 to 8.2)
+
 ## [0.2.0] - 2026-01-21
 
 ### Added
