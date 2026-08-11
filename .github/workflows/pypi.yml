@@ -105,25 +105,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # On linux the build runs inside a manylinux container, where the
-          # host's interpreters do not exist. Naming them with -i makes maturin
-          # fall back to its bundled sysconfig table, which has no free-threaded
-          # entry before 3.14; --find-interpreter uses the container's own.
+          # container: off builds on the runner itself, so the free-threaded
+          # interpreters that setup-python installed are the ones maturin uses.
+          # Inside the manylinux container they do not exist, and naming them
+          # there makes maturin fall back to its bundled sysconfig table, which
+          # has no free-threaded entry before 3.14.
           - name: linux x86_64
             runner: ubuntu-latest
             target: x86_64
-            manylinux: auto
-            interpreters: --find-interpreter
-          - name: linux aarch64
-            runner: ubuntu-latest
-            target: aarch64
-            manylinux: auto
-            interpreters: --find-interpreter
+            container: 'off'
           - name: macos aarch64
             runner: macos-latest
             target: aarch64
-            manylinux: ''
-            interpreters: -i python3.13t python3.14t
+            container: 'off'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -135,20 +129,23 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist ${{ matrix.interpreters }}
-          manylinux: ${{ matrix.manylinux }}
-      # --find-interpreter also builds the abi3 wheel the other jobs already
-      # produce; drop it so the artifacts do not collide when they are merged.
-      - name: Keep only the free-threaded wheels
+          args: --release --out dist -i python3.13t python3.14t
+          container: ${{ matrix.container }}
+      # An empty dist means the interpreters were not picked up. Fail here
+      # rather than uploading nothing and letting the release drop the wheels.
+      - name: Check the free-threaded wheels were built
         shell: bash
         run: |
           set -euo pipefail
-          rm -f dist/*-abi3-*.whl
           ls -l dist
+          for v in cp313t cp314t; do
+            ls dist/*"$v"*.whl >/dev/null 2>&1 || { echo "::error::no $v wheel in dist"; exit 1; }
+          done
       - uses: actions/upload-artifact@v7
         with:
           name: wheels-freethreaded-${{ matrix.target }}-${{ matrix.runner }}
           path: dist
+          if-no-files-found: error
 
   sdist:
     name: Source distribution
