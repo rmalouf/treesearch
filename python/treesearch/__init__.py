@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import glob
+from collections.abc import Iterable
 from importlib.metadata import version
 from pathlib import Path
-from typing import Iterable
 
 __version__ = version("treesearch-ud")
 
@@ -32,21 +32,20 @@ except ImportError:
 
 
 __all__ = [
-    "Tree",
-    "Word",
-    "Pattern",
-    "Treebank",
-    "TreeIterator",
     "MatchIterator",
+    "Pattern",
+    "Tree",
+    "TreeIterator",
+    "Treebank",
+    "Word",
     "compile_query",
-    "search",
-    "load",
     "from_string",
-    "trees",
+    "load",
+    "render",
     "search",
     "search_trees",
     "to_displacy",
-    "render",
+    "trees",
 ]
 
 
@@ -64,6 +63,7 @@ def load(source: str | Path | Iterable[str | Path]) -> Treebank:
         Treebank object
 
     Raises:
+        TypeError: If source is not a str, Path, or iterable of those
         ValueError: If glob pattern is invalid
 
     Example:
@@ -83,7 +83,7 @@ def load(source: str | Path | Iterable[str | Path]) -> Treebank:
         source_list = [str(path) for path in source]
         return Treebank.from_files(source_list)
     else:
-        raise ValueError("source must be str, Path, or Iterable[str | Path]")
+        raise TypeError("source must be str, Path, or Iterable[str | Path]")
 
 
 def from_string(text: str) -> Treebank:

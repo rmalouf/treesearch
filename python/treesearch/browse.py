@@ -21,9 +21,11 @@ if __name__ == "__main__":
     import sys
 
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-import treesearch
 import asyncio
 from pathlib import Path
+from typing import ClassVar
+
+import treesearch
 
 
 class DetailPane(Vertical):
@@ -153,7 +155,7 @@ class FileModal(ModalScreen[str | None]):
     }
     """
 
-    BINDINGS = [Binding("escape", "dismiss(None)", "Cancel")]
+    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "dismiss(None)", "Cancel")]
 
     def __init__(self, prompt: str):
         super().__init__()
@@ -205,7 +207,7 @@ class TermconcApp(App):
     }
     """
 
-    BINDINGS = [
+    BINDINGS: ClassVar[list[Binding]] = [
         Binding("ctrl+e", "show_editor", "Edit query"),
         Binding("ctrl+r", "run_query", "Run query"),
         Binding("ctrl+o", "load_query", "Load query"),
@@ -329,7 +331,6 @@ class TermconcApp(App):
     async def load_data_background(self):
         lv = self.query_one("#result-list", ListView)
         batch = []
-        item_index = 0
 
         for i, (tree, match) in enumerate(self.treebank.search(self.pattern, ordered=True)):
             matches = match.values()
@@ -343,8 +344,7 @@ class TermconcApp(App):
             styled_row = Static(text)
             batch.append(ListItem(styled_row))
 
-            self.item_data[item_index] = (tree, match)
-            item_index += 1
+            self.item_data[i] = (tree, match)
 
             if i > 500:
                 break

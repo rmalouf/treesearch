@@ -12,9 +12,7 @@ Algorithm correctness is tested in the Rust test suite.
 import gzip
 
 import pytest
-
 import treesearch
-
 
 # ==============================================================================
 # Fixtures
@@ -116,12 +114,12 @@ class TestPattern:
         ],
     )
     def test_invalid_query_raises_error(self, query):
-        """Invalid queries raise ValueError or Exception."""
+        """Invalid queries raise ValueError."""
         # Note: empty MATCH {} is actually valid, so we just check it doesn't crash
         if query == "MATCH {}":
             treesearch.compile_query(query)  # Should not raise
         else:
-            with pytest.raises(Exception):
+            with pytest.raises(ValueError):
                 treesearch.compile_query(query)
 
 
@@ -179,47 +177,47 @@ class TestTreeProperties:
 
     def test_sentence_text(self, sample_conllu):
         """Tree.sentence_text returns the text annotation."""
-        tree = list(treesearch.Treebank.from_string(sample_conllu).trees())[0]
+        tree = next(iter(treesearch.Treebank.from_string(sample_conllu).trees()))
         assert tree.sentence_text == "He helped us to win."
 
     def test_metadata(self, complex_conllu):
         """Tree.metadata returns a dict of metadata."""
-        tree = list(treesearch.Treebank.from_string(complex_conllu).trees())[0]
+        tree = next(iter(treesearch.Treebank.from_string(complex_conllu).trees()))
         assert isinstance(tree.metadata, dict)
         assert tree.metadata["sent_id"] == "1"
         assert tree.metadata["source"] == "test"
 
     def test_len(self, sample_conllu):
         """len(tree) returns word count."""
-        tree = list(treesearch.Treebank.from_string(sample_conllu).trees())[0]
+        tree = next(iter(treesearch.Treebank.from_string(sample_conllu).trees()))
         assert len(tree) == 6
 
     def test_repr(self, sample_conllu):
         """Tree repr shows length and words."""
-        tree = list(treesearch.Treebank.from_string(sample_conllu).trees())[0]
+        tree = next(iter(treesearch.Treebank.from_string(sample_conllu).trees()))
         assert "<Tree len=6" in repr(tree)
 
     def test_getitem(self, sample_conllu):
         """tree[i] returns word by index."""
-        tree = list(treesearch.Treebank.from_string(sample_conllu).trees())[0]
+        tree = next(iter(treesearch.Treebank.from_string(sample_conllu).trees()))
         word = tree[0]
         assert word.form == "He"
 
     def test_getitem_out_of_bounds(self, sample_conllu):
         """tree[invalid] raises IndexError."""
-        tree = list(treesearch.Treebank.from_string(sample_conllu).trees())[0]
+        tree = next(iter(treesearch.Treebank.from_string(sample_conllu).trees()))
         with pytest.raises(IndexError):
             tree[999]
 
     def test_word_method(self, sample_conllu):
         """tree.word(i) returns word by index."""
-        tree = list(treesearch.Treebank.from_string(sample_conllu).trees())[0]
+        tree = next(iter(treesearch.Treebank.from_string(sample_conllu).trees()))
         word = tree.word(1)
         assert word.form == "helped"
 
     def test_word_out_of_bounds(self, sample_conllu):
         """tree.word(invalid) raises IndexError with message."""
-        tree = list(treesearch.Treebank.from_string(sample_conllu).trees())[0]
+        tree = next(iter(treesearch.Treebank.from_string(sample_conllu).trees()))
         with pytest.raises(IndexError, match="word index out of range: 999"):
             tree.word(999)
 
@@ -234,11 +232,11 @@ class TestWordProperties:
 
     @pytest.fixture
     def tree(self, sample_conllu):
-        return list(treesearch.Treebank.from_string(sample_conllu).trees())[0]
+        return next(iter(treesearch.Treebank.from_string(sample_conllu).trees()))
 
     @pytest.fixture
     def complex_tree(self, complex_conllu):
-        return list(treesearch.Treebank.from_string(complex_conllu).trees())[0]
+        return next(iter(treesearch.Treebank.from_string(complex_conllu).trees()))
 
     def test_basic_properties(self, tree):
         """Word has form, lemma, upos, deprel."""
@@ -260,7 +258,7 @@ class TestWordProperties:
         # sample_conllu has xpos values like PRP, VBD - not underscores
         # Let's create data with underscore xpos
         conllu = "1\tword\tlemma\tNOUN\t_\t_\t0\troot\t_\t_\n\n"
-        tree = list(treesearch.Treebank.from_string(conllu).trees())[0]
+        tree = next(iter(treesearch.Treebank.from_string(conllu).trees()))
         assert tree.word(0).xpos is None
 
     def test_head_property(self, tree):
@@ -276,7 +274,7 @@ class TestWordProperties:
 
     def test_feats_empty(self, sample_conllu):
         """Word.feats returns empty dict when no features."""
-        tree = list(treesearch.Treebank.from_string(sample_conllu).trees())[0]
+        tree = next(iter(treesearch.Treebank.from_string(sample_conllu).trees()))
         assert tree.word(0).feats == {}
 
     def test_misc_as_dict(self, complex_tree):
@@ -304,7 +302,7 @@ class TestWordNavigation:
 
     @pytest.fixture
     def tree(self, sample_conllu):
-        return list(treesearch.Treebank.from_string(sample_conllu).trees())[0]
+        return next(iter(treesearch.Treebank.from_string(sample_conllu).trees()))
 
     def test_parent(self, tree):
         """word.parent() returns parent Word."""
@@ -374,7 +372,7 @@ class TestSearch:
 
     @pytest.fixture
     def tree(self, sample_conllu):
-        return list(treesearch.Treebank.from_string(sample_conllu).trees())[0]
+        return next(iter(treesearch.Treebank.from_string(sample_conllu).trees()))
 
     def test_search_returns_iterator(self, sample_conllu):
         """Treebank.search returns an iterator."""
@@ -697,7 +695,7 @@ class TestEdgeCases:
     def test_tree_with_no_sentence_text(self):
         """Tree without # text annotation has None sentence_text."""
         conllu = "1\tword\tword\tNOUN\tNN\t_\t0\troot\t_\t_\n\n"
-        tree = list(treesearch.Treebank.from_string(conllu).trees())[0]
+        tree = next(iter(treesearch.Treebank.from_string(conllu).trees()))
         assert tree.sentence_text is None
 
     def test_empty_query_match_block(self):
@@ -708,7 +706,7 @@ class TestEdgeCases:
     def test_unicode_in_form(self):
         """Unicode characters in form work correctly."""
         conllu = "1\t日本語\t日本語\tNOUN\tNN\t_\t0\troot\t_\t_\n\n"
-        tree = list(treesearch.Treebank.from_string(conllu).trees())[0]
+        tree = next(iter(treesearch.Treebank.from_string(conllu).trees()))
         assert tree.word(0).form == "日本語"
 
     def test_treebank_reusable(self, sample_conllu):
@@ -774,7 +772,7 @@ class TestVisualization:
 
     def test_to_displacy_structure(self, sample_conllu):
         """to_displacy returns correct structure."""
-        tree = list(treesearch.Treebank.from_string(sample_conllu).trees())[0]
+        tree = next(iter(treesearch.Treebank.from_string(sample_conllu).trees()))
         data = treesearch.to_displacy(tree)
 
         assert "words" in data
@@ -784,7 +782,7 @@ class TestVisualization:
 
     def test_to_displacy_words(self, sample_conllu):
         """to_displacy words have text and tag."""
-        tree = list(treesearch.Treebank.from_string(sample_conllu).trees())[0]
+        tree = next(iter(treesearch.Treebank.from_string(sample_conllu).trees()))
         data = treesearch.to_displacy(tree)
 
         assert len(data["words"]) == 6
@@ -793,7 +791,7 @@ class TestVisualization:
 
     def test_to_displacy_arcs(self, sample_conllu):
         """to_displacy arcs have start, end, label, dir."""
-        tree = list(treesearch.Treebank.from_string(sample_conllu).trees())[0]
+        tree = next(iter(treesearch.Treebank.from_string(sample_conllu).trees()))
         data = treesearch.to_displacy(tree)
 
         # Check that arcs exist and have correct structure
@@ -813,7 +811,7 @@ class TestVisualization:
 2\thelped\thelp\tVERB\tVBD\t_\t0\troot\t_\t_
 
 """
-        tree = list(treesearch.Treebank.from_string(conllu).trees())[0]
+        tree = next(iter(treesearch.Treebank.from_string(conllu).trees()))
         data = treesearch.to_displacy(tree)
 
         # He (0) <- helped (1): start=0, end=1, dir=left (pointing toward head)
@@ -824,7 +822,7 @@ class TestVisualization:
 
     def test_tree_to_displacy_method(self, sample_conllu):
         """Tree.to_displacy() works as instance method."""
-        tree = list(treesearch.Treebank.from_string(sample_conllu).trees())[0]
+        tree = next(iter(treesearch.Treebank.from_string(sample_conllu).trees()))
         data = tree.to_displacy()
 
         assert "words" in data

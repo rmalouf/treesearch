@@ -39,7 +39,7 @@ Issues = "https://github.com/rmalouf/treesearch/issues"
 dev = [
     "maturin>=1.10.1",
     "pytest>=9.0",
-    "ruff>=0.11",
+    "ruff>=0.16",
 ]
 docs = [
     "mkdocs>=1.5.0",

@@ -56,3 +56,6 @@ plans/
 
 # mkdocs build output
 site/
+
+# macOS debug symbol bundles from maturin builds
+*.dSYM/

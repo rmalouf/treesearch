@@ -1,21 +1,17 @@
 """Type stubs for treesearch PyO3 extension module."""
 
-from __future__ import annotations
-
-from typing import Iterator, Optional
+from collections.abc import Iterator
 
 class Tree:
     """Represents a dependency tree."""
 
     @property
-    def sentence_text(self) -> Optional[str]:
+    def sentence_text(self) -> str | None:
         """Reconstructed sentence text from CoNLL-U comments."""
-        ...
 
     @property
     def metadata(self) -> dict[str, str]:
         """Tree metadata from CoNLL-U comment lines."""
-        ...
 
     def word(self, id: int) -> Word:
         """Get word by ID (0-based index).
@@ -29,7 +25,6 @@ class Tree:
         Raises:
             IndexError: If ID is out of bounds
         """
-        ...
 
     def __getitem__(self, id: int) -> Word:
         """Get word by ID using indexing syntax.
@@ -43,13 +38,9 @@ class Tree:
         Raises:
             IndexError: If ID is out of bounds
         """
-        ...
 
     def __len__(self) -> int:
         """Number of words in tree."""
-        ...
-
-    def __repr__(self) -> str: ...
 
 class Word:
     """Represents a single word/token in a dependency tree."""
@@ -57,65 +48,52 @@ class Word:
     @property
     def id(self) -> int:
         """Word ID (0-based index in tree)."""
-        ...
 
     @property
     def token_id(self) -> int:
         """Token ID from CoNLL-U (1-based)."""
-        ...
 
     @property
     def form(self) -> str:
         """Word form (surface text)."""
-        ...
 
     @property
     def lemma(self) -> str:
         """Lemma (base form)."""
-        ...
 
     @property
     def upos(self) -> str:
         """Universal POS tag (upos)."""
-        ...
 
     @property
-    def xpos(self) -> Optional[str]:
+    def xpos(self) -> str | None:
         """Language-specific POS tag."""
-        ...
 
     @property
     def deprel(self) -> str:
         """Dependency relation to parent."""
-        ...
 
     @property
-    def head(self) -> Optional[int]:
+    def head(self) -> int | None:
         """Head word ID (0-based index), None for root."""
-        ...
 
     @property
     def children_ids(self) -> list[int]:
         """IDs of all children words."""
-        ...
 
     @property
     def feats(self) -> dict[str, str]:
         """Morphological features as key-value pairs."""
-        ...
 
     @property
     def misc(self) -> dict[str, str]:
         """Miscellaneous annotations as key-value pairs."""
-        ...
 
-    def parent(self) -> Optional[Word]:
+    def parent(self) -> Word | None:
         """Get parent word, None for root."""
-        ...
 
     def children(self) -> list[Word]:
         """Get all children words."""
-        ...
 
     def children_by_deprel(self, deprel: str) -> list[Word]:
         """Get children with specific dependency relation.
@@ -126,23 +104,16 @@ class Word:
         Returns:
             List of child words with matching deprel
         """
-        ...
 
     @property
     def descendant_ids(self) -> list[int]:
         """IDs of all transitive dependents (children, grandchildren, etc.)."""
-        ...
 
     def descendants(self) -> list[Word]:
         """Get all transitive dependents (children, grandchildren, etc.)."""
-        ...
-
-    def __repr__(self) -> str: ...
 
 class Pattern:
     """Compiled query pattern."""
-
-    def __repr__(self) -> str: ...
 
 class Treebank:
     """Collection of dependency trees from files or strings."""
@@ -157,7 +128,6 @@ class Treebank:
         Returns:
             Treebank object
         """
-        ...
 
     @classmethod
     def from_file(cls, file_path: str) -> Treebank:
@@ -169,7 +139,6 @@ class Treebank:
         Returns:
             Treebank object
         """
-        ...
 
     @classmethod
     def from_files(cls, file_paths: list[str]) -> Treebank:
@@ -181,7 +150,6 @@ class Treebank:
         Returns:
             Treebank object
         """
-        ...
 
     def trees(self, ordered: bool = True) -> TreeIterator:
         """Iterate over trees in treebank.
@@ -193,7 +161,6 @@ class Treebank:
         Returns:
             Iterator over Tree objects
         """
-        ...
 
     def search(self, pattern: Pattern | str, ordered: bool = True) -> MatchIterator:
         """Search for pattern matches across all trees.
@@ -206,9 +173,6 @@ class Treebank:
         Returns:
             Iterator over (Tree, match_dict) tuples
         """
-        ...
-
-    def __repr__(self) -> str: ...
 
 class TreeIterator(Iterator[Tree]):
     """Iterator over Tree objects."""
@@ -234,7 +198,6 @@ def compile_query(query: str) -> Pattern:
     Raises:
         ValueError: If query syntax is invalid
     """
-    ...
 
 def py_search_trees(trees: list[Tree], pattern: Pattern | str) -> MatchIterator:
     """Search a list of trees for pattern matches.
@@ -246,7 +209,6 @@ def py_search_trees(trees: list[Tree], pattern: Pattern | str) -> MatchIterator:
     Returns:
         Iterator over (Tree, match_dict) tuples from all trees
     """
-    ...
 
 def to_displacy(tree: Tree) -> dict[str, list]:
     """Convert a Tree to displaCy's manual rendering format.
@@ -257,7 +219,6 @@ def to_displacy(tree: Tree) -> dict[str, list]:
     Returns:
         Dictionary with 'words' and 'arcs' keys for displaCy rendering
     """
-    ...
 
 def render(tree: Tree, **options) -> str:
     """Render a Tree as an SVG dependency visualization using displaCy.
@@ -274,4 +235,3 @@ def render(tree: Tree, **options) -> str:
     Raises:
         ImportError: If spaCy is not installed
     """
-    ...
