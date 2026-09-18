@@ -38,6 +38,8 @@ use crate::searcher::{Match, search_tree, tree_matches};
 use crate::tree::Tree;
 use rayon::prelude::*;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::sync_channel;
 use std::thread;
 use thiserror::Error;
@@ -95,6 +97,34 @@ pub enum TreebankError {
     },
 }
 
+/// Shared progress counters and cancellation flag for a running search.
+///
+/// Create one, pass a clone of the `Arc` to [`Treebank::search_with`], and poll
+/// the counters from another thread (e.g. a UI). Calling [`cancel`](Self::cancel)
+/// makes the workers stop at the next tree boundary.
+#[derive(Debug, Default)]
+pub struct Progress {
+    /// Number of files to process (set when the search starts)
+    pub files_total: AtomicUsize,
+    /// Number of files fully processed
+    pub files_done: AtomicUsize,
+    /// Number of trees processed so far
+    pub trees: AtomicUsize,
+    cancelled: AtomicBool,
+}
+
+impl Progress {
+    /// Request that the search stop as soon as possible.
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Relaxed);
+    }
+
+    /// Whether [`cancel`](Self::cancel) has been called.
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Relaxed)
+    }
+}
+
 /// Batch size for sending matches through channels
 const MATCH_BATCH_SIZE: usize = 500;
 
@@ -144,12 +174,16 @@ fn process_string_source_batched<T, F>(
     text: &str,
     tx: &crossbeam_channel::Sender<Vec<Result<T, TreebankError>>>,
     process_tree: F,
+    progress: &Progress,
 ) where
     T: Send,
     F: Fn(Tree) -> Vec<Result<T, TreebankError>>,
 {
     let mut batch = BatchAccumulator::new(MATCH_BATCH_SIZE);
     for result in TreeIterator::from_string(text) {
+        if progress.is_cancelled() {
+            return;
+        }
         let items = match result {
             Ok(tree) => process_tree(tree),
             Err(e) => vec![Err(TreebankError::from(e))],
@@ -173,25 +207,34 @@ fn process_files_ordered_batched<T, F>(
     tx: &crossbeam_channel::Sender<Vec<Result<T, TreebankError>>>,
     process_tree: F,
     chunk_size: usize,
+    progress: &Progress,
 ) where
     T: Send,
     F: Fn(Tree) -> Vec<Result<T, TreebankError>> + Send + Sync,
 {
     for chunk in paths.chunks(chunk_size) {
+        if progress.is_cancelled() {
+            return;
+        }
         // Compute per-path results in parallel, keeping them grouped by path
         let per_path: Vec<Vec<Result<T, TreebankError>>> = chunk
             .par_iter()
-            .map(|path| match TreeIterator::from_file(path) {
-                Ok(it) => it
-                    .flat_map(|result| match result {
-                        Ok(tree) => process_tree(tree),
-                        Err(e) => vec![Err(TreebankError::from(e))],
-                    })
-                    .collect(),
-                Err(e) => vec![Err(TreebankError::FileOpen {
-                    path: path.clone(),
-                    source: e,
-                })],
+            .map(|path| {
+                let results = match TreeIterator::from_file(path) {
+                    Ok(it) => it
+                        .take_while(|_| !progress.is_cancelled())
+                        .flat_map(|result| match result {
+                            Ok(tree) => process_tree(tree),
+                            Err(e) => vec![Err(TreebankError::from(e))],
+                        })
+                        .collect(),
+                    Err(e) => vec![Err(TreebankError::FileOpen {
+                        path: path.clone(),
+                        source: e,
+                    })],
+                };
+                progress.files_done.fetch_add(1, Ordering::Relaxed);
+                results
             })
             .collect();
 
@@ -209,6 +252,7 @@ fn process_files_unordered_batched<T, F>(
     paths: Vec<PathBuf>,
     tx: crossbeam_channel::Sender<Vec<Result<T, TreebankError>>>,
     process_tree: F,
+    progress: &Progress,
 ) where
     T: Send,
     F: Fn(Tree) -> Vec<Result<T, TreebankError>> + Send + Sync,
@@ -219,6 +263,9 @@ fn process_files_unordered_batched<T, F>(
             Ok(reader) => {
                 let mut batch = BatchAccumulator::new(MATCH_BATCH_SIZE);
                 for result in reader {
+                    if progress.is_cancelled() {
+                        return;
+                    }
                     let items = match result {
                         Ok(tree) => process_tree(tree),
                         Err(e) => vec![Err(TreebankError::from(e))],
@@ -242,6 +289,7 @@ fn process_files_unordered_batched<T, F>(
                 })]);
             }
         }
+        progress.files_done.fetch_add(1, Ordering::Relaxed);
     });
 }
 
@@ -250,6 +298,7 @@ fn build_parallel_iter_batched<T, F>(
     source: TreeSource,
     ordered: bool,
     chunk_size: usize,
+    progress: Arc<Progress>,
     process_tree: F,
 ) -> impl Iterator<Item = Result<T, TreebankError>>
 where
@@ -258,15 +307,29 @@ where
 {
     let (tx, rx) = crossbeam_channel::bounded(CHANNEL_BUFFER_SIZE);
 
+    let files_total = match &source {
+        TreeSource::String(_) => 1,
+        TreeSource::Files(paths) => paths.len(),
+    };
+    progress.files_total.store(files_total, Ordering::Relaxed);
+    let process_tree = {
+        let progress = progress.clone();
+        move |tree| {
+            progress.trees.fetch_add(1, Ordering::Relaxed);
+            process_tree(tree)
+        }
+    };
+
     thread::spawn(move || match source {
         TreeSource::String(text) => {
-            process_string_source_batched(&text, &tx, process_tree);
+            process_string_source_batched(&text, &tx, process_tree, &progress);
+            progress.files_done.fetch_add(1, Ordering::Relaxed);
         }
         TreeSource::Files(paths) => {
             if ordered {
-                process_files_ordered_batched(paths, &tx, process_tree, chunk_size);
+                process_files_ordered_batched(paths, &tx, process_tree, chunk_size, &progress);
             } else {
-                process_files_unordered_batched(paths, tx, process_tree);
+                process_files_unordered_batched(paths, tx, process_tree, &progress);
             }
         }
     });
@@ -506,11 +569,23 @@ impl Treebank {
         query: Q,
         ordered: bool,
     ) -> Result<impl Iterator<Item = Result<Match, TreebankError>>, QueryError> {
+        self.search_with(query, ordered, Arc::default())
+    }
+
+    /// Like [`search`](Self::search), but reports progress to (and can be
+    /// cancelled through) a shared [`Progress`].
+    pub fn search_with<Q: IntoPattern>(
+        self,
+        query: Q,
+        ordered: bool,
+        progress: Arc<Progress>,
+    ) -> Result<impl Iterator<Item = Result<Match, TreebankError>>, QueryError> {
         let pattern = query.into_pattern()?;
         Ok(build_parallel_iter_batched(
             self.source,
             ordered,
             4, // chunk_size for ordered mode
+            progress,
             move |tree| search_tree(tree, &pattern).into_iter().map(Ok).collect(),
         ))
     }
@@ -556,6 +631,7 @@ impl Treebank {
             self.source,
             ordered,
             4, // chunk_size for ordered mode
+            Arc::default(),
             move |tree| {
                 if tree_matches(&tree, &pattern) {
                     vec![Ok(tree)]
@@ -957,5 +1033,27 @@ mod tests {
             // Should get all matches, order doesn't matter
             assert_eq!(results.len(), 2);
         }
+    }
+
+    #[test]
+    fn test_progress_and_cancel() {
+        let progress = Arc::new(Progress::default());
+        let n = Treebank::from_string(TWO_TREE_CONLLU)
+            .search_with("MATCH { V [upos=\"VERB\"]; }", true, progress.clone())
+            .unwrap()
+            .count();
+        assert_eq!(n, 2);
+        assert_eq!(progress.files_total.load(Ordering::Relaxed), 1);
+        assert_eq!(progress.files_done.load(Ordering::Relaxed), 1);
+        assert_eq!(progress.trees.load(Ordering::Relaxed), 2);
+
+        let progress = Arc::new(Progress::default());
+        progress.cancel();
+        let n = Treebank::from_string(TWO_TREE_CONLLU)
+            .search_with("MATCH { V [upos=\"VERB\"]; }", true, progress.clone())
+            .unwrap()
+            .count();
+        assert_eq!(n, 0);
+        assert_eq!(progress.trees.load(Ordering::Relaxed), 0);
     }
 }

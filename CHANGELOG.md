@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `Treebank::search_with` takes a shared `Progress` for progress counters and cancellation
+- `python` cargo feature (on by default) so the core crate can build without pyo3
+
 ### Fixed
 - Free-threaded wheels (cp313t, cp314t) are published again for linux x86_64 and macOS arm64
 

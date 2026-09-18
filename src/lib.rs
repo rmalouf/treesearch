@@ -10,6 +10,7 @@ pub mod bytes;
 pub mod conllu; // CoNLL-U file parsing
 pub mod iterators; // Iterator interfaces for trees and matches
 pub mod pattern; // Pattern AST
+#[cfg(feature = "python")]
 pub mod python;
 pub mod query; // Query language parser
 pub mod searcher;
@@ -17,7 +18,7 @@ pub mod tree; // Tree data structures with full CoNLL-U support
 
 // Re-exports for convenience
 pub use conllu::TreeIterator;
-pub use iterators::{IntoPattern, Treebank, TreebankError, load};
+pub use iterators::{IntoPattern, Progress, Treebank, TreebankError, load};
 pub use pattern::{Constraint, EdgeConstraint, Pattern, PatternVar, RelationType, VarId};
 pub use query::{QueryError, compile_query};
 pub use searcher::{Match, find_all_matches, search_tree, search_tree_query, tree_matches};
