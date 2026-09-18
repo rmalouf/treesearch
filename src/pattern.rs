@@ -137,13 +137,11 @@ impl BasePattern {
         }
     }
 
-    pub fn with_constraints(
-        vars: HashMap<String, PatternVar>,
-        edges: Vec<EdgeConstraint>,
-    ) -> BasePattern {
+    /// Build a pattern from variables (in declaration order) and edge constraints.
+    pub fn with_constraints(vars: Vec<PatternVar>, edges: Vec<EdgeConstraint>) -> BasePattern {
         let mut pattern = BasePattern::new();
 
-        for var in vars.into_values() {
+        for var in vars {
             pattern.add_var(&var.var_name, var.constraint);
         }
 
@@ -240,21 +238,16 @@ mod tests {
 
     #[test]
     fn test_pattern_creation() {
-        let mut vars = HashMap::new();
-        vars.insert(
-            "verb".to_string(),
+        let vars = vec![
             PatternVar::new(
                 "verb",
                 Constraint::UPOS(ConstraintValue::Literal("VERB".to_string())),
             ),
-        );
-        vars.insert(
-            "noun".to_string(),
             PatternVar::new(
                 "noun",
                 Constraint::UPOS(ConstraintValue::Literal("NOUN".to_string())),
             ),
-        );
+        ];
 
         let edges = vec![EdgeConstraint {
             from: "verb".to_string(),
@@ -266,7 +259,7 @@ mod tests {
 
         let pattern = BasePattern::with_constraints(vars, edges);
 
-        assert_eq!(pattern.var_names.len(), 2);
+        assert_eq!(pattern.var_names, ["verb", "noun"]);
         assert_eq!(pattern.var_constraints.len(), 2);
         assert_eq!(pattern.edge_constraints.len(), 1);
         // TODO: add more assertions

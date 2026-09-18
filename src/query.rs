@@ -5,7 +5,6 @@
 use pest::Parser;
 use pest::iterators::Pair;
 use pest_derive::Parser;
-use std::collections::HashMap;
 use thiserror::Error;
 
 use crate::pattern::{
@@ -70,7 +69,7 @@ pub fn compile_query(input: &str) -> Result<Pattern, QueryError> {
 }
 
 pub fn compile_query_block(item: Pair<Rule>) -> Result<BasePattern, QueryError> {
-    let mut vars: HashMap<String, PatternVar> = HashMap::new();
+    let mut vars: Vec<PatternVar> = Vec::new();
     let mut edges: Vec<EdgeConstraint> = Vec::new();
 
     for statement in item.into_inner() {
@@ -80,10 +79,10 @@ pub fn compile_query_block(item: Pair<Rule>) -> Result<BasePattern, QueryError> 
                 match inner.as_rule() {
                     Rule::node_decl => {
                         let var = compile_var_decl(inner)?;
-                        if vars.contains_key(&var.var_name) {
+                        if vars.iter().any(|v| v.var_name == var.var_name) {
                             return Err(QueryError::DuplicateVariable(var.var_name));
                         };
-                        vars.insert(var.var_name.to_string(), var);
+                        vars.push(var);
                     }
                     Rule::edge_decl => {
                         let edge_constraint = compile_edge_decl(inner)?;
