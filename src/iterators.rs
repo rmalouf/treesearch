@@ -185,7 +185,10 @@ fn process_string_source_batched<T, F>(
             return;
         }
         let items = match result {
-            Ok(tree) => process_tree(tree),
+            Ok(tree) => {
+                progress.trees.fetch_add(1, Ordering::Relaxed);
+                process_tree(tree)
+            }
             Err(e) => vec![Err(TreebankError::from(e))],
         };
         for item in items {
@@ -224,7 +227,10 @@ fn process_files_ordered_batched<T, F>(
                     Ok(it) => it
                         .take_while(|_| !progress.is_cancelled())
                         .flat_map(|result| match result {
-                            Ok(tree) => process_tree(tree),
+                            Ok(tree) => {
+                                progress.trees.fetch_add(1, Ordering::Relaxed);
+                                process_tree(tree)
+                            }
                             Err(e) => vec![Err(TreebankError::from(e))],
                         })
                         .collect(),
@@ -267,7 +273,10 @@ fn process_files_unordered_batched<T, F>(
                         return;
                     }
                     let items = match result {
-                        Ok(tree) => process_tree(tree),
+                        Ok(tree) => {
+                            progress.trees.fetch_add(1, Ordering::Relaxed);
+                            process_tree(tree)
+                        }
                         Err(e) => vec![Err(TreebankError::from(e))],
                     };
                     for item in items {
@@ -312,13 +321,6 @@ where
         TreeSource::Files(paths) => paths.len(),
     };
     progress.files_total.store(files_total, Ordering::Relaxed);
-    let process_tree = {
-        let progress = progress.clone();
-        move |tree| {
-            progress.trees.fetch_add(1, Ordering::Relaxed);
-            process_tree(tree)
-        }
-    };
 
     thread::spawn(move || match source {
         TreeSource::String(text) => {
