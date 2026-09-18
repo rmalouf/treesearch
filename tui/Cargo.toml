@@ -10,3 +10,4 @@ treesearch-ud = { path = "..", default-features = false }
 ratatui = "0.29"
 crossterm = "0.28"
 tui-textarea = "0.7"
+pest = "2.8"
