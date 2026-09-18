@@ -231,7 +231,8 @@ class TermconcApp(App):
         yield Footer()
 
     def on_mount(self):
-        path = "/Volumes/Corpora/COCA/conllu/*.conllu.gz"
+        # path = "/Volumes/Corpora/COCA/conllu/*.conllu.gz"
+        path = "/Volumes/Corpora/HPLT3.0/hun_parsed/**/*.conllu.*"
         self.treebank = treesearch.load(path)
         self.query_one("#query-editor", TextArea).focus()
 
