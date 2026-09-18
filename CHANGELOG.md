@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `treesearch-tui` workspace crate: terminal browser for refining queries (`cargo run -p treesearch-tui -- GLOB [QUERY]`)
 - `Treebank::search_with` takes a shared `Progress` for progress counters and cancellation
 - `python` cargo feature (on by default) so the core crate can build without pyo3
 
