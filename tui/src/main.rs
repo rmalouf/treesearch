@@ -128,7 +128,7 @@ impl App {
                 KeyCode::Esc if self.show_detail => self.close_detail(),
                 KeyCode::Esc => self.view = View::Editor,
                 KeyCode::Enter if self.show_detail => self.close_detail(),
-                KeyCode::Enter => self.show_detail = true,
+                KeyCode::Enter if self.hit_count() > 0 => self.show_detail = true,
                 KeyCode::Tab if self.show_detail => self.focus_detail = !self.focus_detail,
                 _ if self.show_detail && self.focus_detail => self.scroll_detail(key.code),
                 _ => self.move_selection(key.code),
