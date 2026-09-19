@@ -24,7 +24,7 @@ use tui_textarea::{CursorMove, TextArea};
 const MAX_HITS: usize = 5000;
 /// Column the keyword is aligned to, as a fraction of the context width.
 const KWIC_SPLIT: f32 = 0.4;
-/// Terminals at least this wide get the tree beside the hits instead of below.
+/// Terminals at least this wide get the tree beside the query and hits instead of below.
 const WIDE_LAYOUT: u16 = 120;
 const VAR_COLORS: [Color; 6] = [
     Color::Yellow,
@@ -268,15 +268,16 @@ impl App {
     fn draw(&mut self, frame: &mut Frame) {
         let [main, status] =
             Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(frame.area());
-        let query_h = (self.editor.lines().len() as u16 + 2).clamp(3, main.height * 2 / 5);
-        let [query, rest] =
-            Layout::vertical([Constraint::Length(query_h), Constraint::Fill(1)]).areas(main);
         let halves = [Constraint::Percentage(50), Constraint::Percentage(50)];
-        let [hits, tree] = if main.width >= WIDE_LAYOUT {
-            Layout::horizontal(halves).areas(rest)
+        // Wide: query over hits on the left, tree full height on the right.
+        let [left, tree] = if main.width >= WIDE_LAYOUT {
+            Layout::horizontal(halves).areas(main)
         } else {
-            Layout::vertical(halves).areas(rest)
+            Layout::vertical([Constraint::Fill(3), Constraint::Fill(2)]).areas(main)
         };
+        let query_h = (self.editor.lines().len() as u16 + 2).clamp(3, left.height * 2 / 5);
+        let [query, hits] =
+            Layout::vertical([Constraint::Length(query_h), Constraint::Fill(1)]).areas(left);
         self.draw_query(frame, query);
         self.draw_hits(frame, hits);
         self.draw_tree(frame, tree);
