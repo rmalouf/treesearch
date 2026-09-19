@@ -24,7 +24,7 @@ use tui_textarea::{CursorMove, TextArea};
 const MAX_HITS: usize = 5000;
 /// Column the keyword is aligned to, as a fraction of the context width.
 const KWIC_SPLIT: f32 = 0.4;
-/// Terminals at least this wide get the tree beside the query and hits instead of below.
+/// Terminals at least this wide get the hits beside the query and tree instead of between them.
 const WIDE_LAYOUT: u16 = 120;
 const VAR_COLORS: [Color; 6] = [
     Color::Yellow,
@@ -268,22 +268,27 @@ impl App {
     fn draw(&mut self, frame: &mut Frame) {
         let [main, status] =
             Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(frame.area());
-        let halves = [Constraint::Percentage(50), Constraint::Percentage(50)];
-        // Wide: query over hits on the left, tree full height on the right.
-        let [left, mut tree] = if main.width >= WIDE_LAYOUT {
-            Layout::horizontal(halves).areas(main)
-        } else {
-            Layout::vertical([Constraint::Fill(3), Constraint::Fill(2)]).areas(main)
+        let query_lines = self.editor.lines().len() as u16;
+        // Puts the query on top of `area`, sized to fit.
+        let under_query = |area: Rect| -> [Rect; 2] {
+            let h = (query_lines + 1).clamp(2, area.height * 2 / 5);
+            Layout::vertical([Constraint::Length(h), Constraint::Fill(1)]).areas(area)
         };
-        if main.width >= WIDE_LAYOUT {
+        // Wide: query over tree on the left, hits full height on the right.
+        let (query, hits, tree) = if main.width >= WIDE_LAYOUT {
+            let halves = [Constraint::Percentage(50), Constraint::Percentage(50)];
+            let [left, right] = Layout::horizontal(halves).areas(main);
             let rule = Block::default().borders(Borders::LEFT);
-            let inner = rule.inner(tree);
-            frame.render_widget(rule, tree);
-            tree = inner;
-        }
-        let query_h = (self.editor.lines().len() as u16 + 1).clamp(2, left.height * 2 / 5);
-        let [query, hits] =
-            Layout::vertical([Constraint::Length(query_h), Constraint::Fill(1)]).areas(left);
+            let hits = rule.inner(right);
+            frame.render_widget(rule, right);
+            let [query, tree] = under_query(left);
+            (query, hits, tree)
+        } else {
+            let [top, tree] =
+                Layout::vertical([Constraint::Fill(3), Constraint::Fill(2)]).areas(main);
+            let [query, hits] = under_query(top);
+            (query, hits, tree)
+        };
         self.draw_query(frame, query);
         self.draw_hits(frame, hits);
         self.draw_tree(frame, tree);
