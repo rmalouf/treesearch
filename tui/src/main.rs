@@ -293,7 +293,7 @@ impl App {
     /// Draws a pane's title bar, highlighted when it has focus, and returns the area below it.
     fn pane(&self, frame: &mut Frame, area: Rect, title: String, focus: Focus) -> Rect {
         let style = if self.focus == focus {
-            Style::default().reversed().bold()
+            Style::default().fg(Color::White).bg(Color::Blue).bold()
         } else {
             Style::default().fg(Color::White).bg(Color::DarkGray)
         };
@@ -385,7 +385,7 @@ impl App {
             parts.push(t);
         }
         parts.push("^R run · ^C stop · ^S save · Tab focus · n/p next/prev hit · ^Q quit".into());
-        Line::styled(parts.join("  |  "), Style::default().reversed())
+        Line::from(parts.join("  |  "))
     }
 }
 
