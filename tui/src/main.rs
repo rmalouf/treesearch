@@ -464,30 +464,6 @@ fn hit_row(m: &Match, vars: &[String], width: usize) -> Line<'static> {
     Line::from(spans)
 }
 
-/// Words in depth-first order, each with its `tree`-style indentation.
-/// Dependents follow their head, in sentence order.
-fn outline(tree: &Tree) -> Vec<(WordId, String)> {
-    fn walk(tree: &Tree, id: WordId, first: String, rest: String, out: &mut Vec<(WordId, String)>) {
-        out.push((id, first));
-        let kids = &tree.words[id].children;
-        for (k, &kid) in kids.iter().enumerate() {
-            let (branch, cont) = if k + 1 == kids.len() {
-                ("└─ ", "   ")
-            } else {
-                ("├─ ", "│  ")
-            };
-            walk(tree, kid, rest.clone() + branch, rest.clone() + cont, out);
-        }
-    }
-    let mut out = vec![];
-    for (id, w) in tree.words.iter().enumerate() {
-        if w.head.is_none() {
-            walk(tree, id, String::new(), String::new(), &mut out);
-        }
-    }
-    out
-}
-
 /// Full view of one hit: sentence, metadata, then the tree with bound words tagged.
 fn tree_lines(m: &Match, vars: &[String], width: usize) -> Vec<Line<'static>> {
     let tree = &m.tree;
@@ -503,43 +479,40 @@ fn tree_lines(m: &Match, vars: &[String], width: usize) -> Vec<Line<'static>> {
     }
     lines.push(Line::raw(""));
 
+    // One row per word in sentence order; the head is named by id and form.
     let tag_w = vars.iter().map(|v| v.chars().count()).max().unwrap_or(0);
-    let rows = outline(tree);
-    let cells: Vec<[String; 3]> = tree
+    let cells: Vec<[String; 5]> = tree
         .words
         .iter()
-        .map(|w| [s(w.deprel), s(w.upos), s(w.lemma)])
+        .map(|w| {
+            let head = w.head.map_or(String::new(), |h| form(tree, h));
+            [s(w.form), s(w.lemma), s(w.upos), s(w.deprel), head]
+        })
         .collect();
-    let form_w = rows
-        .iter()
-        .map(|(id, indent)| indent.chars().count() + form(tree, *id).chars().count())
-        .max()
-        .unwrap_or(0);
-    let mut widths = [0; 3];
+    let mut widths = [0; 5];
     for row in &cells {
         for (w, cell) in widths.iter_mut().zip(row) {
             *w = (*w).max(cell.chars().count());
         }
     }
-    for (i, indent) in rows {
-        let w = &tree.words[i];
+    for (i, w) in tree.words.iter().enumerate() {
         let style = word_style(m, vars, i);
         let tag = var_of(m, vars, i).map_or("", |v| vars[v].as_str());
-        let f = form(tree, i);
-        let fill = form_w - indent.chars().count() - f.chars().count();
-        let [deprel, upos, lemma] = &cells[i];
+        let [form, lemma, upos, deprel, head] = &cells[i];
+        let head_id = w.head.map_or(0, |h| tree.words[h].token_id);
+        let head_style = w.head.map_or(Style::default(), |h| word_style(m, vars, h));
         let mut line = vec![
             Span::styled(pad(tag, tag_w), style),
-            Span::raw(format!(" {:>3} ", w.token_id)),
-            Span::styled(indent, Style::default().dim()),
-            Span::styled(f, style),
+            Span::raw(format!(" {:>3}  ", w.token_id)),
+            Span::styled(pad(form, widths[0]), style),
             Span::raw(format!(
-                "{}  {}  {}  {}  ",
-                " ".repeat(fill),
-                pad(deprel, widths[0]),
-                pad(upos, widths[1]),
-                pad(lemma, widths[2]),
+                "  {}  {}  {}  {head_id:>3} ",
+                pad(lemma, widths[1]),
+                pad(upos, widths[2]),
+                pad(deprel, widths[3]),
             )),
+            Span::styled(pad(head, widths[4]), head_style),
+            Span::raw("  "),
         ];
         let used: usize = line.iter().map(|sp| sp.content.chars().count()).sum();
         if width.saturating_sub(used) >= MIN_FEATS_COL {
