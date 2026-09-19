@@ -24,8 +24,6 @@ use tui_textarea::{CursorMove, TextArea};
 const MAX_HITS: usize = 5000;
 /// Column the keyword is aligned to, as a fraction of the context width.
 const KWIC_SPLIT: f32 = 0.4;
-/// Feats are shown in the tree only if at least this many columns are left for them.
-const MIN_FEATS_COL: usize = 10;
 /// Terminals at least this wide get the tree beside the hits instead of below.
 const WIDE_LAYOUT: u16 = 120;
 const VAR_COLORS: [Color; 6] = [
@@ -514,16 +512,19 @@ fn tree_lines(m: &Match, vars: &[String], width: usize) -> Vec<Line<'static>> {
             Span::styled(pad(head, widths[4]), head_style),
             Span::raw("  "),
         ];
+        let feats: Vec<String> = w
+            .feats
+            .iter()
+            .map(|&(k, v)| format!("{}={}", s(k), s(v)))
+            .collect();
+        // Cut at the pane edge so rows don't wrap.
         let used: usize = line.iter().map(|sp| sp.content.chars().count()).sum();
-        if width.saturating_sub(used) >= MIN_FEATS_COL {
-            let feats: Vec<String> = w
-                .feats
-                .iter()
-                .map(|&(k, v)| format!("{}={}", s(k), s(v)))
-                .collect();
-            let feats: String = feats.join("|").chars().take(width - used).collect();
-            line.push(Span::styled(feats, Style::default().dim()));
-        }
+        let feats: String = feats
+            .join("|")
+            .chars()
+            .take(width.saturating_sub(used))
+            .collect();
+        line.push(Span::styled(feats, Style::default().dim()));
         lines.push(Line::from(line));
     }
     lines
