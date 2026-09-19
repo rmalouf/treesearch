@@ -270,12 +270,18 @@ impl App {
             Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(frame.area());
         let halves = [Constraint::Percentage(50), Constraint::Percentage(50)];
         // Wide: query over hits on the left, tree full height on the right.
-        let [left, tree] = if main.width >= WIDE_LAYOUT {
+        let [left, mut tree] = if main.width >= WIDE_LAYOUT {
             Layout::horizontal(halves).areas(main)
         } else {
             Layout::vertical([Constraint::Fill(3), Constraint::Fill(2)]).areas(main)
         };
-        let query_h = (self.editor.lines().len() as u16 + 2).clamp(3, left.height * 2 / 5);
+        if main.width >= WIDE_LAYOUT {
+            let rule = Block::default().borders(Borders::LEFT);
+            let inner = rule.inner(tree);
+            frame.render_widget(rule, tree);
+            tree = inner;
+        }
+        let query_h = (self.editor.lines().len() as u16 + 1).clamp(2, left.height * 2 / 5);
         let [query, hits] =
             Layout::vertical([Constraint::Length(query_h), Constraint::Fill(1)]).areas(left);
         self.draw_query(frame, query);
@@ -284,16 +290,17 @@ impl App {
         frame.render_widget(self.status_line(), status);
     }
 
-    fn pane(&self, title: String, focus: Focus) -> Block<'static> {
+    /// Draws a pane's title bar, highlighted when it has focus, and returns the area below it.
+    fn pane(&self, frame: &mut Frame, area: Rect, title: String, focus: Focus) -> Rect {
         let style = if self.focus == focus {
-            Style::default().fg(Color::Yellow)
+            Style::default().reversed().bold()
         } else {
-            Style::default()
+            Style::default().fg(Color::White).bg(Color::DarkGray)
         };
-        Block::default()
-            .borders(Borders::ALL)
-            .border_style(style)
-            .title(title)
+        let [bar, body] =
+            Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(area);
+        frame.render_widget(Paragraph::new(title).style(style), bar);
+        body
     }
 
     fn draw_query(&mut self, frame: &mut Frame, area: Rect) {
@@ -301,21 +308,18 @@ impl App {
             .query_path
             .as_ref()
             .map_or(String::new(), |p| format!(" · {}", p.display()));
-        let block = self.pane(format!(" Query{name} "), Focus::Query);
+        let body = self.pane(frame, area, format!(" Query{name}"), Focus::Query);
         let cursor = if self.focus == Focus::Query {
             Style::default().reversed()
         } else {
             Style::default()
         };
-        self.editor.set_block(block);
         self.editor.set_cursor_style(cursor);
-        frame.render_widget(&self.editor, area);
+        frame.render_widget(&self.editor, body);
     }
 
     fn draw_hits(&mut self, frame: &mut Frame, area: Rect) {
-        let block = self.pane(" Hits ".into(), Focus::Hits);
-        let inner = block.inner(area);
-        frame.render_widget(block, area);
+        let inner = self.pane(frame, area, " Hits".into(), Focus::Hits);
         let Some(search) = &self.search else { return };
         let results = search.results.lock().unwrap();
         let height = inner.height as usize;
@@ -333,21 +337,21 @@ impl App {
     }
 
     fn draw_tree(&mut self, frame: &mut Frame, area: Rect) {
-        let mut title = " Tree ".to_string();
+        let mut title = " Tree".to_string();
         let mut lines = vec![];
         if let Some(s) = &self.search {
             let r = s.results.lock().unwrap();
             if let Some(m) = r.hits.get(self.selected) {
                 let id = m.tree.metadata.get("sent_id").map_or("", String::as_str);
-                title = format!(" Tree · {}/{} · {id} ", self.selected + 1, r.hits.len());
-                lines = tree_lines(m, &s.vars, area.width.saturating_sub(2) as usize);
+                title = format!(" Tree · {}/{} · {id}", self.selected + 1, r.hits.len());
+                lines = tree_lines(m, &s.vars, area.width as usize);
             }
         }
+        let body = self.pane(frame, area, title, Focus::Tree);
         let para = Paragraph::new(lines)
-            .block(self.pane(title, Focus::Tree))
             .wrap(Wrap { trim: false })
             .scroll((self.tree_scroll, 0));
-        frame.render_widget(para, area);
+        frame.render_widget(para, body);
     }
 
     fn status_line(&self) -> Line<'_> {
