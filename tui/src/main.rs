@@ -24,8 +24,6 @@ use tui_textarea::{CursorMove, TextArea};
 const MAX_HITS: usize = 5000;
 /// Column the keyword is aligned to, as a fraction of the context width.
 const KWIC_SPLIT: f32 = 0.4;
-/// Widest a per-variable column in the hit list can grow.
-const MAX_VAR_COL: usize = 16;
 /// Feats are shown in the tree only if at least this many columns are left for them.
 const MIN_FEATS_COL: usize = 10;
 /// Terminals at least this wide get the tree beside the hits instead of below.
@@ -42,8 +40,6 @@ const VAR_COLORS: [Color; 6] = [
 #[derive(Default)]
 struct Results {
     hits: Vec<Match>,
-    /// Display width of each variable's column in the hit list.
-    widths: Vec<usize>,
     total: usize,
     done: bool,
     error: Option<String>,
@@ -128,7 +124,12 @@ impl App {
     fn handle_key(&mut self, key: KeyEvent) -> bool {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         match key.code {
-            KeyCode::Char('q' | 'c') if ctrl => return false,
+            KeyCode::Char('q') if ctrl => return false,
+            KeyCode::Char('c') if ctrl => {
+                if let Some(s) = &self.search {
+                    s.progress.cancel();
+                }
+            }
             KeyCode::Char('r') if ctrl => self.run_query(),
             KeyCode::Char('s') if ctrl => self.save_query(),
             KeyCode::Tab => self.cycle_focus(1),
@@ -224,16 +225,8 @@ impl App {
         }
         let vars = pattern_vars(&pattern);
         let progress = Arc::new(Progress::default());
-        let results = Arc::new(Mutex::new(Results {
-            widths: vars.iter().map(|v| v.chars().count()).collect(),
-            ..Default::default()
-        }));
-        let (treebank, prog, res, vs) = (
-            self.treebank.clone(),
-            progress.clone(),
-            results.clone(),
-            vars.clone(),
-        );
+        let results = Arc::new(Mutex::new(Results::default()));
+        let (treebank, prog, res) = (self.treebank.clone(), progress.clone(), results.clone());
         thread::spawn(move || {
             // Infallible: the pattern is already compiled.
             for item in treebank.search_with(pattern, false, prog).unwrap() {
@@ -242,12 +235,6 @@ impl App {
                     Ok(m) => {
                         r.total += 1;
                         if r.hits.len() < MAX_HITS {
-                            for (i, v) in vs.iter().enumerate() {
-                                if let Some(&id) = m.bindings.get(v) {
-                                    let w = form(&m.tree, id).chars().count().min(MAX_VAR_COL);
-                                    r.widths[i] = r.widths[i].max(w);
-                                }
-                            }
                             r.hits.push(m);
                         }
                     }
@@ -332,32 +319,18 @@ impl App {
         frame.render_widget(block, area);
         let Some(search) = &self.search else { return };
         let results = search.results.lock().unwrap();
-        let width = inner.width as usize;
-
-        let [header, body] =
-            Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(inner);
-        let mut spans: Vec<Span> = search
-            .vars
-            .iter()
-            .zip(&results.widths)
-            .enumerate()
-            .map(|(i, (v, &w))| Span::styled(format!("{v:<w$} "), var_style(i)))
-            .collect();
-        spans.push(Span::styled("│ context", Style::default().dim()));
-        frame.render_widget(Line::from(spans), header);
-
-        let height = body.height as usize;
+        let height = inner.height as usize;
         let offset = self.selected.saturating_sub(height.saturating_sub(1));
         let rows: Vec<Line> = results
             .hits
             .iter()
             .skip(offset)
             .take(height)
-            .map(|m| hit_row(m, &search.vars, &results.widths, width))
+            .map(|m| hit_row(m, &search.vars, inner.width as usize))
             .collect();
         let mut state = ListState::default().with_selected(Some(self.selected - offset));
         let list = List::new(rows).highlight_style(Style::default().reversed());
-        frame.render_stateful_widget(list, body, &mut state);
+        frame.render_stateful_widget(list, inner, &mut state);
     }
 
     fn draw_tree(&mut self, frame: &mut Frame, area: Rect) {
@@ -388,7 +361,13 @@ impl App {
             let p = &s.progress;
             let mut t = format!(
                 "{} {}/{} files · {} trees · {} hits",
-                if r.done { "done" } else { "running" },
+                if p.is_cancelled() {
+                    "interrupted"
+                } else if r.done {
+                    "done"
+                } else {
+                    "running"
+                },
                 p.files_done.load(Relaxed),
                 p.files_total.load(Relaxed),
                 p.trees.load(Relaxed),
@@ -402,7 +381,7 @@ impl App {
             }
             parts.push(t);
         }
-        parts.push("^R run · ^S save · Tab focus · n/p next/prev hit · ^Q quit".into());
+        parts.push("^R run · ^C stop · ^S save · Tab focus · n/p next/prev hit · ^Q quit".into());
         Line::styled(parts.join("  |  "), Style::default().reversed())
     }
 }
@@ -442,29 +421,16 @@ fn pad(s: &str, width: usize) -> String {
     format!("{s:<width$}")
 }
 
-/// One hit: a column per variable, then keyword-in-context with the first
-/// variable's word as the keyword, aligned to a fixed column.
-fn hit_row(m: &Match, vars: &[String], widths: &[usize], width: usize) -> Line<'static> {
+/// One hit as keyword-in-context: the first variable's word aligned to a fixed
+/// column, bound words colored by variable.
+fn hit_row(m: &Match, vars: &[String], width: usize) -> Line<'static> {
     let tree = &m.tree;
     let mut spans = vec![];
-    let mut used = 0;
-    for (i, (v, &w)) in vars.iter().zip(widths).enumerate() {
-        let text = m
-            .bindings
-            .get(v)
-            .map_or(String::new(), |&id| form(tree, id));
-        spans.push(Span::styled(pad(&text, w) + " ", var_style(i)));
-        used += w + 1;
-    }
-    spans.push(Span::styled("│ ", Style::default().dim()));
-    used += 2;
-
     let forms: Vec<String> = (0..tree.words.len()).map(|i| form(tree, i)).collect();
     let kw = vars
         .first()
         .and_then(|v| m.bindings.get(v).copied())
         .unwrap_or(0);
-    let width = width.saturating_sub(used);
     let left_width = (width as f32 * KWIC_SPLIT) as usize;
     let right_width = width.saturating_sub(left_width + forms[kw].chars().count());
 
@@ -498,58 +464,28 @@ fn hit_row(m: &Match, vars: &[String], widths: &[usize], width: usize) -> Line<'
     Line::from(spans)
 }
 
-/// Box-drawing arcs for a tree, one row per word in sentence order.
-///
-/// A word at depth `d` has its parent's junction at column `2d-1`, a stub at
-/// `2d`, and its own junction (where its children's bar meets it) at `2d+1`.
-fn draw_arcs(tree: &Tree) -> Vec<String> {
-    let n = tree.words.len();
-    let depth: Vec<usize> = tree
-        .words
-        .iter()
-        .map(|w| {
-            let (mut d, mut cur) = (0, w.head);
-            while let Some(h) = cur
-                && d <= n
-            {
-                d += 1;
-                cur = tree.words[h].head;
-            }
-            d
-        })
-        .collect();
-    let cols = 2 * depth.iter().max().copied().unwrap_or(0) + 2;
-    let mut grid = vec![vec![' '; cols]; n];
-
-    for (i, w) in tree.words.iter().enumerate() {
-        let x = 2 * depth[i] + 1;
-        grid[i][x - 1] = '─';
-        let kids = &w.children;
-        let (Some(&first), Some(&last)) = (kids.iter().min(), kids.iter().max()) else {
-            grid[i][x] = '─';
-            continue;
-        };
-        let (top, bot) = (first.min(i), last.max(i));
-        grid[i][x] = match (top == i, bot == i) {
-            (true, _) => '┬',
-            (_, true) => '┴',
-            _ => '┼',
-        };
-        for (r, row) in grid.iter_mut().enumerate().take(bot + 1).skip(top) {
-            if kids.contains(&r) {
-                row[x] = if r == top {
-                    '┌'
-                } else if r == bot {
-                    '└'
-                } else {
-                    '├'
-                };
-            } else if r != i && row[x] == ' ' {
-                row[x] = '│';
-            }
+/// Words in depth-first order, each with its `tree`-style indentation.
+/// Dependents follow their head, in sentence order.
+fn outline(tree: &Tree) -> Vec<(WordId, String)> {
+    fn walk(tree: &Tree, id: WordId, first: String, rest: String, out: &mut Vec<(WordId, String)>) {
+        out.push((id, first));
+        let kids = &tree.words[id].children;
+        for (k, &kid) in kids.iter().enumerate() {
+            let (branch, cont) = if k + 1 == kids.len() {
+                ("└─ ", "   ")
+            } else {
+                ("├─ ", "│  ")
+            };
+            walk(tree, kid, rest.clone() + branch, rest.clone() + cont, out);
         }
     }
-    grid.into_iter().map(String::from_iter).collect()
+    let mut out = vec![];
+    for (id, w) in tree.words.iter().enumerate() {
+        if w.head.is_none() {
+            walk(tree, id, String::new(), String::new(), &mut out);
+        }
+    }
+    out
 }
 
 /// Full view of one hit: sentence, metadata, then the tree with bound words tagged.
@@ -568,39 +504,50 @@ fn tree_lines(m: &Match, vars: &[String], width: usize) -> Vec<Line<'static>> {
     lines.push(Line::raw(""));
 
     let tag_w = vars.iter().map(|v| v.chars().count()).max().unwrap_or(0);
-    let arcs = draw_arcs(tree);
-    let cells: Vec<[String; 4]> = tree
+    let rows = outline(tree);
+    let cells: Vec<[String; 3]> = tree
         .words
         .iter()
-        .map(|w| [s(w.form), s(w.lemma), s(w.upos), s(w.deprel)])
+        .map(|w| [s(w.deprel), s(w.upos), s(w.lemma)])
         .collect();
-    let mut widths = [0; 4];
+    let form_w = rows
+        .iter()
+        .map(|(id, indent)| indent.chars().count() + form(tree, *id).chars().count())
+        .max()
+        .unwrap_or(0);
+    let mut widths = [0; 3];
     for row in &cells {
         for (w, cell) in widths.iter_mut().zip(row) {
             *w = (*w).max(cell.chars().count());
         }
     }
-    for (i, w) in tree.words.iter().enumerate() {
+    for (i, indent) in rows {
+        let w = &tree.words[i];
         let style = word_style(m, vars, i);
         let tag = var_of(m, vars, i).map_or("", |v| vars[v].as_str());
-        let feats: Vec<String> = w
-            .feats
-            .iter()
-            .map(|&(k, v)| format!("{}={}", s(k), s(v)))
-            .collect();
+        let f = form(tree, i);
+        let fill = form_w - indent.chars().count() - f.chars().count();
+        let [deprel, upos, lemma] = &cells[i];
         let mut line = vec![
-            Span::styled(pad(tag, tag_w) + " ", style),
-            Span::raw(format!("{} {:>2} ", arcs[i], w.token_id)),
-            Span::styled(pad(&cells[i][0], widths[0]) + " ", style),
+            Span::styled(pad(tag, tag_w), style),
+            Span::raw(format!(" {:>3} ", w.token_id)),
+            Span::styled(indent, Style::default().dim()),
+            Span::styled(f, style),
             Span::raw(format!(
-                "{} {} {} ",
-                pad(&cells[i][1], widths[1]),
-                pad(&cells[i][2], widths[2]),
-                pad(&cells[i][3], widths[3]),
+                "{}  {}  {}  {}  ",
+                " ".repeat(fill),
+                pad(deprel, widths[0]),
+                pad(upos, widths[1]),
+                pad(lemma, widths[2]),
             )),
         ];
         let used: usize = line.iter().map(|sp| sp.content.chars().count()).sum();
         if width.saturating_sub(used) >= MIN_FEATS_COL {
+            let feats: Vec<String> = w
+                .feats
+                .iter()
+                .map(|&(k, v)| format!("{}={}", s(k), s(v)))
+                .collect();
             let feats: String = feats.join("|").chars().take(width - used).collect();
             line.push(Span::styled(feats, Style::default().dim()));
         }
