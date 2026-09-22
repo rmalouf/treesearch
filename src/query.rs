@@ -33,6 +33,11 @@ pub enum QueryError {
     #[error("Query error: Variable '{0}' already defined in another EXCEPT/OPTIONAL block")]
     DuplicateExtensionVariable(String),
 
+    #[error(
+        "Query error: Variable '{0}' is declared in MATCH and cannot be redeclared in EXCEPT/OPTIONAL"
+    )]
+    RedeclaredMatchVariable(String),
+
     #[error("Query error: Invalid regex pattern '{0}': {1}")]
     InvalidRegex(String, String),
 }
@@ -45,11 +50,14 @@ pub fn compile_query(input: &str) -> Result<Pattern, QueryError> {
     let mut pairs = QueryParser::parse(Rule::query, input)?;
     let query_pair = pairs.next().unwrap();
 
+    // The grammar guarantees MATCH comes first, so its variables are known
+    // by the time EXCEPT/OPTIONAL blocks are compiled
     for item in query_pair.into_inner() {
+        let match_vars = match_pattern.as_ref().map_or(&[][..], |p| &p.var_names[..]);
         match item.as_rule() {
-            Rule::match_block => match_pattern = Some(compile_query_block(item)?),
-            Rule::except_block => except_patterns.push(compile_query_block(item)?),
-            Rule::optional_block => optional_patterns.push(compile_query_block(item)?),
+            Rule::match_block => match_pattern = Some(compile_query_block(item, &[])?),
+            Rule::except_block => except_patterns.push(compile_query_block(item, match_vars)?),
+            Rule::optional_block => optional_patterns.push(compile_query_block(item, match_vars)?),
             Rule::EOI => {}
             _ => unreachable!(),
         }
@@ -68,7 +76,12 @@ pub fn compile_query(input: &str) -> Result<Pattern, QueryError> {
     }
 }
 
-pub fn compile_query_block(item: Pair<Rule>) -> Result<BasePattern, QueryError> {
+/// Compile one block. `match_vars` are MATCH variables, which may be used in
+/// edges but not redeclared (empty when compiling MATCH itself).
+pub fn compile_query_block(
+    item: Pair<Rule>,
+    match_vars: &[String],
+) -> Result<BasePattern, QueryError> {
     let mut vars: Vec<PatternVar> = Vec::new();
     let mut edges: Vec<EdgeConstraint> = Vec::new();
 
@@ -79,6 +92,9 @@ pub fn compile_query_block(item: Pair<Rule>) -> Result<BasePattern, QueryError> 
                 match inner.as_rule() {
                     Rule::node_decl => {
                         let var = compile_var_decl(inner)?;
+                        if match_vars.contains(&var.var_name) {
+                            return Err(QueryError::RedeclaredMatchVariable(var.var_name));
+                        }
                         if vars.iter().any(|v| v.var_name == var.var_name) {
                             return Err(QueryError::DuplicateVariable(var.var_name));
                         };
@@ -970,6 +986,22 @@ MATCH {
             pattern,
             Err(QueryError::DuplicateExtensionVariable(_))
         ));
+    }
+
+    #[test]
+    fn test_redeclared_match_variable() {
+        for block in ["EXCEPT", "OPTIONAL"] {
+            // Redeclaring a MATCH variable is an error
+            let query = format!(r#"MATCH {{ V []; }} {block} {{ V [lemma="be"]; }}"#);
+            assert!(matches!(
+                compile_query(&query),
+                Err(QueryError::RedeclaredMatchVariable(v)) if v == "V"
+            ));
+
+            // Using it in an edge is fine
+            let query = format!(r#"MATCH {{ V []; }} {block} {{ V -[obj]-> O; }}"#);
+            assert!(compile_query(&query).is_ok());
+        }
     }
 
     #[test]

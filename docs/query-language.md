@@ -161,14 +161,12 @@ EXCEPT {
 
 This finds verbs that have no adverb modifier.
 
-An `EXCEPT` block can use variables from `MATCH`, whose bindings are fixed, and can add new constraints to them:
+Variables that are new in the `EXCEPT` block are existential: the match is rejected if there is any binding for them that satisfies the block. Because new variables never bind a word already bound by `MATCH`, this query finds verbs with exactly one subject:
 
 ```
-MATCH { V [upos="VERB"]; }
-EXCEPT { V [lemma="be" | lemma="have"]; }
+MATCH  { V [upos="VERB"]; V -[nsubj]-> S; }
+EXCEPT { V -[nsubj]-> X; }
 ```
-
-Variables that are new in the `EXCEPT` block are existential: the match is rejected if there is any binding for them that satisfies the block.
 
 ## OPTIONAL Blocks
 
@@ -199,9 +197,9 @@ If V has 2 subjects and 3 objects, this gives 6 matches (2 × 3). If V has 2 sub
 
 ## Scoping
 
-- `EXCEPT` and `OPTIONAL` blocks can refer to variables from `MATCH`.
+- `EXCEPT` and `OPTIONAL` blocks can use `MATCH` variables in edge and precedence constraints, but can't redeclare them: `EXCEPT { V [lemma="be"]; }` is an error. Put node constraints on `MATCH` variables in `MATCH` (e.g., `V [upos="VERB" & lemma!="be"]`).
 - A new variable in one `EXCEPT` or `OPTIONAL` block can't appear in any other `EXCEPT` or `OPTIONAL` block. Using the same name twice is an error.
-- A new variable in an `EXCEPT` or `OPTIONAL` block is kept distinct from the `MATCH` variables used in that block, but not from `MATCH` variables that the block doesn't mention, or from variables in other `OPTIONAL` blocks. To keep a new variable distinct from a `MATCH` variable, mention the `MATCH` variable in the block (e.g., `S [];`).
+- New variables in `EXCEPT` and `OPTIONAL` blocks never bind a word that is already bound by `MATCH`. Variables in different `OPTIONAL` blocks are matched independently and may bind the same word.
 
 ## Lexical Details
 
@@ -292,4 +290,5 @@ MATCH {
 | `V [upos="VERB", lemma="be"]` | Constraints separated by a comma | `V [upos="VERB" & lemma="be"]` |
 | `V [UPOS="VERB"]` | Constraint names are lowercase | `V [upos="VERB"]` |
 | `V []; V [upos="VERB"];` | Duplicate declaration | `V [upos="VERB"];` |
+| `MATCH { V []; } EXCEPT { V [lemma="be"]; }` | `MATCH` variable redeclared | `MATCH { V [lemma!="be"]; }` |
 | `V -[nsubj]-> S` on `nsubj:pass` | Labels match exactly | `V -/nsubj.*/-> S` |

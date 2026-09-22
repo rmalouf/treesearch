@@ -176,8 +176,11 @@ fn solve_with_bindings(
     let mut assign: Vec<Option<WordId>> = vec![None; pattern.n_vars];
     let mut assigned_words: BitFixed<u64> = BitFixed::new(num_words);
 
-    // Pre-assign from initial_bindings and validate constraints on pre-bound variables
+    // Pre-assign from initial_bindings and validate constraints on pre-bound variables.
+    // Every pre-bound word is excluded from new variables, whether or not this pattern
+    // mentions its variable.
     for (var_name, &word_id) in initial_bindings {
+        assigned_words.set(word_id);
         if let Some(&var_id) = pattern.var_ids.get(var_name) {
             // Check that pre-bound variable satisfies its constraints in this pattern
             let word = &tree.words[word_id];
@@ -186,7 +189,6 @@ fn solve_with_bindings(
                 return Vec::new(); // Pre-bound variable fails constraint, no solutions possible
             }
             assign[var_id] = Some(word_id);
-            assigned_words.set(word_id);
         }
     }
 
@@ -1211,7 +1213,7 @@ mod tests {
         let matches = search_tree_query(
             tree.clone(),
             r#"MATCH { V [upos="VERB"]; }
-               EXCEPT { V [upos="VERB"]; }"#,
+               EXCEPT { V -> _; }"#,
         )
         .unwrap();
         // All verbs should be rejected
@@ -1369,6 +1371,31 @@ mod tests {
         assert_eq!(
             matches[0].bindings,
             hashmap! { "V" => 0, "S" => 1, "O" => 2 }
+        );
+    }
+
+    #[test]
+    fn test_extension_vars_distinct_from_match_words() {
+        // New EXCEPT/OPTIONAL variables never bind a MATCH-bound word, even when
+        // the block doesn't mention that MATCH variable
+        let tree = build_multi_verb_tree();
+        let base = r#"MATCH { V [upos="VERB"]; S []; V -[nsubj]-> S; }"#;
+
+        // Only one subject, so there's no *other* subject to reject on
+        let matches = search_tree_query(
+            tree.clone(),
+            &format!("{base} EXCEPT {{ V -[nsubj]-> X; }}"),
+        )
+        .unwrap();
+        assert_eq!(matches.len(), 1);
+
+        // X ranges over V's dependents other than S
+        let matches =
+            search_tree_query(tree.clone(), &format!("{base} OPTIONAL {{ V -> X; }}")).unwrap();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(
+            matches[0].bindings,
+            hashmap! { "V" => 0, "S" => 1, "X" => 2 }
         );
     }
 
