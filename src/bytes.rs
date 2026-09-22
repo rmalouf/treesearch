@@ -218,7 +218,7 @@ mod tests {
 
         // Intern all strings
         for s in &strings {
-            syms.push(pool.get_or_intern(*s));
+            syms.push(pool.get_or_intern(s));
         }
 
         // Verify all are different

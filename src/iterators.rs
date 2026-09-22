@@ -182,10 +182,10 @@ fn process_string_source_batched<T, F>(
             Err(e) => vec![Err(TreebankError::from(e))],
         };
         for item in items {
-            if let Some(full_batch) = batch.push(item) {
-                if tx.send(full_batch).is_err() {
-                    return;
-                }
+            if let Some(full_batch) = batch.push(item)
+                && tx.send(full_batch).is_err()
+            {
+                return;
             }
         }
     }
@@ -268,10 +268,10 @@ fn process_files_unordered_batched<T, F>(
                         Err(e) => vec![Err(TreebankError::from(e))],
                     };
                     for item in items {
-                        if let Some(full_batch) = batch.push(item) {
-                            if tx.send(full_batch).is_err() {
-                                return;
-                            }
+                        if let Some(full_batch) = batch.push(item)
+                            && tx.send(full_batch).is_err()
+                        {
+                            return;
                         }
                     }
                 }

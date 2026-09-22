@@ -480,16 +480,11 @@ mod treesearch {
     /// Note: Marked as unsendable because iterators have mutable state and shouldn't
     /// be shared across threads. However, we release the GIL during iteration to allow
     /// other Python threads to run in parallel.
+    type TreeMatch = (Arc<RustTree>, std::collections::HashMap<String, usize>);
+
     #[pyclass(name = "MatchIterator", unsendable)]
     struct PyMatchIterator {
-        inner: Box<
-            dyn Iterator<
-                    Item = Result<
-                        (Arc<RustTree>, std::collections::HashMap<String, usize>),
-                        TreebankError,
-                    >,
-                > + Send,
-        >,
+        inner: Box<dyn Iterator<Item = Result<TreeMatch, TreebankError>> + Send>,
     }
 
     #[pymethods]

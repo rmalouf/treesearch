@@ -426,7 +426,7 @@ mod tests {
         assert_eq!(edge_constraint.to, "To");
         assert_eq!(edge_constraint.relation, RelationType::Child);
         assert_eq!(edge_constraint.label, None);
-        assert_eq!(edge_constraint.negated, true);
+        assert!(edge_constraint.negated);
     }
 
     #[test]
@@ -448,7 +448,7 @@ mod tests {
             edge_constraint.label,
             Some(ConstraintValue::Literal("xcomp".to_string()))
         );
-        assert_eq!(edge_constraint.negated, true);
+        assert!(edge_constraint.negated);
     }
 
     #[test]
@@ -462,7 +462,7 @@ mod tests {
         let pattern = compile_query(query).unwrap();
 
         let edge_constraint = &pattern.match_pattern.edge_constraints[0];
-        assert_eq!(edge_constraint.negated, false);
+        assert!(!edge_constraint.negated);
     }
 
     #[test]

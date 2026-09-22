@@ -171,6 +171,7 @@ impl Tree {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn add_minimal_word(
         &mut self,
         id: WordId,

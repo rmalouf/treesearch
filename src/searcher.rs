@@ -620,7 +620,7 @@ mod tests {
         )
         .unwrap();
         // Should match saw -> John + saw -> running
-        assert!(matches.len() >= 1);
+        assert!(!matches.is_empty());
         assert!(
             matches
                 .iter()
@@ -767,34 +767,35 @@ mod tests {
         let mut tree = Tree::default();
 
         // Word 0: "was" - lemma=be, Tense=Past, Number=Sing
-        let mut feats_was = Features::new();
-        feats_was.push((
-            tree.string_pool.get_or_intern(b"Tense"),
-            tree.string_pool.get_or_intern(b"Past"),
-        ));
-        feats_was.push((
-            tree.string_pool.get_or_intern(b"Number"),
-            tree.string_pool.get_or_intern(b"Sing"),
-        ));
-        let mut misc_was = Features::new();
-        misc_was.push((
+        let feats_was: Features = vec![
+            (
+                tree.string_pool.get_or_intern(b"Tense"),
+                tree.string_pool.get_or_intern(b"Past"),
+            ),
+            (
+                tree.string_pool.get_or_intern(b"Number"),
+                tree.string_pool.get_or_intern(b"Sing"),
+            ),
+        ];
+        let misc_was: Features = vec![(
             tree.string_pool.get_or_intern(b"SpaceAfter"),
             tree.string_pool.get_or_intern(b"No"),
-        ));
+        )];
         tree.add_word(
             0, 1, b"was", b"be", b"VERB", b"_", feats_was, None, b"root", misc_was,
         );
 
         // Word 1: "running" - Tense=Pres, VerbForm=Part
-        let mut feats_run = Features::new();
-        feats_run.push((
-            tree.string_pool.get_or_intern(b"Tense"),
-            tree.string_pool.get_or_intern(b"Pres"),
-        ));
-        feats_run.push((
-            tree.string_pool.get_or_intern(b"VerbForm"),
-            tree.string_pool.get_or_intern(b"Part"),
-        ));
+        let feats_run: Features = vec![
+            (
+                tree.string_pool.get_or_intern(b"Tense"),
+                tree.string_pool.get_or_intern(b"Pres"),
+            ),
+            (
+                tree.string_pool.get_or_intern(b"VerbForm"),
+                tree.string_pool.get_or_intern(b"Part"),
+            ),
+        ];
         tree.add_word(
             1,
             2,
