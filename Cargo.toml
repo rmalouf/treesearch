@@ -34,6 +34,7 @@ extension-module = ["python", "pyo3/extension-module"]
 
 [dev-dependencies]
 divan = "0.1"
+mimalloc = "0.1.52"
 tempfile = "3"
 
 [profile.release]
