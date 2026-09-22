@@ -162,24 +162,28 @@ jobs:
           name: wheels-sdist
           path: dist
 
+  # The Python/OS grid that test.yml leaves out, run against the built wheels.
   smoke-test:
-    name: Install wheel (Python ${{ matrix.python-version }})
-    needs: [linux]
-    runs-on: ubuntu-latest
+    name: Install wheel (Python ${{ matrix.python-version }} on ${{ matrix.os }})
+    needs: [linux, macos]
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.12', '3.13', '3.14']
+        include:
+          - {os: ubuntu-latest, python-version: '3.12', wheel: linux-x86_64}
+          - {os: ubuntu-latest, python-version: '3.13', wheel: linux-x86_64}
+          - {os: ubuntu-latest, python-version: '3.14', wheel: linux-x86_64}
+          - {os: macos-latest, python-version: '3.14', wheel: macos-aarch64}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
-          name: wheels-linux-x86_64
+          name: wheels-${{ matrix.wheel }}
           path: dist
       - uses: astral-sh/setup-uv@v9.0.0
         with:
           python-version: ${{ matrix.python-version }}
-      # Proves the single abi3 wheel really is installable across 3.12-3.14.
       - name: Install and test the built wheel
         run: |
           set -euo pipefail

@@ -27,9 +27,14 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: lint
       - name: cargo fmt
         run: cargo fmt --all --check
+      - name: cargo clippy
+        run: cargo clippy --all-targets
       - uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
@@ -59,31 +64,26 @@ jobs:
       - name: cargo test --doc
         run: cargo test --doc
 
+  # The full Python/OS grid runs against the built wheels in pypi.yml.
   python:
-    name: Python ${{ matrix.python-version }} on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        python-version: ['3.12', '3.13', '3.14']
+    name: Python 3.14 on Linux
+    runs-on: ubuntu-latest
     env:
-      UV_PYTHON: ${{ matrix.python-version }}
-      # Build the extension without LTO/codegen-units=1; tests do not need the
-      # release profile and the release build dominates CI time.
+      UV_PYTHON: '3.14'
+      # Tests do not need the LTO release build, which dominates CI time.
       MATURIN_PEP517_ARGS: --profile dev
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.python-version }}
+          key: test
       - uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
-          cache-suffix: test-${{ matrix.python-version }}
-          python-version: ${{ matrix.python-version }}
+          cache-suffix: test
+          python-version: '3.14'
       - name: Build extension and install dependencies
         run: uv sync --group dev
       - name: Run Python tests
-        run: uv run pytest
+        run: uv run --no-sync pytest

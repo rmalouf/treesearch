@@ -4,13 +4,14 @@ Maintainer notes for CI and the PyPI release process.
 
 ## Workflows
 
-Three workflows live in `.github/workflows/`:
+Four workflows live in `.github/workflows/`:
 
 | Workflow | Triggers | What it does |
 |---|---|---|
-| `test.yml` | push to `main`, PRs, manual | `cargo fmt`, ruff, Rust tests, Python tests on 3.12/3.13/3.14 × Linux/macOS |
-| `docs.yml` | push to `main` or PR touching `docs/**`, `mkdocs.yml`, `pyproject.toml`; manual | Builds the mkdocs site with `--strict`; deploys to GitHub Pages on `main` only |
-| `pypi.yml` | push of a `v*` tag; manual | Builds wheels + sdist, smoke-tests them, publishes to PyPI |
+| `test.yml` | push to `main`, PRs, manual | `cargo fmt`, clippy, ruff, Rust tests, Python tests on 3.14/Linux |
+| `docs.yml` | push to `main` or PR touching `docs/**`, `mkdocs.yml`, `pyproject.toml`; manual | Builds the mkdocs site with `--strict` (no deploy) |
+| `docs-deploy.yml` | manual only | Builds the docs from a ref (default `main`) and deploys to GitHub Pages |
+| `pypi.yml` | push of a `v*` tag; manual | Builds wheels + sdist, tests them on the full Python/OS grid, publishes to PyPI |
 
 ## Cutting a release
 
@@ -34,7 +35,7 @@ The `pypi.yml` workflow then runs, in order:
 
 1. **version-check** — fails if the tag doesn't match `Cargo.toml` (`v0.2.1` requires `version = "0.2.1"`)
 2. **builds** — one wheel each for linux x86_64/aarch64, macOS x86_64/aarch64, Windows x64, plus an sdist
-3. **smoke-test** — installs the built Linux wheel on 3.12, 3.13, and 3.14 and runs the test suite
+3. **smoke-test** — installs the built wheel and runs the test suite on Linux 3.12/3.13/3.14 and macOS 3.14
 4. **release** — attests provenance, publishes to PyPI, creates a GitHub Release
 
 If any step fails, nothing is published. `skip-existing: true` means re-running a
@@ -61,7 +62,7 @@ These are configured outside the repo and are required before the first release:
   repo Settings → Environments. No API token is stored anywhere; the workflow
   authenticates over OIDC.
 - **GitHub Pages** — Settings → Pages → Source must be set to **GitHub Actions**,
-  or `docs.yml` fails at the deploy step.
+  or `docs-deploy.yml` fails at the deploy step.
 
 ## Wheels are abi3
 

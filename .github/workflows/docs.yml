@@ -1,3 +1,5 @@
+# Test building docs (but don't deploy); docs-deploy.yml publishes them
+
 name: Documentation
 
 on:
@@ -21,8 +23,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: pages-${{ github.ref }}
-  cancel-in-progress: false
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -46,24 +48,3 @@ jobs:
       - name: Build documentation
         run: uv run --no-sync mkdocs build --strict
 
-      - name: Upload artifact
-        if: github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: ./site
-
-  deploy:
-    name: Deploy to GitHub Pages
-    if: github.event_name != 'pull_request'
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v5
