@@ -224,7 +224,7 @@ for lemma, count in verb_counts.most_common(10):
 import treesearch as ts
 import json
 
-query = 'MATCH { V [lemma="help"]; V -[xcomp]-> Inf; }'
+query = 'MATCH { V [lemma="help"]; Inf []; V -[xcomp]-> Inf; }'
 
 examples = []
 for tree, match in ts.search("corpus/*.conllu", query):

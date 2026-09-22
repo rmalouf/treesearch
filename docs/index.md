@@ -15,6 +15,7 @@ import treesearch as ts
 query = """
 MATCH {
     V [upos="VERB"];
+    Subj [];
     V -[aux:pass]-> _;
     V -[nsubj:pass]-> Subj;
 }

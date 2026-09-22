@@ -27,6 +27,9 @@ pub enum QueryError {
     #[error("Query error: Duplicate variable: {0}")]
     DuplicateVariable(String),
 
+    #[error("Query error: Undeclared variable: {0}")]
+    UndeclaredVariable(String),
+
     #[error("Query error: No MATCH block found")]
     NoMATCH,
 
@@ -77,7 +80,8 @@ pub fn compile_query(input: &str) -> Result<Pattern, QueryError> {
 }
 
 /// Compile one block. `match_vars` are MATCH variables, which may be used in
-/// edges but not redeclared (empty when compiling MATCH itself).
+/// edges but not redeclared (empty when compiling MATCH itself). Every other
+/// variable used in an edge must be declared in the block.
 pub fn compile_query_block(
     item: Pair<Rule>,
     match_vars: &[String],
@@ -113,6 +117,17 @@ pub fn compile_query_block(
             }
             _ => unreachable!(),
         };
+    }
+
+    for edge in &edges {
+        for name in [&edge.from, &edge.to] {
+            if name != "_"
+                && !match_vars.contains(name)
+                && !vars.iter().any(|v| &v.var_name == name)
+            {
+                return Err(QueryError::UndeclaredVariable(name.clone()));
+            }
+        }
     }
 
     Ok(BasePattern::with_constraints(vars, edges))
@@ -553,18 +568,19 @@ mod tests {
     }
 
     #[test]
-    fn test_both_vars_undefined_in_edge() {
-        // Edge constraint where both variables are undefined
-        let query = r#"MATCH {
-            Node [upos="NOUN"];
-            Foo -> Bar;
-        }"#;
-        let pattern = compile_query(query).unwrap();
-
-        assert_eq!(pattern.match_pattern.var_constraints.len(), 3);
-        assert_eq!(pattern.match_pattern.edge_constraints.len(), 1);
-        assert_eq!(pattern.match_pattern.edge_constraints[0].from, "Foo");
-        assert_eq!(pattern.match_pattern.edge_constraints[0].to, "Bar");
+    fn test_undeclared_var_in_edge() {
+        for query in [
+            "MATCH { Node []; Foo -> Node; }",
+            "MATCH { Node []; Node -> Bar; }",
+            "MATCH { Node []; Node < Bar; }",
+            "MATCH { Node []; } EXCEPT { Node -> Bar; }",
+            "MATCH { Node []; } OPTIONAL { Node -[obj]-> Bar; }",
+        ] {
+            assert!(
+                matches!(compile_query(query), Err(QueryError::UndeclaredVariable(_))),
+                "{query}"
+            );
+        }
     }
 
     #[test]
@@ -999,7 +1015,7 @@ MATCH {
             ));
 
             // Using it in an edge is fine
-            let query = format!(r#"MATCH {{ V []; }} {block} {{ V -[obj]-> O; }}"#);
+            let query = format!(r#"MATCH {{ V []; }} {block} {{ O []; V -[obj]-> O; }}"#);
             assert!(compile_query(&query).is_ok());
         }
     }

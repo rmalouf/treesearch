@@ -30,10 +30,10 @@ An empty block, `MATCH { }`, matches every tree once with no bindings.
 
 Variable names start with an ASCII letter, followed by letters, digits, or underscores (`V`, `Subj`, `head_2`). Names are case-sensitive.
 
-A variable may be declared at most once per block; declaring it twice is an error. Variables used in an edge constraint don't need a declaration: an undeclared variable matches any word.
+Every variable must be declared, and at most once per block; using an undeclared variable or declaring one twice is an error. Use `[]` to declare a variable that matches any word.
 
 ```
-MATCH { V -[obj]-> O; }    # same as: V []; O []; V -[obj]-> O;
+MATCH { V []; O []; V -[obj]-> O; }
 ```
 
 ## Node Constraints
@@ -164,8 +164,8 @@ This finds verbs that have no adverb modifier.
 Variables that are new in the `EXCEPT` block are existential: the match is rejected if there is any binding for them that satisfies the block. Because new variables never bind a word already bound by `MATCH`, this query finds verbs with exactly one subject:
 
 ```
-MATCH  { V [upos="VERB"]; V -[nsubj]-> S; }
-EXCEPT { V -[nsubj]-> X; }
+MATCH  { V [upos="VERB"]; S []; V -[nsubj]-> S; }
+EXCEPT { X []; V -[nsubj]-> X; }
 ```
 
 ## OPTIONAL Blocks
@@ -177,6 +177,7 @@ MATCH {
     V [upos="VERB"];
 }
 OPTIONAL {
+    O [];
     V -[obj]-> O;
 }
 ```
@@ -187,8 +188,8 @@ If an `OPTIONAL` block can be satisfied in more than one way, each way produces 
 
 ```
 MATCH { V [upos="VERB"]; }
-OPTIONAL { V -[nsubj]-> S; }
-OPTIONAL { V -[obj]-> O; }
+OPTIONAL { S []; V -[nsubj]-> S; }
+OPTIONAL { O []; V -[obj]-> O; }
 ```
 
 If V has 2 subjects and 3 objects, this gives 6 matches (2 × 3). If V has 2 subjects and no objects, it gives 2 matches, with `O` unbound.
@@ -197,7 +198,7 @@ If V has 2 subjects and 3 objects, this gives 6 matches (2 × 3). If V has 2 sub
 
 ## Scoping
 
-- `EXCEPT` and `OPTIONAL` blocks can use `MATCH` variables in edge and precedence constraints, but can't redeclare them: `EXCEPT { V [lemma="be"]; }` is an error. Put node constraints on `MATCH` variables in `MATCH` (e.g., `V [upos="VERB" & lemma!="be"]`).
+- `EXCEPT` and `OPTIONAL` blocks can use `MATCH` variables in edge and precedence constraints without declaring them, but can't redeclare them: `EXCEPT { V [lemma="be"]; }` is an error. Put node constraints on `MATCH` variables in `MATCH` (e.g., `V [upos="VERB" & lemma!="be"]`).
 - A new variable in one `EXCEPT` or `OPTIONAL` block can't appear in any other `EXCEPT` or `OPTIONAL` block. Using the same name twice is an error.
 - New variables in `EXCEPT` and `OPTIONAL` blocks never bind a word that is already bound by `MATCH`. Variables in different `OPTIONAL` blocks are matched independently and may bind the same word.
 
@@ -215,6 +216,7 @@ If V has 2 subjects and 3 objects, this gives 6 matches (2 × 3). If V has 2 sub
 ```
 MATCH {
     V [upos="VERB"];
+    Subj [];
     V -[aux:pass]-> _;
     V -[nsubj:pass]-> Subj;
 }
@@ -290,5 +292,6 @@ MATCH {
 | `V [upos="VERB", lemma="be"]` | Constraints separated by a comma | `V [upos="VERB" & lemma="be"]` |
 | `V [UPOS="VERB"]` | Constraint names are lowercase | `V [upos="VERB"]` |
 | `V []; V [upos="VERB"];` | Duplicate declaration | `V [upos="VERB"];` |
+| `V []; V -[obj]-> O;` | `O` not declared | `V []; O []; V -[obj]-> O;` |
 | `MATCH { V []; } EXCEPT { V [lemma="be"]; }` | `MATCH` variable redeclared | `MATCH { V [lemma!="be"]; }` |
 | `V -[nsubj]-> S` on `nsubj:pass` | Labels match exactly | `V -/nsubj.*/-> S` |

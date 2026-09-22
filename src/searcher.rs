@@ -1385,14 +1385,17 @@ mod tests {
         // Only one subject, so there's no *other* subject to reject on
         let matches = search_tree_query(
             tree.clone(),
-            &format!("{base} EXCEPT {{ V -[nsubj]-> X; }}"),
+            &format!("{base} EXCEPT {{ X []; V -[nsubj]-> X; }}"),
         )
         .unwrap();
         assert_eq!(matches.len(), 1);
 
         // X ranges over V's dependents other than S
-        let matches =
-            search_tree_query(tree.clone(), &format!("{base} OPTIONAL {{ V -> X; }}")).unwrap();
+        let matches = search_tree_query(
+            tree.clone(),
+            &format!("{base} OPTIONAL {{ X []; V -> X; }}"),
+        )
+        .unwrap();
         assert_eq!(matches.len(), 1);
         assert_eq!(
             matches[0].bindings,

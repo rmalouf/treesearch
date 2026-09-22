@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `python` cargo feature (on by default) so the core crate can build without pyo3
 
 ### Changed
+- Variables used in edge and precedence constraints must be declared
 - Pattern variables keep their declaration order (`BasePattern::with_constraints` takes a `Vec`)
 
 ### Fixed
