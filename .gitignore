@@ -1,6 +1,5 @@
 # Rust
 /target
-Cargo.lock
 **/*.rs.bk
 *.pdb
 
@@ -49,6 +48,7 @@ docs/_build/
 *.parquet
 
 CLAUDE.md
+AGENTS.md
 plans/
 .env
 .claude/
