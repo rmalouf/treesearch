@@ -50,9 +50,9 @@ ts.search("*.conllu", 'MATCH { V [upos=/VERB|AUX/]; }')
 # Complex: progressive construction
 query = """
 MATCH {
-    Aux [lemma=/be.*/];      # be, is, was, etc.
+    Aux [lemma="be"];        # be, is, was, etc.
     V [form=/.*ing/];        # -ing form
-    Aux -[aux]-> V;
+    V -[aux]-> Aux;
 }
 """
 ```

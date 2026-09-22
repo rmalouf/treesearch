@@ -206,7 +206,7 @@ fn parse_constraint_value(pair: Pair<Rule>) -> Result<ConstraintValue, QueryErro
     match rule {
         Rule::string_literal => Ok(ConstraintValue::Literal(value_str)),
         Rule::regex_literal => {
-            let anchored_pattern = format!("^{}$", value_str);
+            let anchored_pattern = format!("^(?:{})$", value_str);
             match Regex::new(&anchored_pattern) {
                 Ok(regex) => Ok(ConstraintValue::Regex(value_str, regex)),
                 Err(e) => Err(QueryError::InvalidRegex(value_str, e.to_string())),
@@ -264,7 +264,7 @@ fn compile_edge_decl(pair: Pair<Rule>) -> Result<EdgeConstraint, QueryError> {
         Rule::regex_edge | Rule::neg_regex_edge => {
             let regex_lit = actual_op.into_inner().next().unwrap();
             let pattern = regex_lit.into_inner().as_str().to_string();
-            let anchored = format!("^{}$", pattern);
+            let anchored = format!("^(?:{})$", pattern);
             match Regex::new(&anchored) {
                 Ok(regex) => Some(ConstraintValue::Regex(pattern, regex)),
                 Err(e) => return Err(QueryError::InvalidRegex(pattern, e.to_string())),

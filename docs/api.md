@@ -162,6 +162,7 @@ MATCH {
     V [lemma="run"];              # by lemma (exact)
     V [lemma=/run.*/];            # by regex (starts with "run")
     V [upos="VERB" & lemma="run"]; # multiple (AND)
+    N [upos="NOUN" | upos="PROPN"]; # alternatives (OR)
     V [feats.Tense="Past"];       # by feature
     V [];                         # any word
 
@@ -173,6 +174,7 @@ MATCH {
     # Negation
     V [upos!="VERB"];             # not a verb
     V !-[obj]-> _;                # no object
+    _ !-> V;                      # V is the root
 
     # Edges
     V -[nsubj]-> N;               # specific relation

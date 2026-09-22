@@ -1506,6 +1506,11 @@ mod tests {
         assert!(word_ids.contains(&1)); // us (PRON)
         assert!(word_ids.contains(&3)); // win (VERB)
 
+        // Anchors apply to the whole alternation, not just the first/last branch
+        let matches: Vec<_> =
+            search_tree_query(tree.clone(), r#"MATCH { W [form=/h|w/]; }"#).unwrap();
+        assert!(matches.is_empty());
+
         // Regex with .* - match words containing "el"
         let matches: Vec<_> =
             search_tree_query(tree.clone(), r#"MATCH { W [form=/.*el.*/]; }"#).unwrap();
@@ -1550,6 +1555,11 @@ mod tests {
         )
         .unwrap();
         assert_eq!(matches.len(), 2); // helped->us (obj) and helped->win (xcomp)
+
+        // Alternation is fully anchored: no prefix/suffix matches
+        let matches: Vec<_> =
+            search_tree_query(tree.clone(), r#"MATCH { V []; C []; V -/ob|xc/-> C; }"#).unwrap();
+        assert!(matches.is_empty());
 
         // Regex edge with wildcard
         let matches: Vec<_> = search_tree_query(

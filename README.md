@@ -89,7 +89,7 @@ MATCH {
 }
 ```
 
-**Node constraints**: `upos`, `xpos`, `lemma`, `form`, `deprel`, `feats.*` (morphological features), `misc.*` (miscellaneous features)
+**Node constraints**: `upos`, `xpos`, `lemma`, `form`, `deprel`, `feats.*` (morphological features), `misc.*` (miscellaneous features); values are `"literals"` or `/regexes/`, combined with `&`, `|`, `!=`, and parentheses
 
 **Edge constraints**: `->` (child), `-[label]->` (labeled edge), `-/regex/->` (regex edge), `!->` (negative), `!-[label]->` (negative labeled), `!-/regex/->` (negative regex)
 

@@ -54,6 +54,9 @@ MATCH {
 # Multiple constraints (AND)
 'MATCH { V [upos="VERB" & lemma="run"]; }'
 
+# Alternatives (OR); & binds tighter than |
+'MATCH { N [upos="NOUN" | upos="PROPN"]; }'
+
 # Any word (no constraints)
 'MATCH { X []; }'
 
@@ -102,10 +105,10 @@ Use `/pattern/` for regex matching (automatically anchored for full-string match
 # Any dependency
 'MATCH { V []; N []; V -> N; }'
 
-# Negative: V does NOT have obj edge to N
+# Negative: N is not an obj of V
 'MATCH { V []; N []; V !-[obj]-> N; }'
 
-# Negative regex: V does NOT have obj or iobj edge to N
+# Negative regex: N is not an obj or iobj of V
 'MATCH { V []; N []; V !-/obj|iobj/-> N; }'
 ```
 
@@ -246,9 +249,9 @@ from collections import Counter
 # Find all progressive constructions (be + -ing)
 query = """
 MATCH {
-    Aux [lemma=/be.*/];        # be, is, was, were, etc.
+    Aux [lemma="be"];          # be, is, was, were, etc.
     Prog [form=/.*ing/];       # any -ing form
-    Aux -[aux]-> Prog;
+    Prog -[aux]-> Aux;
 }
 """
 

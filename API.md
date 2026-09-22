@@ -125,9 +125,11 @@ V [upos="VERB" & lemma=/(be|have).*/];
 
 **Note:** Patterns are compiled with implicit `^...$` anchors, so you don't need to add them manually. `/run/` becomes `/^run$/` internally. Regular expressions use Rust's [regex syntax](https://docs.rs/regex/latest/regex/#syntax). Invalid patterns are caught during query compilation with a clear error message.
 
-**Multiple constraints** (AND):
+**Multiple constraints** (AND, OR, grouping; `&` binds tighter than `|`):
 ```
 V [upos="VERB" & lemma="be"];
+N [upos="NOUN" | upos="PROPN"];
+S [(upos="NOUN" | upos="PRON") & feats.Case="Nom"];
 ```
 
 **Empty constraint** (matches any node):
@@ -176,7 +178,7 @@ Parent -[deprel]-> Child;
 - `->` - Any child (no relation specified)
 - `!-[obj]->` - Negative constraint (does NOT have this edge)
 - `!-/regex/->` - Negative regex constraint
-- `!->` - Does NOT have any child
+- `!->` - Not a child (`V !-> _`: V has no children)
 
 **Regex edge examples:**
 

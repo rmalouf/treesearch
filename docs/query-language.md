@@ -4,136 +4,219 @@
 
 ```
 MATCH {
-    VariableName [constraints];
-    ...
-    edge_constraints;
+    statements
 }
 EXCEPT {
-    # Reject if this pattern matches
+    statements
 }
 OPTIONAL {
-    # Extend match with these bindings if possible
+    statements
 }
 ```
 
-A query consists of a required MATCH block followed by zero or more EXCEPT and OPTIONAL blocks.
+A query has exactly one `MATCH` block, followed by any number of `EXCEPT` and `OPTIONAL` blocks in any order. A block contains three kinds of statements:
+
+- **Node declarations**: `Name [constraints];`
+- **Edge constraints**: `Parent -[label]-> Child;`
+- **Precedence constraints**: `A < B;` or `A << B;`
+
+Trailing semicolons are optional. Statements may appear in any order.
+
+A match binds each variable to a word in the tree. **Different variables always bind different words.** The search is exhaustive: every assignment of words to variables that satisfies all constraints is returned as a separate match.
+
+An empty block, `MATCH { }`, matches every tree once with no bindings.
+
+## Variables
+
+Variable names start with an ASCII letter, followed by letters, digits, or underscores (`V`, `Subj`, `head_2`). Names are case-sensitive.
+
+A variable may be declared at most once per block; declaring it twice is an error. Variables used in an edge constraint don't need a declaration: an undeclared variable matches any word.
+
+```
+MATCH { V -[obj]-> O; }    # same as: V []; O []; V -[obj]-> O;
+```
 
 ## Node Constraints
 
-| Constraint | Description | Example |
-|------------|-------------|---------|
+| Constraint | Field | Example |
+|------------|-------|---------|
 | `upos` | Universal POS tag | `[upos="VERB"]` |
-| `xpos` | Language-specific POS | `[xpos="VBD"]` |
-| `lemma` | Dictionary form | `[lemma="help"]` |
+| `xpos` | Language-specific POS tag | `[xpos="VBD"]` |
+| `lemma` | Lemma | `[lemma="help"]` |
 | `form` | Surface form | `[form="helping"]` |
-| `deprel` | Dependency relation | `[deprel="root"]` |
-| `feats.X` | Morphological feature | `[feats.Tense="Past"]` |
-| `misc.X` | Miscellaneous annotation | `[misc.SpaceAfter="No"]` |
+| `deprel` | Relation to the word's head | `[deprel="nsubj"]` |
+| `feats.Key` | Morphological feature | `[feats.Tense="Past"]` |
+| `misc.Key` | MISC column attribute | `[misc.SpaceAfter="No"]` |
 
-**Multiple constraints** (AND): `V [upos="VERB" & lemma="run"];`
+`X []` matches any word.
 
-**Empty constraint** (any word): `X [];`
+### Operators
 
-**Negation**: `V [upos!="VERB"];`
+| Syntax | Meaning |
+|--------|---------|
+| `key="value"` | Equal |
+| `key!="value"` | Not equal |
+| `c1 & c2` | Both |
+| `c1 \| c2` | Either |
+| `( ... )` | Grouping |
 
-### Constraint Values
-
-Constraint values can be:
-- **Literal strings** (in quotes): `lemma="run"` - exact match
-- **Regular expressions** (in slashes): `lemma=/run.*/` - pattern match
-
-### Regular Expressions
-
-Regex patterns are **automatically anchored** for full-string matching (consistent with literal behavior):
-
-| Pattern | Matches | Description |
-|---------|---------|-------------|
-| `/run/` | "run" only | Exact match (like `"run"`) |
-| `/run.*/` | "run", "runs", "running" | Starts with "run" |
-| `/.*ing/` | "running", "helping" | Ends with "ing" |
-| `/.*el.*/` | "helped", "hello" | Contains "el" |
-| `/VERB\|AUX/` | "VERB" or "AUX" | Alternation |
-
-**Examples:**
+`&` binds more tightly than `|`, so `upos="PRON" | upos="AUX" & lemma="do"` means `upos="PRON" | (upos="AUX" & lemma="do")`.
 
 ```
-# Find progressive verbs (ending in -ing)
-V [upos="VERB" & form=/.*ing/];
-
-# Find modal verbs
-M [lemma=/(can|may|must|will|shall|could|might|should|would)/];
-
-# Find verbs NOT starting with "be"
-V [upos="VERB" & lemma!=/be.*/];
-
-# Find past or present tense
-V [feats.Tense=/Past|Pres/];
+N [upos="NOUN" | upos="PROPN"];
+S [(upos="NOUN" | upos="PRON") & feats.Case="Nom"];
 ```
 
-**Note:** Patterns use Rust [regex syntax](https://docs.rs/regex/latest/regex/#syntax). Invalid patterns cause a compile error.
+A `feats.Key` or `misc.Key` constraint fails if the word doesn't have that key, so `feats.Key!=...` succeeds for words without it: `[feats.Tense!="Past"]` matches every word except past-tense ones, including words with no `Tense` feature.
+
+### Values
+
+A value is either a string literal or a regular expression:
+
+- `"value"`: exact match. String literals don't support escape sequences, so they can't contain `"` or `\`.
+- `/regex/`: regex match. Write `\/` for a literal slash.
+
+Regexes are **anchored**: `/run/` is compiled as `^run$` and matches only "run". Use `.*` for partial matches.
+
+| Pattern | Matches |
+|---------|---------|
+| `/run/` | "run" only |
+| `/run.*/` | "run", "runs", "running", "runway" |
+| `/.*ing/` | "running", "helping" |
+| `/.*el.*/` | "helped", "hello" |
+| `/VERB\|AUX/` | "VERB" or "AUX" |
+| `/(?i)help/` | "help", "Help", "HELP" |
+
+Regexes use Rust [regex syntax](https://docs.rs/regex/latest/regex/#syntax). An invalid regex is a query compilation error.
+
+```
+V [upos="VERB" & form=/.*ing/];                              # -ing verb forms
+M [lemma=/can|may|must|will|shall|could|might|should|would/]; # modals
+V [upos="VERB" & lemma!=/be|have/];                          # verbs other than be/have
+V [feats.Tense=/Past|Pres/];                                 # past or present tense
+```
 
 ## Edge Constraints
 
-### Positive Edges
+`A -> B` means A is the head of B (B is a dependent of A).
 
-```
-V -[nsubj]-> N;     # V has nsubj edge to N
-V -/nsubj.*/-> N;   # V has edge matching regex to N
-V -> N;             # V has any edge to N
-```
+| Syntax | Meaning |
+|--------|---------|
+| `A -> B` | B is a dependent of A |
+| `A -[rel]-> B` | B is a dependent of A with deprel exactly `rel` |
+| `A -/regex/-> B` | B is a dependent of A with deprel matching `regex` |
+| `A !-> B` | B is not a dependent of A |
+| `A !-[rel]-> B` | B is not a `rel` dependent of A |
+| `A !-/regex/-> B` | B is not a dependent of A with deprel matching `regex` |
 
-### Negative Edges
+Labels match the full deprel, including any subtype: `-[nsubj]->` doesn't match `nsubj:pass`. Use a regex for families of relations:
 
-```
-V !-[obj]-> N;      # V does NOT have obj edge to N
-V !-/obj|iobj/-> N; # V does NOT have edge matching regex to N
-V !-> N;            # V has no edge to N
-```
+| Edge | Matches |
+|------|---------|
+| `-[nsubj]->` | `nsubj` only |
+| `-/nsubj.*/->` | `nsubj`, `nsubj:pass`, `nsubj:outer`, ... |
+| `-/obj\|iobj/->` | `obj` or `iobj` |
+| `-/.*mod/->` | `amod`, `advmod`, `nummod`, ... |
 
-### Regex Edge Labels
+Negative edges only rule out one relationship between A and B. Both variables still have to be bound to words. For example, `V !-[obj]-> N` matches every pair of distinct words where N isn't an `obj` dependent of V. To say that a word has no dependent of some kind, use `_` (see below) or an `EXCEPT` block.
 
-Edge labels support the same regex syntax as node constraints. Patterns are enclosed in `/slashes/` and automatically anchored with `^...$`:
+### Anonymous Variable `_`
 
-| Edge Pattern | Matches |
-|--------------|---------|
-| `-[nsubj]->` | Exactly "nsubj" |
-| `-/nsubj.*/->` | "nsubj", "nsubj:pass", etc. |
-| `-/obj\|iobj/->` | "obj" or "iobj" |
-| `-/.*mod/->` | "amod", "advmod", "nummod", etc. |
+`_` can be used on either side of an edge to check whether some matching word exists, without binding it:
 
-### Anonymous Variable
+| Constraint | Meaning |
+|------------|---------|
+| `V -[obj]-> _` | V has an `obj` dependent |
+| `V !-[obj]-> _` | V has no `obj` dependent |
+| `V -> _` | V has at least one dependent |
+| `V !-> _` | V has no dependents |
+| `_ -[nsubj]-> N` | N has a head and its deprel is `nsubj` |
+| `_ -> N` | N has a head (N isn't the root) |
+| `_ !-> N` | N is the root |
 
-Use `_` to check existence without binding:
-
-```
-V -[obj]-> _;       # V has some object
-V !-[obj]-> _;      # V has no object (intransitive)
-_ !-> Root;         # Root has no incoming edge
-_ -/nsubj.*/-> N;   # N has some subject relation (regex)
-```
+Each `_` is independent of the other variables, and the AllDifferent rule doesn't apply to it. For example, `V -[obj]-> O; V -[obj]-> _;` matches a verb with one object, because `_` can be the same word as `O`. `_` can't be used in precedence constraints.
 
 ## Precedence Constraints
 
-| Operator | Meaning |
-|----------|---------|
+| Syntax | Meaning |
+|--------|---------|
 | `A < B` | A immediately precedes B |
-| `A << B` | A precedes B (anywhere before) |
+| `A << B` | A precedes B (anywhere earlier in the sentence) |
 
-## Comments
+Precedence uses the order of syntactic words. Multiword token lines (`1-2`) are ignored.
 
-```
-V [upos="VERB"];  # inline comment
-// full line comment
-```
+## EXCEPT Blocks
 
-## Examples
-
-### Passive Construction
+An `EXCEPT` block rejects a match if the block can be satisfied given the match's bindings. With more than one `EXCEPT` block, a match is rejected if any of them can be satisfied.
 
 ```
 MATCH {
     V [upos="VERB"];
-    Subj [];
+}
+EXCEPT {
+    V -[advmod]-> M;
+    M [upos="ADV"];
+}
+```
+
+This finds verbs that have no adverb modifier.
+
+An `EXCEPT` block can use variables from `MATCH`, whose bindings are fixed, and can add new constraints to them:
+
+```
+MATCH { V [upos="VERB"]; }
+EXCEPT { V [lemma="be" | lemma="have"]; }
+```
+
+Variables that are new in the `EXCEPT` block are existential: the match is rejected if there is any binding for them that satisfies the block.
+
+## OPTIONAL Blocks
+
+An `OPTIONAL` block extends a match with additional bindings when it can. If it can't be satisfied, the match is kept and the block's variables are left unbound.
+
+```
+MATCH {
+    V [upos="VERB"];
+}
+OPTIONAL {
+    V -[obj]-> O;
+}
+```
+
+This finds all verbs and binds their objects to `O` when there are objects. In Python, check with `"O" in match` or `match.get("O")`.
+
+If an `OPTIONAL` block can be satisfied in more than one way, each way produces a separate match. Each `OPTIONAL` block is matched independently against the `MATCH` bindings, and the results are combined as a cross product:
+
+```
+MATCH { V [upos="VERB"]; }
+OPTIONAL { V -[nsubj]-> S; }
+OPTIONAL { V -[obj]-> O; }
+```
+
+If V has 2 subjects and 3 objects, this gives 6 matches (2 × 3). If V has 2 subjects and no objects, it gives 2 matches, with `O` unbound.
+
+`EXCEPT` blocks are checked against the `MATCH` bindings before `OPTIONAL` blocks are applied.
+
+## Scoping
+
+- `EXCEPT` and `OPTIONAL` blocks can refer to variables from `MATCH`.
+- A new variable in one `EXCEPT` or `OPTIONAL` block can't appear in any other `EXCEPT` or `OPTIONAL` block. Using the same name twice is an error.
+- A new variable in an `EXCEPT` or `OPTIONAL` block is kept distinct from the `MATCH` variables used in that block, but not from `MATCH` variables that the block doesn't mention, or from variables in other `OPTIONAL` blocks. To keep a new variable distinct from a `MATCH` variable, mention the `MATCH` variable in the block (e.g., `S [];`).
+
+## Lexical Details
+
+- Keywords are case-sensitive: `MATCH`, `EXCEPT`, `OPTIONAL`, and the constraint names `upos`, `xpos`, `lemma`, `form`, `deprel`, `feats`, `misc`.
+- Values are case-sensitive: `"VERB"` ≠ `"verb"`. Use `(?i)` in a regex to ignore case.
+- Comments start with `#` or `//` and run to the end of the line.
+- Whitespace and newlines are ignored.
+
+## Examples
+
+### Passive
+
+```
+MATCH {
+    V [upos="VERB"];
     V -[aux:pass]-> _;
     V -[nsubj:pass]-> Subj;
 }
@@ -149,7 +232,7 @@ MATCH {
 }
 ```
 
-### Intransitive Verb
+### Verb with a Subject and No Object
 
 ```
 MATCH {
@@ -159,38 +242,38 @@ MATCH {
 }
 ```
 
-### Word Order
+### Verb Before Its Object
 
 ```
 MATCH {
     V [upos="VERB"];
     Obj [upos="NOUN"];
     V -[obj]-> Obj;
-    V < Obj;          # verb before object
+    V << Obj;
 }
 ```
 
-### Progressive Construction (with Regex)
+### Progressive
 
 ```
 MATCH {
-    Aux [lemma=/be.*/];     # be, is, was, were, etc.
-    V [form=/.*ing/];       # any word ending in -ing
-    Aux -[aux]-> V;
+    V [upos="VERB" & form=/.*ing/];
+    Aux [lemma="be"];
+    V -[aux]-> Aux;
 }
 ```
 
-### Modal Verb Construction (with Regex)
+### Modal + Verb
 
 ```
 MATCH {
-    Modal [lemma=/(can|may|must|will|shall|could|might|should|would)/];
-    Verb [upos="VERB"];
-    Modal -> Verb;
+    V [upos="VERB"];
+    Modal [lemma=/can|may|must|will|shall|could|might|should|would/];
+    V -[aux]-> Modal;
 }
 ```
 
-### Any Subject Relation (Regex Edge)
+### Any Subject Relation
 
 ```
 MATCH {
@@ -200,90 +283,13 @@ MATCH {
 }
 ```
 
-This matches `nsubj`, `nsubj:pass`, and any other subject relation.
-
-### Verb with Any Object (Regex Edge)
-
-```
-MATCH {
-    V [upos="VERB"];
-    O [];
-    V -/.*obj.*/-> O;
-}
-```
-
-This matches `obj`, `iobj`, and subtypes like `obj:lvc`.
-
-## EXCEPT Blocks
-
-Reject matches where a condition is true. Multiple EXCEPT blocks use ANY semantics (reject if any matches).
-
-```
-MATCH {
-    V [upos="VERB"];
-}
-EXCEPT {
-    M [upos="ADV"];
-    V -[advmod]-> M;
-}
-```
-
-This finds verbs that do NOT have an adverb modifier.
-
-EXCEPT blocks can reference variables from MATCH:
-
-```
-MATCH {
-    V [upos="VERB"];
-    S [upos="NOUN"];
-    V -[nsubj]-> S;
-}
-EXCEPT {
-    Aux [upos="AUX"];
-    Aux -> V;
-}
-```
-
-This finds verb-subject pairs where the verb is not governed by an auxiliary.
-
-## OPTIONAL Blocks
-
-Extend matches with additional variables if possible. If the OPTIONAL pattern doesn't match, the base match is kept with the optional variables absent from bindings.
-
-```
-MATCH {
-    V [upos="VERB"];
-}
-OPTIONAL {
-    O [upos="NOUN"];
-    V -[obj]-> O;
-}
-```
-
-This finds all verbs, and if they have an object, binds it to `O`. Check for optional bindings with `match.get("O")`.
-
-**Multiple OPTIONAL blocks**: Create cross-product of all extensions.
-
-```
-MATCH { V [upos="VERB"]; }
-OPTIONAL { S []; V -[nsubj]-> S; }
-OPTIONAL { O []; V -[obj]-> O; }
-```
-
-If V has 2 subjects and 3 objects, this produces 6 matches (2 × 3).
-
-**Variable scoping**: EXCEPT/OPTIONAL blocks can reference MATCH variables but cannot reference variables from other EXCEPT/OPTIONAL blocks. New variable names must be unique across all extension blocks.
-
-## Case Sensitivity
-
-- Variable names: case-sensitive (`V` ≠ `v`)
-- Constraint values: case-sensitive (`"VERB"` ≠ `"verb"`)
-- Keywords: case-sensitive (`upos` only, not `UPOS`)
-
 ## Common Errors
 
-| Error | Problem | Fix |
+| Query | Problem | Fix |
 |-------|---------|-----|
-| `V [upos=VERB]` | Missing quotes | `V [upos="VERB"]` |
-| `V [pos="VERB"]` | Wrong keyword | `V [upos="VERB"]` |
-| `V -[obj]-> N` | N not declared | Add `N [];` first |
+| `V [upos=VERB]` | Value not quoted | `V [upos="VERB"]` |
+| `V [pos="VERB"]` | Unknown constraint name | `V [upos="VERB"]` |
+| `V [upos="VERB", lemma="be"]` | Constraints separated by a comma | `V [upos="VERB" & lemma="be"]` |
+| `V [UPOS="VERB"]` | Constraint names are lowercase | `V [upos="VERB"]` |
+| `V []; V [upos="VERB"];` | Duplicate declaration | `V [upos="VERB"];` |
+| `V -[nsubj]-> S` on `nsubj:pass` | Labels match exactly | `V -/nsubj.*/-> S` |
