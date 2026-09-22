@@ -78,18 +78,14 @@ impl IntoPattern for String {
     }
 }
 
-/// Errors that can occur during treebank iteration
 #[derive(Debug, Error)]
 pub enum TreebankError {
-    /// IO error when opening or reading files
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
-    /// Parse error when reading CoNLL-U content
     #[error("Parse error: {0}")]
     Parse(#[from] ParseError),
 
-    /// Error opening file at specific path
     #[error("Failed to open file {path}: {source}")]
     FileOpen {
         path: PathBuf,
@@ -97,48 +93,35 @@ pub enum TreebankError {
     },
 }
 
-/// Shared progress counters and cancellation flag for a running search.
-///
-/// Create one, pass a clone of the `Arc` to [`Treebank::search_with`], and poll
-/// the counters from another thread (e.g. a UI). Calling [`cancel`](Self::cancel)
-/// makes the workers stop at the next tree boundary.
 #[derive(Debug, Default)]
 pub struct Progress {
-    /// Number of files to process (set when the search starts)
     pub files_total: AtomicUsize,
-    /// Number of files fully processed
     pub files_done: AtomicUsize,
-    /// Number of trees processed so far
     pub trees: AtomicUsize,
     cancelled: AtomicBool,
 }
 
 impl Progress {
-    /// Request that the search stop as soon as possible.
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::Relaxed);
     }
 
-    /// Whether [`cancel`](Self::cancel) has been called.
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Relaxed)
     }
 }
 
-/// Batch size for sending matches through channels
-const MATCH_BATCH_SIZE: usize = 500;
+// Batch handling
 
-/// Channel buffer size (in batches)
+const MATCH_BATCH_SIZE: usize = 500;
 const CHANNEL_BUFFER_SIZE: usize = 100;
 
-/// Helper for accumulating items into batches
 struct BatchAccumulator<T> {
     batch: Vec<T>,
     capacity: usize,
 }
 
 impl<T> BatchAccumulator<T> {
-    /// Create a new batch accumulator with the given capacity
     fn new(capacity: usize) -> Self {
         Self {
             batch: Vec::with_capacity(capacity),
@@ -146,7 +129,6 @@ impl<T> BatchAccumulator<T> {
         }
     }
 
-    /// Push an item into the batch. Returns Some(batch) if the batch is full.
     fn push(&mut self, item: T) -> Option<Vec<T>> {
         self.batch.push(item);
         if self.batch.len() >= self.capacity {
@@ -159,7 +141,6 @@ impl<T> BatchAccumulator<T> {
         }
     }
 
-    /// Flush any remaining items in the batch
     fn flush(self) -> Option<Vec<T>> {
         if self.batch.is_empty() {
             None
@@ -169,7 +150,6 @@ impl<T> BatchAccumulator<T> {
     }
 }
 
-/// Process trees from a string source with batching (for match_iter and filter)
 fn process_string_source_batched<T, F>(
     text: &str,
     tx: &crossbeam_channel::Sender<Vec<Result<T, TreebankError>>>,
@@ -204,7 +184,6 @@ fn process_string_source_batched<T, F>(
     }
 }
 
-/// Process files in ordered mode with chunking (for match_iter and filter)
 fn process_files_ordered_batched<T, F>(
     paths: Vec<PathBuf>,
     tx: &crossbeam_channel::Sender<Vec<Result<T, TreebankError>>>,
@@ -253,7 +232,6 @@ fn process_files_ordered_batched<T, F>(
     }
 }
 
-/// Process files in unordered mode with full parallelism (for match_iter and filter)
 fn process_files_unordered_batched<T, F>(
     paths: Vec<PathBuf>,
     tx: crossbeam_channel::Sender<Vec<Result<T, TreebankError>>>,
@@ -302,7 +280,6 @@ fn process_files_unordered_batched<T, F>(
     });
 }
 
-/// Build a parallel iterator with batching (for match_iter and filter)
 fn build_parallel_iter_batched<T, F>(
     source: TreeSource,
     ordered: bool,
@@ -339,12 +316,9 @@ where
     rx.into_iter().flatten()
 }
 
-/// Source of trees for a collection
 #[derive(Debug, Clone)]
 enum TreeSource {
-    /// In-memory CoNLL-U text
     String(String),
-    /// Multiple file paths (from glob or explicit path(s))
     Files(Vec<PathBuf>),
 }
 
@@ -923,7 +897,6 @@ mod tests {
 
             let results: Vec<_> = Treebank::from_paths(paths).trees(true).collect();
 
-            // Should get 2 Ok results and 1 Err result
             assert_eq!(results.len(), 3);
             assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 2);
             assert_eq!(results.iter().filter(|r| r.is_err()).count(), 1);
@@ -1032,7 +1005,6 @@ mod tests {
                 .filter_map(Result::ok)
                 .collect();
 
-            // Should get all matches, order doesn't matter
             assert_eq!(results.len(), 2);
         }
     }
