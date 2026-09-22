@@ -93,19 +93,29 @@ pub enum TreebankError {
     },
 }
 
+/// Shared progress counters and cancellation flag for a running search.
+///
+/// Create one, pass a clone of the `Arc` to [`Treebank::search_with`], and poll
+/// the counters from another thread (e.g. a UI). Calling [`cancel`](Self::cancel)
+/// makes the workers stop at the next tree boundary.
 #[derive(Debug, Default)]
 pub struct Progress {
+    /// Number of files to process (set when the search starts)
     pub files_total: AtomicUsize,
+    /// Number of files fully processed
     pub files_done: AtomicUsize,
+    /// Number of trees processed so far
     pub trees: AtomicUsize,
     cancelled: AtomicBool,
 }
 
 impl Progress {
+    /// Request that the search stop as soon as possible.
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::Relaxed);
     }
 
+    /// Whether [`cancel`](Self::cancel) has been called.
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Relaxed)
     }
