@@ -23,7 +23,7 @@ jobs:
         run: |
           set -euo pipefail
           cargo_version=$(cargo metadata --no-deps --format-version 1 \
-            | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')
+            | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "treesearch-ud"))')
           tag_version=${GITHUB_REF_NAME#v}
           echo "Cargo.toml: $cargo_version / tag: $tag_version"
           if [ "$cargo_version" != "$tag_version" ]; then
