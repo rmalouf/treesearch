@@ -5,7 +5,7 @@ import treesearch
 import polars as pl
 import time
 
-PATH = "/Volumes/Corpora/CCOHA/conllu/*.conllu.gz"
+PATH = "/Volumes/Corpora/CCOHA/conllu/*.conllu.zst"
 
 VERB_QUERY = """
 MATCH {
