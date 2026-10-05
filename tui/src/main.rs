@@ -6,7 +6,9 @@
 //! and the dependency tree of the selected hit. Re-running cancels the previous
 //! search; only the first `MAX_HITS` hits are kept, the rest are counted.
 
+use std::io::Write as _;
 use std::path::PathBuf;
+use std::process::{Command, Stdio};
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -64,6 +66,8 @@ struct App {
     search: Option<Search>,
     focus: Focus,
     selected: usize,
+    /// Index of the hit on the top row of the hits pane.
+    hits_offset: usize,
     tree_scroll: u16,
     status: Option<String>,
 }
@@ -91,6 +95,7 @@ fn main() -> io::Result<()> {
         search: None,
         focus: Focus::Query,
         selected: 0,
+        hits_offset: 0,
         tree_scroll: 0,
         status: None,
     };
@@ -146,12 +151,14 @@ impl App {
                 Focus::Hits => match key.code {
                     KeyCode::Char('q') => return false,
                     KeyCode::Enter => self.focus = Focus::Tree,
+                    KeyCode::Char('y') => self.copy_sentence(),
                     code => self.move_selection(code),
                 },
                 Focus::Tree => match key.code {
                     KeyCode::Char('q') => return false,
                     KeyCode::Char('n') => self.move_selection(KeyCode::Down),
                     KeyCode::Char('p') => self.move_selection(KeyCode::Up),
+                    KeyCode::Char('y') => self.copy_sentence(),
                     code => self.scroll_tree(code),
                 },
             },
@@ -252,6 +259,22 @@ impl App {
         self.focus = Focus::Hits;
     }
 
+    /// Copies the selected hit's sentence to the clipboard.
+    fn copy_sentence(&mut self) {
+        let text = {
+            let Some(s) = &self.search else { return };
+            let r = s.results.lock().unwrap();
+            let Some(m) = r.hits.get(self.selected) else {
+                return;
+            };
+            sentence(&m.tree)
+        };
+        self.status = Some(match copy_to_clipboard(&text) {
+            Ok(()) => "copied sentence".into(),
+            Err(e) => format!("copy failed: {e}"),
+        });
+    }
+
     fn save_query(&mut self) {
         let Some(path) = &self.query_path else {
             self.status = Some("no query file given on the command line".into());
@@ -268,12 +291,8 @@ impl App {
     fn draw(&mut self, frame: &mut Frame) {
         let [main, status] =
             Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(frame.area());
-        let query_lines = self.editor.lines().len() as u16;
-        // Puts the query on top of `area`, sized to fit.
-        let under_query = |area: Rect| -> [Rect; 2] {
-            let h = (query_lines + 1).clamp(2, area.height * 2 / 5);
-            Layout::vertical([Constraint::Length(h), Constraint::Fill(1)]).areas(area)
-        };
+        // The query always gets the same share of the height, however long it is.
+        let query_height = Constraint::Percentage(40);
         // Wide: query over tree on the left, hits full height on the right.
         let (query, hits, tree) = if main.width >= WIDE_LAYOUT {
             let halves = [Constraint::Percentage(50), Constraint::Percentage(50)];
@@ -281,12 +300,13 @@ impl App {
             let rule = Block::default().borders(Borders::LEFT);
             let hits = rule.inner(right);
             frame.render_widget(rule, right);
-            let [query, tree] = under_query(left);
+            let [query, tree] =
+                Layout::vertical([query_height, Constraint::Fill(1)]).areas(left);
             (query, hits, tree)
         } else {
-            let [top, tree] =
-                Layout::vertical([Constraint::Fill(3), Constraint::Fill(2)]).areas(main);
-            let [query, hits] = under_query(top);
+            let [query, hits, tree] =
+                Layout::vertical([query_height, Constraint::Fill(1), Constraint::Fill(1)])
+                    .areas(main);
             (query, hits, tree)
         };
         self.draw_query(frame, query);
@@ -328,7 +348,10 @@ impl App {
         let Some(search) = &self.search else { return };
         let results = search.results.lock().unwrap();
         let height = inner.height as usize;
-        let offset = self.selected.saturating_sub(height.saturating_sub(1));
+        // Scroll only as far as needed to keep the selection on screen.
+        let lowest = self.selected.saturating_sub(height.saturating_sub(1));
+        self.hits_offset = self.hits_offset.max(lowest).min(self.selected);
+        let offset = self.hits_offset;
         let rows: Vec<Line> = results
             .hits
             .iter()
@@ -389,7 +412,7 @@ impl App {
             }
             parts.push(t);
         }
-        parts.push("^R run · ^C stop · ^S save · Tab focus · n/p next/prev hit · ^Q quit".into());
+        parts.push("^R run · ^C stop · ^S save · Tab focus · n/p next/prev hit · y copy sentence · ^Q quit".into());
         Line::from(parts.join("  |  "))
     }
 }
@@ -422,6 +445,49 @@ fn word_style(m: &Match, vars: &[String], id: WordId) -> Style {
 
 fn form(tree: &Tree, id: WordId) -> String {
     String::from_utf8_lossy(&tree.string_pool.resolve(tree.words[id].form)).into_owned()
+}
+
+/// The sentence as written, or its forms joined by spaces if the tree has no `text` line.
+fn sentence(tree: &Tree) -> String {
+    tree.sentence_text.clone().unwrap_or_else(|| {
+        let forms: Vec<String> = (0..tree.words.len()).map(|i| form(tree, i)).collect();
+        forms.join(" ")
+    })
+}
+
+/// Puts `text` on the system clipboard: `pbcopy` when running locally on macOS,
+/// otherwise the OSC 52 escape, which the terminal handles (and so works over ssh).
+fn copy_to_clipboard(text: &str) -> io::Result<()> {
+    if env::var_os("SSH_TTY").is_none()
+        && let Ok(mut child) = Command::new("pbcopy").stdin(Stdio::piped()).spawn()
+    {
+        child.stdin.take().unwrap().write_all(text.as_bytes())?;
+        child.wait()?;
+        return Ok(());
+    }
+    let mut out = io::stdout();
+    write!(out, "\x1b]52;c;{}\x07", base64(text.as_bytes()))?;
+    out.flush()
+}
+
+fn base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] =
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for chunk in bytes.chunks(3) {
+        let n = chunk
+            .iter()
+            .fold(0u32, |n, &b| n << 8 | b as u32)
+            << (8 * (3 - chunk.len()));
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(ALPHABET[(n >> (18 - 6 * i)) as usize & 63] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
 }
 
 fn pad(s: &str, width: usize) -> String {
@@ -538,4 +604,17 @@ fn tree_lines(m: &Match, vars: &[String], width: usize) -> Vec<Line<'static>> {
         lines.push(Line::from(line));
     }
     lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::base64;
+
+    #[test]
+    fn base64_pads_short_chunks() {
+        assert_eq!(base64(b""), "");
+        assert_eq!(base64(b"f"), "Zg==");
+        assert_eq!(base64(b"fo"), "Zm8=");
+        assert_eq!(base64(b"foobar"), "Zm9vYmFy");
+    }
 }
