@@ -25,9 +25,11 @@ labeled_edge = { "-[" ~ edge_label ~ "]->" }
 neg_unlabeled_edge = { "!->" }
 unlabeled_edge = { "->" }
 
-// Precedence declarations: Node1 ( << | <) Node2;
+// Precedence declarations: Node1 ( << | <n< | <) Node2;
 precedence_decl = { ident ~ precedence_op ~ ident ~ ";"? }
-precedence_op = { "<<" | "<" }
+precedence_op = { "<<" | within_op | "<" }
+within_op = ${ "<" ~ distance ~ "<" }
+distance = @{ ASCII_DIGIT+ }
 
 // Constraint list (can be empty)
 constraint_list = { or_constraint? }

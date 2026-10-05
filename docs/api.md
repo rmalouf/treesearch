@@ -183,6 +183,7 @@ MATCH {
     # Precedence
     V < N;                        # V immediately before N
     V << N;                       # V anywhere before N
+    V <3< N;                      # V at most 3 words before N
 }
 ```
 

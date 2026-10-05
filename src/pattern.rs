@@ -91,6 +91,8 @@ pub enum RelationType {
     Child,
     Precedes,
     ImmediatelyPrecedes,
+    /// Precedes by at most this many tokens (1 = immediately precedes)
+    PrecedesWithin(usize),
 }
 
 #[derive(Debug, Clone)]

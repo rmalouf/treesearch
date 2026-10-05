@@ -109,6 +109,9 @@ fn satisfies_arc_constraint(
         }
         RelationType::Precedes => from_word_id < to_word_id,
         RelationType::ImmediatelyPrecedes => to_word_id == from_word_id + 1,
+        RelationType::PrecedesWithin(n) => {
+            from_word_id < to_word_id && to_word_id - from_word_id <= n
+        }
     };
 
     if edge_constraint.negated {
@@ -677,6 +680,47 @@ mod tests {
         )
         .unwrap();
         assert_eq!(matches.len(), 0);
+    }
+
+    #[test]
+    fn test_precedes_within() {
+        // Tree: "helped" (0) "us" (1) "to" (2) "win" (3)
+        let tree = build_test_tree();
+        let query =
+            |n: usize| format!("MATCH {{ V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 <{n}< V2; }}");
+
+        // "helped" and "win" are 3 tokens apart: too far for <2<
+        let matches: Vec<_> = search_tree_query(tree.clone(), &query(2)).unwrap();
+        assert_eq!(matches.len(), 0);
+
+        // Distance is inclusive
+        let matches: Vec<_> = search_tree_query(tree.clone(), &query(3)).unwrap();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].bindings, hashmap! { "V1" => 0, "V2" => 3 });
+
+        // Larger windows (even beyond the sentence) still match
+        let matches: Vec<_> = search_tree_query(tree.clone(), &query(100)).unwrap();
+        assert_eq!(matches.len(), 1);
+
+        // Order matters: "win" does not precede "helped"
+        let matches: Vec<_> = search_tree_query(
+            tree.clone(),
+            "MATCH { V1 [lemma=\"win\"]; V2 [lemma=\"help\"]; V1 <3< V2; }",
+        )
+        .unwrap();
+        assert_eq!(matches.len(), 0);
+
+        // <1< is the same as <; a word is never within range of itself
+        let within: Vec<_> =
+            search_tree_query(tree.clone(), "MATCH { A []; B []; A <1< B; }").unwrap();
+        let adjacent: Vec<_> =
+            search_tree_query(tree.clone(), "MATCH { A []; B []; A < B; }").unwrap();
+        assert_eq!(within.len(), 3);
+        assert_eq!(within.len(), adjacent.len());
+
+        // All ordered pairs at distance 1 or 2: 3 + 2
+        let matches: Vec<_> = search_tree_query(tree, "MATCH { A []; B []; A <2< B; }").unwrap();
+        assert_eq!(matches.len(), 5);
     }
 
     #[test]

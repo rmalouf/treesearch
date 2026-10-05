@@ -610,6 +610,18 @@ class TestEdgeTypes:
         matches = list(tb.search('MATCH { A [form="to"]; B [form="win"]; A < B; }'))
         assert len(matches) == 1
 
+    def test_precedence_within(self, sample_conllu):
+        """<n< proximity precedence constraint."""
+        tb = treesearch.Treebank.from_string(sample_conllu)
+        query = 'MATCH {{ A [form="He"]; B [form="win"]; A <{}< B; }}'
+        assert len(list(tb.search(query.format(3)))) == 0
+        assert len(list(tb.search(query.format(4)))) == 1
+
+    def test_precedence_within_invalid_distance(self):
+        """<0< is rejected."""
+        with pytest.raises(ValueError):
+            treesearch.compile_query("MATCH { A []; B []; A <0< B; }")
+
 
 # ==============================================================================
 # EXCEPT and OPTIONAL Tests - Python API

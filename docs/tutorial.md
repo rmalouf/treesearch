@@ -120,6 +120,9 @@ Use `/pattern/` for regex matching (automatically anchored for full-string match
 
 # V precedes N (anywhere before)
 'MATCH { V []; N []; V << N; }'
+
+# V precedes N by at most 3 words
+'MATCH { V []; N []; V <3< N; }'
 ```
 
 ### Anonymous Variables

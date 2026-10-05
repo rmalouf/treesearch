@@ -18,7 +18,7 @@ A query has exactly one `MATCH` block, followed by any number of `EXCEPT` and `O
 
 - **Node declarations**: `Name [constraints];`
 - **Edge constraints**: `Parent -[label]-> Child;`
-- **Precedence constraints**: `A < B;` or `A << B;`
+- **Precedence constraints**: `A < B;`, `A << B;`, or `A <3< B;`
 
 Trailing semicolons are optional. Statements may appear in any order.
 
@@ -142,6 +142,9 @@ Each `_` is independent of the other variables, and the AllDifferent rule doesn'
 |--------|---------|
 | `A < B` | A immediately precedes B |
 | `A << B` | A precedes B (anywhere earlier in the sentence) |
+| `A <n< B` | A precedes B by at most *n* words (`A <3< B`: B is one of the three words after A) |
+
+`A <1< B` is the same as `A < B`. The distance must be a positive integer, written with no spaces inside the operator.
 
 Precedence uses the order of syntactic words. Multiword token lines (`1-2`) are ignored.
 

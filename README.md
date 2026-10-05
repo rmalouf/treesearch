@@ -93,7 +93,7 @@ MATCH {
 
 **Edge constraints**: `->` (child), `-[label]->` (labeled edge), `-/regex/->` (regex edge), `!->` (negative), `!-[label]->` (negative labeled), `!-/regex/->` (negative regex)
 
-**Precedence**: `<` (immediately precedes), `<<` (precedes)
+**Precedence**: `<` (immediately precedes), `<<` (precedes), `<n<` (precedes within *n* words, e.g. `<3<`)
 
 **EXCEPT blocks**: Reject matches where a condition is true (negative existential)
 

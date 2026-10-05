@@ -43,6 +43,9 @@ pub enum QueryError {
 
     #[error("Query error: Invalid regex pattern '{0}': {1}")]
     InvalidRegex(String, String),
+
+    #[error("Query error: Invalid distance '{0}' in '<{0}<': must be a positive integer")]
+    InvalidDistance(String),
 }
 
 pub fn compile_query(input: &str) -> Result<Pattern, QueryError> {
@@ -319,13 +322,26 @@ fn compile_precedence_constraint(pair: Pair<Rule>) -> Result<EdgeConstraint, Que
     let mut inner = pair.into_inner();
 
     let from = inner.next().unwrap().as_str().to_string();
-    let operator = inner.next().unwrap().as_str();
+    let operator = inner.next().unwrap();
     let to = inner.next().unwrap().as_str().to_string();
 
-    let relation = match operator {
+    let relation = match operator.as_str() {
         "<<" => RelationType::Precedes,
         "<" => RelationType::ImmediatelyPrecedes,
-        _ => unreachable!(),
+        _ => {
+            // within_op: <n<
+            let distance = operator
+                .into_inner()
+                .next()
+                .unwrap()
+                .into_inner()
+                .next()
+                .unwrap();
+            match distance.as_str().parse::<usize>() {
+                Ok(n) if n > 0 => RelationType::PrecedesWithin(n),
+                _ => return Err(QueryError::InvalidDistance(distance.as_str().to_string())),
+            }
+        }
     };
 
     Ok(EdgeConstraint {
@@ -649,6 +665,48 @@ mod tests {
         assert_eq!(edge_constraint.to, "Noun");
         assert_eq!(edge_constraint.relation, RelationType::ImmediatelyPrecedes);
         assert_eq!(edge_constraint.label, None);
+    }
+
+    #[test]
+    fn test_parse_precedes_within() {
+        // Test <n< (precedes within n tokens) operator
+        let query = r#"MATCH {
+            Adj [upos="ADJ"];
+            Noun [upos="NOUN"];
+            Adj <3< Noun;
+        }"#;
+        let pattern = compile_query(query).unwrap();
+
+        let edge_constraint = &pattern.match_pattern.edge_constraints[0];
+        assert_eq!(edge_constraint.from, "Adj");
+        assert_eq!(edge_constraint.to, "Noun");
+        assert_eq!(edge_constraint.relation, RelationType::PrecedesWithin(3));
+        assert_eq!(edge_constraint.label, None);
+
+        // Multi-digit distances, no surrounding whitespace
+        let pattern = compile_query("MATCH { A []; B []; A<12<B; }").unwrap();
+        assert_eq!(
+            pattern.match_pattern.edge_constraints[0].relation,
+            RelationType::PrecedesWithin(12)
+        );
+    }
+
+    #[test]
+    fn test_parse_precedes_within_invalid() {
+        // Zero distance can never match
+        assert!(matches!(
+            compile_query("MATCH { A []; B []; A <0< B; }"),
+            Err(QueryError::InvalidDistance(_))
+        ));
+        // Distance too large to represent
+        assert!(matches!(
+            compile_query("MATCH { A []; B []; A <99999999999999999999999< B; }"),
+            Err(QueryError::InvalidDistance(_))
+        ));
+        // No whitespace inside the operator
+        assert!(compile_query("MATCH { A []; B []; A < 3 < B; }").is_err());
+        // Distance must be a number
+        assert!(compile_query("MATCH { A []; B []; A <x< B; }").is_err());
     }
 
     #[test]
