@@ -189,7 +189,7 @@ jobs:
           set -euo pipefail
           uv venv
           uv pip install --find-links dist --no-index --no-deps treesearch-ud
-          uv pip install textual pytest
+          uv pip install pytest
           .venv/bin/python -c "import treesearch; print(treesearch.__version__)"
           .venv/bin/python -m pytest
 
