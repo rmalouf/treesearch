@@ -488,7 +488,7 @@ impl Treebank {
     }
 
     /// Like [`search`](Self::search), but reports progress to (and can be
-    /// cancelled through) a shared [`Progress`].
+    /// canceled through) a shared [`Progress`].
     pub fn search_with<Q: IntoPattern>(
         self,
         query: Q,
