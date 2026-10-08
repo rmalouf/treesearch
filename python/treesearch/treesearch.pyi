@@ -1,6 +1,8 @@
 """Type stubs for treesearch PyO3 extension module."""
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
+from os import PathLike
+from typing import Any
 
 class Tree:
     """Represents a dependency tree."""
@@ -27,24 +29,37 @@ class Tree:
         """
 
     def __getitem__(self, id: int) -> Word:
-        """Get word by ID using indexing syntax.
-
-        Args:
-            id: Word ID (0-based)
-
-        Returns:
-            Word object
+        """Get word by position; negative positions count from the end.
 
         Raises:
-            IndexError: If ID is out of bounds
+            IndexError: If position is out of bounds
         """
 
     def __len__(self) -> int:
         """Number of words in tree."""
 
-class Word:
-    """Represents a single word/token in a dependency tree."""
+    def __iter__(self) -> Iterator[Word]: ...
+    def to_displacy(self) -> dict[str, list[dict[str, Any]]]:
+        """Convert to displaCy's manual rendering format ('words' and 'arcs' keys)."""
 
+    def render(self, **options: Any) -> str:
+        """Render as an SVG dependency visualization using displaCy.
+
+        Args:
+            **options: Additional options passed to displacy.render()
+
+        Raises:
+            ImportError: If spaCy is not installed
+        """
+
+class Word:
+    """Represents a single word/token in a dependency tree.
+
+    Two words are equal when they are the same word of the same Tree object.
+    """
+
+    def __eq__(self, other: object) -> bool: ...
+    def __hash__(self) -> int: ...
     @property
     def id(self) -> int:
         """Word ID (0-based index in tree)."""
@@ -130,25 +145,39 @@ class Treebank:
         """
 
     @classmethod
-    def from_file(cls, file_path: str) -> Treebank:
+    def from_file(cls, file_path: str | PathLike[str]) -> Treebank:
         """Create treebank from single CoNLL-U file.
 
         Args:
-            file_path: Path to CoNLL-U file (supports .conllu and .conllu.gz)
+            file_path: Path to CoNLL-U file (plain, .gz, or .zst)
 
         Returns:
             Treebank object
         """
 
     @classmethod
-    def from_files(cls, file_paths: list[str]) -> Treebank:
-        """Create treebank from multiple CoNLL-U files.
+    def from_files(cls, file_paths: list[str | PathLike[str]]) -> Treebank:
+        """Create treebank from multiple CoNLL-U files, processed in the order given.
 
         Args:
             file_paths: List of paths to CoNLL-U files
 
         Returns:
             Treebank object
+        """
+
+    @classmethod
+    def from_glob(cls, pattern: str) -> Treebank:
+        """Create treebank from a glob pattern; matching files are sorted.
+
+        Args:
+            pattern: Glob pattern, e.g. "data/**/*.conllu.gz"
+
+        Returns:
+            Treebank object
+
+        Raises:
+            ValueError: If the glob pattern is malformed
         """
 
     def trees(self, ordered: bool = True) -> TreeIterator:
@@ -172,6 +201,18 @@ class Treebank:
 
         Returns:
             Iterator over (Tree, match_dict) tuples
+        """
+
+    def filter(self, pattern: Pattern | str, ordered: bool = True) -> TreeIterator:
+        """Iterate over trees that have at least one match for a pattern.
+
+        Args:
+            pattern: Compiled Pattern or query string
+            ordered: If True (default), return trees in deterministic order.
+                    If False, trees may arrive in any order for better performance.
+
+        Returns:
+            Iterator over Tree objects
         """
 
 class TreeIterator(Iterator[Tree]):
@@ -199,39 +240,13 @@ def compile_query(query: str) -> Pattern:
         ValueError: If query syntax is invalid
     """
 
-def py_search_trees(trees: list[Tree], pattern: Pattern | str) -> MatchIterator:
-    """Search a list of trees for pattern matches.
+def search_trees(source: Tree | Iterable[Tree], query: Pattern | str) -> MatchIterator:
+    """Search a tree or an iterable of trees for pattern matches.
 
     Args:
-        trees: List of trees to search
-        pattern: Compiled Pattern or query string
+        source: Single Tree or iterable of Trees
+        query: Compiled Pattern or query string
 
     Returns:
         Iterator over (Tree, match_dict) tuples from all trees
-    """
-
-def to_displacy(tree: Tree) -> dict[str, list]:
-    """Convert a Tree to displaCy's manual rendering format.
-
-    Args:
-        tree: A Tree object to convert
-
-    Returns:
-        Dictionary with 'words' and 'arcs' keys for displaCy rendering
-    """
-
-def render(tree: Tree, **options) -> str:
-    """Render a Tree as an SVG dependency visualization using displaCy.
-
-    Requires spaCy to be installed.
-
-    Args:
-        tree: A Tree object to render
-        **options: Additional options passed to displacy.render()
-
-    Returns:
-        SVG markup string
-
-    Raises:
-        ImportError: If spaCy is not installed
     """

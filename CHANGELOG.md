@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Proximity precedence operator `A <n< B`: A precedes B by at most *n* words (e.g. `V <3< N`)
+- Python: `Treebank.from_glob()`; `from_file()` and `from_files()` accept `pathlib.Path`
+- Python: `Word` equality and hashing; `tree[-1]` indexes from the end
+
+### Changed
+- Python `load()` treats a string without glob characters as a literal path, so a missing file raises `OSError` on iteration instead of giving an empty treebank
+- Python `load()` sorts glob matches (as the Rust API already did), expands glob patterns given as `Path`, and rejects `bytes`
 
 ## [0.3.0] - 2026-09-23
 

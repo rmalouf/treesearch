@@ -10,6 +10,7 @@ Algorithm correctness is tested in the Rust test suite.
 """
 
 import gzip
+from pathlib import Path
 
 import pytest
 import treesearch
@@ -197,6 +198,20 @@ class TestTreeProperties:
         tree = next(iter(treesearch.Treebank.from_string(sample_conllu).trees()))
         assert "<Tree len=6" in repr(tree)
 
+    def test_negative_index(self, sample_conllu):
+        """tree[-1] counts from the end; tree.word() takes only word IDs."""
+        tree = next(iter(treesearch.Treebank.from_string(sample_conllu).trees()))
+        assert tree[-1].id == 5
+        with pytest.raises(IndexError):
+            tree[-7]
+        with pytest.raises(IndexError):
+            tree.word(-1)
+
+    def test_iter(self, sample_conllu):
+        """Iterating a tree yields its words in order."""
+        tree = next(iter(treesearch.Treebank.from_string(sample_conllu).trees()))
+        assert [w.id for w in tree] == list(range(6))
+
     def test_getitem(self, sample_conllu):
         """tree[i] returns word by index."""
         tree = next(iter(treesearch.Treebank.from_string(sample_conllu).trees()))
@@ -303,6 +318,14 @@ class TestWordNavigation:
     @pytest.fixture
     def tree(self, sample_conllu):
         return next(iter(treesearch.Treebank.from_string(sample_conllu).trees()))
+
+    def test_equality(self, tree):
+        """Words are equal (and hash alike) when they are the same word of the same tree."""
+        verb = tree.word(1)
+        assert tree.word(0).parent() == verb
+        assert tree.word(0) != verb
+        assert verb != 1
+        assert len({verb, tree[1], tree.word(0)}) == 2
 
     def test_parent(self, tree):
         """word.parent() returns parent Word."""
@@ -429,6 +452,18 @@ class TestSearch:
         matches = list(treesearch.search_trees(trees, 'MATCH { V [upos="VERB"]; }'))
         assert len(matches) == 2  # One verb per tree
 
+    def test_search_trees_with_iterator(self, multi_tree_conllu):
+        """search_trees works on any iterable of trees, returning the same Tree objects."""
+        trees = list(treesearch.from_string(multi_tree_conllu).trees())
+        matches = list(treesearch.search_trees(iter(trees), 'MATCH { V [upos="VERB"]; }'))
+        assert len(matches) == 2
+        assert matches[0][0].word(0) == trees[0].word(0)
+
+    def test_search_trees_rejects_non_trees(self):
+        """search_trees raises TypeError for non-Tree items."""
+        with pytest.raises(TypeError):
+            treesearch.search_trees([1, 2], 'MATCH { V [upos="VERB"]; }')
+
 
 # ==============================================================================
 # Filter Tests
@@ -510,6 +545,46 @@ class TestMultiFile:
         """Glob that matches no files returns empty."""
         results = list(treesearch.load(f"{tmp_path}/nonexistent/*.conllu").trees())
         assert len(results) == 0
+
+    def test_load_missing_file_raises(self, tmp_path):
+        """A literal path (no glob characters) to a missing file raises OSError."""
+        with pytest.raises(OSError, match="Failed to open file"):
+            list(treesearch.load(f"{tmp_path}/missing.conllu").trees())
+
+    def test_load_glob_sorted(self, multi_tree_conllu, tmp_path):
+        """Glob matches are processed in sorted order."""
+        for name in ["c", "a", "b"]:
+            text = multi_tree_conllu.replace("# text = ", f"# text = {name} ")
+            (tmp_path / f"{name}.conllu").write_text(text)
+        texts = [t.sentence_text for t in treesearch.load(f"{tmp_path}/*.conllu").trees()]
+        assert [t[0] for t in texts] == ["a", "a", "b", "b", "c", "c"]
+
+    def test_load_path_glob(self, temp_multi_files):
+        """load() expands glob patterns given as Path objects."""
+        tmpdir, _ = temp_multi_files
+        assert len(list(treesearch.load(Path(tmpdir) / "*.conllu").trees())) == 6
+
+    def test_load_paths(self, temp_multi_files):
+        """load() and from_files() accept iterables of str or Path."""
+        _, paths = temp_multi_files
+        assert len(list(treesearch.load(Path(p) for p in paths).trees())) == 6
+        assert len(list(treesearch.Treebank.from_files([Path(p) for p in paths]).trees())) == 6
+
+    def test_from_glob(self, temp_multi_files):
+        """Treebank.from_glob() loads matching files."""
+        tmpdir, _ = temp_multi_files
+        assert len(list(treesearch.Treebank.from_glob(f"{tmpdir}/*.conllu").trees())) == 6
+
+    def test_invalid_glob_raises(self):
+        """Malformed glob pattern raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid glob pattern"):
+            treesearch.load("data/[.conllu")
+
+    @pytest.mark.parametrize("source", [b"corpus.conllu", 3, None])
+    def test_load_bad_type_raises(self, source):
+        """load() rejects sources that are not paths or iterables of paths."""
+        with pytest.raises(TypeError):
+            treesearch.load(source)
 
 
 # ==============================================================================

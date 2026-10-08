@@ -21,5 +21,8 @@ pub use conllu::TreeIterator;
 pub use iterators::{IntoPattern, Progress, Treebank, TreebankError, load};
 pub use pattern::{Constraint, EdgeConstraint, Pattern, PatternVar, RelationType, VarId};
 pub use query::{QueryError, compile_query};
-pub use searcher::{Match, find_all_matches, search_tree, search_tree_query, tree_matches};
+pub use searcher::{
+    Bindings, Match, find_all_bindings, find_all_matches, search_tree, search_tree_query,
+    tree_matches,
+};
 pub use tree::{Features, TokenId, Tree, Word, WordId};

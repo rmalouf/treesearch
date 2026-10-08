@@ -221,27 +221,39 @@ fn solve_with_bindings(
     )
 }
 
+/// Find all matches of a pattern in a tree
 pub fn find_all_matches(tree: Tree, pattern: &Pattern) -> Vec<Match> {
-    find_matches_impl(tree, pattern, false)
+    let tree = Arc::new(tree);
+    find_bindings(&tree, pattern, false)
+        .into_iter()
+        .map(|bindings| Match {
+            tree: Arc::clone(&tree),
+            bindings,
+        })
+        .collect()
+}
+
+/// Find the bindings of all matches of a pattern in a borrowed tree
+pub fn find_all_bindings(tree: &Tree, pattern: &Pattern) -> Vec<Bindings> {
+    find_bindings(tree, pattern, false)
 }
 
 /// Check if a tree has at least one match
 pub fn tree_matches(tree: &Tree, pattern: &Pattern) -> bool {
-    !find_matches_impl(tree.clone(), pattern, true).is_empty()
+    !find_bindings(tree, pattern, true).is_empty()
 }
 
-fn find_matches_impl(tree: Tree, pattern: &Pattern, first_only: bool) -> Vec<Match> {
-    let tree = Arc::new(tree);
+fn find_bindings(tree: &Tree, pattern: &Pattern, first_only: bool) -> Vec<Bindings> {
     let empty_bindings = Bindings::new();
     let base_matches =
-        solve_with_bindings(&tree, &pattern.match_pattern, &empty_bindings, first_only);
+        solve_with_bindings(tree, &pattern.match_pattern, &empty_bindings, first_only);
 
     let mut results = Vec::new();
     for base_bindings in base_matches {
         let rejected = pattern
             .except_patterns
             .iter()
-            .any(|except| has_any_match(&tree, except, &base_bindings));
+            .any(|except| has_any_match(tree, except, &base_bindings));
 
         if rejected {
             continue;
@@ -249,22 +261,15 @@ fn find_matches_impl(tree: Tree, pattern: &Pattern, first_only: bool) -> Vec<Mat
 
         if first_only {
             // Skip optionals for existence check - just return first valid match
-            results.push(Match {
-                tree: Arc::clone(&tree),
-                bindings: base_bindings,
-            });
+            results.push(base_bindings);
             return results;
         }
 
-        let extended_solutions =
-            process_optionals(&tree, base_bindings, &pattern.optional_patterns);
-
-        for bindings in extended_solutions {
-            results.push(Match {
-                tree: Arc::clone(&tree),
-                bindings,
-            });
-        }
+        results.extend(process_optionals(
+            tree,
+            base_bindings,
+            &pattern.optional_patterns,
+        ));
     }
 
     results

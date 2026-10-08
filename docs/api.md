@@ -2,14 +2,17 @@
 
 ## Functions
 
-### load(path) → Treebank
+### load(source) → Treebank
 
-Load a treebank from file(s). Accepts single files or glob patterns.
+Load a treebank from a file, a glob pattern, or an iterable of file paths. Paths may be `str` or `pathlib.Path`.
 
 ```python
 tb = ts.load("corpus.conllu")
 tb = ts.load("data/**/*.conllu.gz")
+tb = ts.load(["a.conllu", "b.conllu"])
 ```
+
+A source containing `*`, `?`, or `[` is expanded as a glob pattern; matching files are sorted, so results are reproducible. Anything else is a literal file path. Files are opened lazily: a missing file raises `OSError` when the treebank is iterated, while a glob that matches nothing gives an empty treebank. Raises `ValueError` for a malformed glob pattern and `TypeError` for other kinds of source.
 
 ### from_string(text) → Treebank
 
@@ -48,9 +51,9 @@ for tree, match in ts.search("corpus.conllu", 'MATCH { V [upos="VERB"]; }'):
     verb = tree.word(match["V"])
 ```
 
-### search_trees(trees, query) → Iterator[tuple[Tree, dict]]
+### search_trees(source, query) → Iterator[tuple[Tree, dict]]
 
-Search Tree object(s) for pattern matches.
+Search a single Tree or any iterable of Trees for pattern matches.
 
 ```python
 tree = next(ts.trees("corpus.conllu"))
@@ -60,7 +63,7 @@ for tree, match in ts.search_trees(tree, pattern):
 
 ### to_displacy(tree) → dict
 
-Convert a Tree to displaCy format for visualization.
+Convert a Tree to displaCy format for visualization. Same as `tree.to_displacy()`.
 
 ```python
 data = ts.to_displacy(tree)
@@ -69,7 +72,7 @@ data = ts.to_displacy(tree)
 
 ### render(tree, **options) → str
 
-Render a Tree as SVG using displaCy. Requires spaCy (`pip install treesearch-ud[viz]`).
+Render a Tree as SVG using displaCy. Same as `tree.render(**options)`. Requires spaCy (`pip install treesearch-ud[viz]`); raises `ImportError` without it. Options are passed on to `displacy.render()`.
 
 ```python
 svg = ts.render(tree)
@@ -78,7 +81,16 @@ ts.render(tree, jupyter=True)  # Display in Jupyter
 
 ## Treebank
 
-Collection of trees from one or more files.
+Collection of trees from one or more files. Creating a treebank does no I/O; files are read each time it is iterated, so a treebank can be iterated any number of times.
+
+### Constructors
+
+- `Treebank.from_file(file_path) → Treebank` - A single file
+- `Treebank.from_files(file_paths) → Treebank` - A list of files, processed in the order given
+- `Treebank.from_glob(pattern) → Treebank` - A glob pattern; matching files are sorted. Raises `ValueError` if the pattern is malformed
+- `Treebank.from_string(text) → Treebank` - A CoNLL-U string
+
+Paths may be `str` or `pathlib.Path`. `load()` picks between these for you.
 
 ### treebank.trees(ordered=True) → Iterator[Tree]
 
@@ -118,8 +130,9 @@ A dependency tree (parsed sentence).
 ### Methods
 
 - `tree.word(id) → Word` - Get word by ID (0-indexed). Raises `IndexError` if out of range.
-- `tree[id] → Word` - Same as `word(id)`
+- `tree[i] → Word` - Same as `word(i)`, except that negative positions count from the end (`tree[-1]` is the last word)
 - `len(tree) → int` - Number of words
+- `for word in tree` - Iterate over the words in order
 - `tree.to_displacy() → dict` - Convert to displaCy format
 - `tree.render(**options) → str` - Render as SVG (requires spaCy)
 
@@ -140,6 +153,7 @@ A single word in a tree.
 | `deprel` | `str` | Dependency relation |
 | `head` | `int \| None` | Parent word ID (None for root) |
 | `children_ids` | `list[int]` | Child word IDs |
+| `descendant_ids` | `list[int]` | IDs of all transitive dependents |
 | `feats` | `dict[str, str]` | Morphological features |
 | `misc` | `dict[str, str]` | Miscellaneous annotations |
 
@@ -148,6 +162,18 @@ A single word in a tree.
 - `word.parent() → Word | None` - Get parent word
 - `word.children() → list[Word]` - Get all children
 - `word.children_by_deprel(deprel) → list[Word]` - Get children with specific relation
+- `word.descendants() → list[Word]` - Get all transitive dependents (children, grandchildren, etc.)
+
+Words compare equal (and hash alike) when they are the same word of the same `Tree` object, so `word.parent() == tree.word(match["V"])` works. Trees read in separate passes over a file are distinct objects.
+
+## Errors
+
+| Exception | Raised when |
+|-----------|-------------|
+| `ValueError` | Invalid query (`compile_query()`, or a query string passed to a search function); malformed glob pattern; invalid CoNLL-U (during iteration) |
+| `OSError` | A file cannot be opened (during iteration) |
+| `IndexError` | Word ID out of range |
+| `TypeError` | `load()` or `search_trees()` given an unsupported source |
 
 ## Pattern
 

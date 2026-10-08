@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import glob
+import os
 from collections.abc import Iterable
 from importlib.metadata import version
-from pathlib import Path
 
 __version__ = version("treesearch-ud")
 
@@ -18,7 +17,7 @@ try:
         TreeIterator,
         Word,
         compile_query,
-        py_search_trees,
+        search_trees,
     )
 except ImportError:
     import sys
@@ -49,21 +48,28 @@ __all__ = [
 ]
 
 
-def load(source: str | Path | Iterable[str | Path]) -> Treebank:
-    """Open a treebank from a file or glob pattern.
+type Source = str | os.PathLike[str] | Iterable[str | os.PathLike[str]]
 
-    Automatically detects whether the path is a glob pattern (contains * or ?)
-    and uses the appropriate method to create a Treebank.
+_GLOB_CHARS = frozenset("*?[")
+
+
+def load(source: Source) -> Treebank:
+    """Open a treebank from a file, a glob pattern, or a collection of files.
+
+    A str or path containing glob characters (``*``, ``?``, ``[``) is expanded
+    as a glob pattern, with matching files sorted so results are deterministic.
+    Anything else is taken as a literal file path. Files are opened lazily, so
+    a missing file raises OSError when the treebank is iterated.
 
     Args:
-        source: Path to a CoNLL-U file or glob pattern (str or pathlib.Path)
-              e.g., "data/*.conllu" or Path("corpus.conllu")
+        source: Path to a CoNLL-U file, a glob pattern such as
+            "data/**/*.conllu.gz", or an iterable of file paths
 
     Returns:
         Treebank object
 
     Raises:
-        TypeError: If source is not a str, Path, or iterable of those
+        TypeError: If source is not a str, path, or iterable of those
         ValueError: If glob pattern is invalid
 
     Example:
@@ -73,17 +79,14 @@ def load(source: str | Path | Iterable[str | Path]) -> Treebank:
         >>> for tree in tb.trees():
         ...     print(tree.sentence_text)
     """
-
-    if isinstance(source, str):
-        paths = list(glob.glob(source, recursive=True))
-        return Treebank.from_files(paths)
-    elif isinstance(source, Path):
-        return Treebank.from_file(str(source))
-    elif isinstance(source, Iterable):
-        source_list = [str(path) for path in source]
-        return Treebank.from_files(source_list)
-    else:
-        raise TypeError("source must be str, Path, or Iterable[str | Path]")
+    if isinstance(source, (str, os.PathLike)):
+        path = os.fspath(source)
+        if _GLOB_CHARS.intersection(path):
+            return Treebank.from_glob(path)
+        return Treebank.from_file(path)
+    if isinstance(source, Iterable) and not isinstance(source, (bytes, bytearray)):
+        return Treebank.from_files(list(source))
+    raise TypeError("source must be str, os.PathLike[str], or an iterable of those")
 
 
 def from_string(text: str) -> Treebank:
@@ -108,11 +111,11 @@ def from_string(text: str) -> Treebank:
     return Treebank.from_string(text)
 
 
-def trees(source: str | Path | Iterable[str | Path], ordered: bool = True) -> TreeIterator:
+def trees(source: Source, ordered: bool = True) -> TreeIterator:
     """Read trees from one or more CoNLL-U files.
 
     Args:
-        source: Path to a single file or glob pattern
+        source: File path, glob pattern, or iterable of file paths
         ordered: If True (default), return trees in deterministic order
 
     Returns:
@@ -123,14 +126,14 @@ def trees(source: str | Path | Iterable[str | Path], ordered: bool = True) -> Tr
 
 
 def search(
-    source: str | Path | Iterable[str | Path],
+    source: Source,
     query: str | Pattern,
     ordered: bool = True,
 ) -> MatchIterator:
     """Search one or more files for pattern matches.
 
     Args:
-        source: Path to a single file or glob pattern
+        source: File path, glob pattern, or iterable of file paths
         query: Query string or compiled Pattern
         ordered: If True (default), return matches in deterministic order
 
@@ -141,34 +144,10 @@ def search(
     return treebank.search(query, ordered=ordered)
 
 
-def search_trees(
-    source: Tree | Iterable[Tree],
-    query: str | Pattern,
-) -> MatchIterator:
-    """Search a tree or list of trees for pattern matches.
-
-    Args:
-        source: Single Tree or iterable of Trees
-        query: Query string or compiled Pattern
-
-    Returns:
-        Iterator over (Tree, match_dict) tuples
-    """
-    if isinstance(source, Tree):
-        source = [source]
-    else:
-        source = list(source)
-    return py_search_trees(source, query)
-
-
-def to_displacy(tree: Tree) -> dict:
+def to_displacy(tree: Tree) -> dict[str, list]:
     """Convert a Tree to displaCy's manual rendering format.
 
-    Args:
-        tree: A Tree object to convert
-
-    Returns:
-        Dictionary in displaCy format with 'words' and 'arcs' keys
+    Same as ``tree.to_displacy()``.
 
     Example:
         >>> tree = next(treesearch.trees("corpus.conllu"))
@@ -176,53 +155,19 @@ def to_displacy(tree: Tree) -> dict:
         >>> from spacy import displacy
         >>> displacy.render(data, style="dep", manual=True)
     """
-    words = []
-    arcs = []
-
-    for i in range(len(tree)):
-        word = tree.word(i)
-        words.append({"text": word.form, "tag": word.upos})
-
-        if word.head is not None:
-            head_idx = word.head
-            dep_idx = word.id
-            if head_idx < dep_idx:
-                arcs.append(
-                    {
-                        "start": head_idx,
-                        "end": dep_idx,
-                        "label": word.deprel,
-                        "dir": "right",
-                    }
-                )
-            else:
-                arcs.append(
-                    {
-                        "start": dep_idx,
-                        "end": head_idx,
-                        "label": word.deprel,
-                        "dir": "left",
-                    }
-                )
-    return {"words": words, "arcs": arcs}
+    return tree.to_displacy()
 
 
 def render(tree: Tree, **options) -> str:
     """Render a Tree as an SVG dependency visualization using displaCy.
 
-    Requires spaCy to be installed.
+    Same as ``tree.render(**options)``. Requires spaCy
+    (``pip install treesearch-ud[viz]``).
 
     Args:
         tree: A Tree object to render
-        **options: Additional options passed to displacy.render()
-            Common options include:
-            - jupyter: bool - Return HTML for Jupyter display (default: auto-detect)
-            - compact: bool - Use compact visualization mode
-            - word_spacing: int - Spacing between words
-            - distance: int - Distance between dependency arcs
-
-    Returns:
-        SVG markup string (or displays in Jupyter if jupyter=True)
+        **options: Additional options passed to displacy.render(),
+            e.g. jupyter=True or options={"compact": True}
 
     Raises:
         ImportError: If spaCy is not installed
@@ -232,18 +177,5 @@ def render(tree: Tree, **options) -> str:
         >>> svg = treesearch.render(tree)
         >>> with open("tree.svg", "w") as f:
         ...     f.write(svg)
-
-        # In Jupyter notebook:
-        >>> treesearch.render(tree, jupyter=True)
     """
-    try:
-        from spacy import displacy
-    except ImportError:
-        raise ImportError("spaCy is required for rendering. Install it with: pip install spacy")
-
-    data = to_displacy(tree)
-    return displacy.render(data, style="dep", manual=True, **options)
-
-
-Tree.to_displacy = to_displacy
-Tree.render = render
+    return tree.render(**options)
