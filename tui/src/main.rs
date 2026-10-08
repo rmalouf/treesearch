@@ -300,8 +300,7 @@ impl App {
             let rule = Block::default().borders(Borders::LEFT);
             let hits = rule.inner(right);
             frame.render_widget(rule, right);
-            let [query, tree] =
-                Layout::vertical([query_height, Constraint::Fill(1)]).areas(left);
+            let [query, tree] = Layout::vertical([query_height, Constraint::Fill(1)]).areas(left);
             (query, hits, tree)
         } else {
             let [query, hits, tree] =
@@ -471,14 +470,10 @@ fn copy_to_clipboard(text: &str) -> io::Result<()> {
 }
 
 fn base64(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::new();
     for chunk in bytes.chunks(3) {
-        let n = chunk
-            .iter()
-            .fold(0u32, |n, &b| n << 8 | b as u32)
-            << (8 * (3 - chunk.len()));
+        let n = chunk.iter().fold(0u32, |n, &b| n << 8 | b as u32) << (8 * (3 - chunk.len()));
         for i in 0..4 {
             if i <= chunk.len() {
                 out.push(ALPHABET[(n >> (18 - 6 * i)) as usize & 63] as char);
