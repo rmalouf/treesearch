@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-08
+
 ### Added
 - Proximity precedence operator `A <n< B`: A precedes B by at most *n* words (e.g. `V <3< N`)
 - Python: `Treebank.from_glob()`; `from_file()` and `from_files()` accept `pathlib.Path`
@@ -67,7 +69,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Initial release.
 
-[Unreleased]: https://github.com/rmalouf/treesearch/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/rmalouf/treesearch/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/rmalouf/treesearch/releases/tag/v0.3.1
 [0.3.0]: https://github.com/rmalouf/treesearch/releases/tag/v0.3.0
 [0.2.1]: https://github.com/rmalouf/treesearch/releases/tag/v0.2.1
 [0.2.0]: https://github.com/rmalouf/treesearch/releases/tag/v0.2.0
