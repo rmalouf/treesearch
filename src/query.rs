@@ -5,6 +5,7 @@
 use pest::Parser;
 use pest::iterators::Pair;
 use pest_derive::Parser;
+use std::collections::HashSet;
 use thiserror::Error;
 
 use crate::pattern::{
@@ -70,8 +71,7 @@ pub fn compile_query(input: &str) -> Result<Pattern, QueryError> {
     }
 
     if let Some(match_pattern) = match_pattern {
-        // Validate that new variables in extension blocks are unique
-        validate_unique_extension_variables(&match_pattern, &except_patterns, &optional_patterns)?;
+        validate_variables(&match_pattern, &except_patterns, &optional_patterns)?;
         Ok(Pattern {
             match_pattern,
             except_patterns,
@@ -137,14 +137,12 @@ pub fn compile_query_block(
 }
 
 /// Validate that new variables in EXCEPT/OPTIONAL blocks are unique across all extension blocks
-fn validate_unique_extension_variables(
+fn validate_variables(
     match_pattern: &BasePattern,
     except_patterns: &[BasePattern],
     optional_patterns: &[BasePattern],
 ) -> Result<(), QueryError> {
-    use std::collections::HashSet;
-
-    let match_vars: HashSet<&String> = match_pattern.var_names.iter().collect();
+    let match_vars = &match_pattern.var_names;
     let mut seen_new_vars: HashSet<&String> = HashSet::new();
 
     for pattern in except_patterns.iter().chain(optional_patterns.iter()) {
