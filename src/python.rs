@@ -21,7 +21,6 @@ use crate::tree::{Tree as RustTree, Word as RustWord};
 impl From<TreebankError> for PyErr {
     fn from(err: TreebankError) -> PyErr {
         match err {
-            TreebankError::Io(e) => PyIOError::new_err(e.to_string()),
             TreebankError::Parse(e) => PyValueError::new_err(format!("Parse error: {}", e)),
             TreebankError::FileOpen { path, source } => PyIOError::new_err(format!(
                 "Failed to open file {}: {}",
