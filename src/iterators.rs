@@ -79,8 +79,12 @@ impl IntoPattern for String {
 
 #[derive(Debug, Error)]
 pub enum TreebankError {
-    #[error("Parse error: {0}")]
-    Parse(#[from] ParseError),
+    /// Invalid CoNLL-U; `path` is `None` when parsing from a string
+    #[error("{}{source}", .path.as_ref().map(|p| format!("{}: ", p.display())).unwrap_or_default())]
+    Parse {
+        path: Option<PathBuf>,
+        source: ParseError,
+    },
 
     #[error("Failed to open file {path}: {source}")]
     FileOpen {
@@ -134,6 +138,7 @@ type Batch<T> = Vec<Result<T, TreebankError>>;
 /// Stops early if the search is cancelled or `emit` returns `false`.
 fn process_trees<T, R>(
     trees: impl Iterator<Item = Result<Tree, ParseError>>,
+    path: Option<&Path>,
     process_tree: &impl Fn(Tree) -> R,
     progress: &Progress,
     mut emit: impl FnMut(Result<T, TreebankError>) -> bool,
@@ -153,8 +158,9 @@ fn process_trees<T, R>(
                     }
                 }
             }
-            Err(e) => {
-                if !emit(Err(e.into())) {
+            Err(source) => {
+                let path = path.map(Path::to_path_buf);
+                if !emit(Err(TreebankError::Parse { path, source })) {
                     return;
                 }
             }
@@ -165,6 +171,7 @@ fn process_trees<T, R>(
 /// Like [`process_trees`], sending the results over `tx` in batches of [`BATCH_SIZE`].
 fn send_trees_batched<T, R>(
     trees: impl Iterator<Item = Result<Tree, ParseError>>,
+    path: Option<&Path>,
     tx: &crossbeam_channel::Sender<Batch<T>>,
     process_tree: &impl Fn(Tree) -> R,
     progress: &Progress,
@@ -172,7 +179,7 @@ fn send_trees_batched<T, R>(
     R: IntoIterator<Item = T>,
 {
     let mut batch = Vec::with_capacity(BATCH_SIZE);
-    process_trees(trees, process_tree, progress, |item| {
+    process_trees(trees, path, process_tree, progress, |item| {
         batch.push(item);
         batch.len() < BATCH_SIZE
             || tx
@@ -215,7 +222,7 @@ fn process_files_ordered<T, R, F>(
             .map(|path| {
                 let mut results = Vec::new();
                 match TreeIterator::from_file(path) {
-                    Ok(trees) => process_trees(trees, process_tree, progress, |item| {
+                    Ok(trees) => process_trees(trees, Some(path), process_tree, progress, |item| {
                         results.push(item);
                         true
                     }),
@@ -250,7 +257,7 @@ fn process_files_unordered<T, R, F>(
             return;
         }
         match TreeIterator::from_file(path) {
-            Ok(trees) => send_trees_batched(trees, tx, process_tree, progress),
+            Ok(trees) => send_trees_batched(trees, Some(path), tx, process_tree, progress),
             Err(e) => {
                 let _ = tx.send(vec![Err(file_open_error(path, e))]);
             }
@@ -313,7 +320,7 @@ where
         match source {
             TreeSource::String(text) => {
                 let trees = TreeIterator::from_string(&text);
-                send_trees_batched(trees, &tx, &process_tree, progress);
+                send_trees_batched(trees, None, &tx, &process_tree, progress);
                 progress.files_done.fetch_add(1, Ordering::Relaxed);
             }
             TreeSource::Files(paths) if ordered => {
@@ -864,6 +871,25 @@ mod tests {
             assert_eq!(results.len(), 3);
             assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 2);
             assert_eq!(results.iter().filter(|r| r.is_err()).count(), 1);
+        }
+
+        #[test]
+        fn test_parse_error_names_file() {
+            let (_dir, paths) = create_test_files(&[
+                ("good.conllu", "1\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
+                ("bad.conllu", "1\truns\trun\tVERB\tVBZ\t_\tx\troot\t_\t_\n"),
+            ]);
+
+            for ordered in [true, false] {
+                let errors: Vec<_> = Treebank::from_paths(paths.clone())
+                    .trees(ordered)
+                    .filter_map(Result::err)
+                    .collect();
+
+                assert_eq!(errors.len(), 1);
+                let message = errors[0].to_string();
+                assert!(message.contains("bad.conllu: Parse error at line 1"));
+            }
         }
 
         #[test]

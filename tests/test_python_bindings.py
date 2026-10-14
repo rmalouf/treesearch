@@ -551,6 +551,13 @@ class TestMultiFile:
         with pytest.raises(OSError, match="Failed to open file"):
             list(treesearch.load(f"{tmp_path}/missing.conllu").trees())
 
+    def test_parse_error_names_file(self, tmp_path):
+        """Invalid CoNLL-U raises ValueError naming the offending file."""
+        path = tmp_path / "bad.conllu"
+        path.write_text("1\truns\trun\tVERB\tVBZ\t_\tx\troot\t_\t_\n")
+        with pytest.raises(ValueError, match=r"bad\.conllu: Parse error at line 1"):
+            list(treesearch.load(str(path)).trees())
+
     def test_load_glob_sorted(self, multi_tree_conllu, tmp_path):
         """Glob matches are processed in sorted order."""
         for name in ["c", "a", "b"]:

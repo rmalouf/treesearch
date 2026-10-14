@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- CoNLL-U parse errors name the file they came from
+
 ## [0.3.1] - 2026-10-08
 
 ### Added
