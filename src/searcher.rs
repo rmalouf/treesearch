@@ -176,7 +176,7 @@ fn solve_with_bindings(
     first_only: bool,
 ) -> Vec<Bindings> {
     let num_words = tree.words.len();
-    let mut assign: Vec<Option<WordId>> = vec![None; pattern.n_vars];
+    let mut assign: Vec<Option<WordId>> = vec![None; pattern.var_constraints.len()];
     let mut assigned_words: BitFixed<u64> = BitFixed::new(num_words);
 
     // Pre-assign from initial_bindings and validate constraints on pre-bound variables.
@@ -196,7 +196,7 @@ fn solve_with_bindings(
     }
 
     // Initialize domains (node consistency)
-    let mut domains: Vec<BitFixed<u64>> = vec![BitFixed::new(num_words); pattern.n_vars];
+    let mut domains: Vec<BitFixed<u64>> = vec![BitFixed::new(num_words); pattern.var_names.len()];
     for (var_id, constr) in pattern.var_constraints.iter().enumerate() {
         if assign[var_id].is_some() {
             continue; // Already validated above
@@ -293,7 +293,7 @@ fn dfs(
     }
 
     // Select an unassigned variable with Minimum Remaining Values (MRV)
-    let next_var = (0..pattern.n_vars)
+    let next_var = (0..pattern.var_names.len())
         .filter(|&var_id| assign[var_id].is_none())
         .min_by_key(|&var_id| domains[var_id].count_ones())
         .unwrap();
@@ -324,7 +324,7 @@ fn dfs(
         for domain in &mut new_domains {
             domain.reset(word_id);
         }
-        if !(0..pattern.n_vars)
+        if !(0..pattern.var_constraints.len())
             .all(|var_id| new_assign[var_id].is_some() || new_domains[var_id].count_ones() > 0)
         {
             continue;

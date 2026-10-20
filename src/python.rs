@@ -376,7 +376,7 @@ mod treesearch {
     #[pymethods]
     impl PyPattern {
         fn __repr__(&self) -> String {
-            format!("Pattern({} vars)", self.inner.match_pattern.n_vars)
+            format!("Pattern({} vars)", self.inner.match_pattern.var_names.len())
         }
     }
 

@@ -119,7 +119,6 @@ pub struct Pattern {
 
 #[derive(Debug, Clone)]
 pub struct BasePattern {
-    pub n_vars: usize,
     pub var_ids: HashMap<String, VarId>,
     pub var_names: Vec<String>,
     pub incident_edges: Vec<Vec<DirectedEdge>>,
@@ -130,7 +129,6 @@ pub struct BasePattern {
 impl BasePattern {
     pub fn new() -> Self {
         Self {
-            n_vars: 0,
             var_ids: HashMap::new(),
             var_names: Vec::new(),
             incident_edges: Vec::new(),
@@ -151,7 +149,6 @@ impl BasePattern {
             pattern.add_edge_constraint(edge_constraint);
         }
 
-        pattern.n_vars = pattern.var_constraints.len();
         pattern
     }
 
