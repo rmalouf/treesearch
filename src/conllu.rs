@@ -93,7 +93,8 @@ impl<R: BufRead> TreeIterator<R> {
             n += 1;
         }
         if n != 9 {
-            return Err(ParseError::MissingField { field_num: n + 1 });
+            // n tabs delimit n + 1 fields, so the first missing one is field n + 2
+            return Err(ParseError::MissingField { field_num: n + 2 });
         }
 
         let token_id_field = &line[..tabs[0]];
@@ -484,7 +485,11 @@ mod tests {
     #[test]
     fn test_line_errors() {
         let cases = [
-            ("1\tword\n", "Missing field"),
+            ("1\tword\n", "Missing field 3"),
+            (
+                "1\tword\tlemma\tNOUN\tNN\t_\t0\troot\t_\n",
+                "Missing field 10",
+            ),
             (
                 "1\tword\tlemma\tNOUN\tNN\t_\t0\troot\t_\t_\textra\n",
                 "10 fields",

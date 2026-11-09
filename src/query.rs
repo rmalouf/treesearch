@@ -22,17 +22,11 @@ pub enum QueryError {
     #[error("Query error: {0}")]
     ParseError(#[from] pest::error::Error<Rule>),
 
-    #[error("Query error: Unknown constraint key: {0}")]
-    UnknownConstraintKey(String),
-
     #[error("Query error: Duplicate variable: {0}")]
     DuplicateVariable(String),
 
     #[error("Query error: Undeclared variable: {0}")]
     UndeclaredVariable(String),
-
-    #[error("Query error: No MATCH block found")]
-    NoMATCH,
 
     #[error("Query error: Variable '{0}' already defined in another EXCEPT/OPTIONAL block")]
     DuplicateExtensionVariable(String),
@@ -70,16 +64,13 @@ pub fn compile_query(input: &str) -> Result<Pattern, QueryError> {
         }
     }
 
-    if let Some(match_pattern) = match_pattern {
-        validate_variables(&match_pattern, &except_patterns, &optional_patterns)?;
-        Ok(Pattern {
-            match_pattern,
-            except_patterns,
-            optional_patterns,
-        })
-    } else {
-        Err(QueryError::NoMATCH)
-    }
+    let match_pattern = match_pattern.expect("grammar requires a MATCH block");
+    validate_variables(&match_pattern, &except_patterns, &optional_patterns)?;
+    Ok(Pattern {
+        match_pattern,
+        except_patterns,
+        optional_patterns,
+    })
 }
 
 /// Compile one block. `match_vars` are MATCH variables, which may be used in
@@ -262,7 +253,7 @@ fn compile_regular_constraint(pair: Pair<Rule>) -> Result<Constraint, QueryError
         "xpos" => Constraint::XPOS(value),
         "form" => Constraint::Form(value),
         "deprel" => Constraint::DepRel(value),
-        _ => return Err(QueryError::UnknownConstraintKey(key.to_string())),
+        _ => unreachable!("grammar only allows known constraint keys"),
     };
 
     if operator == "!=" {
