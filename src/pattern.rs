@@ -235,32 +235,74 @@ impl Default for BasePattern {
 mod tests {
     use super::*;
 
+    fn upos(s: &str) -> Constraint {
+        Constraint::UPOS(ConstraintValue::Literal(s.to_string()))
+    }
+
     #[test]
-    fn test_pattern_creation() {
+    fn test_merge_constraints() {
+        use Constraint::*;
+        let (a, b, c) = (upos("A"), upos("B"), upos("C"));
+        let ab = And(vec![a.clone(), b.clone()]);
+
+        assert_eq!(merge_constraints(&Any, &a), a);
+        assert_eq!(merge_constraints(&a, &Any), a);
+        assert_eq!(merge_constraints(&a, &b), ab);
+        // Conjunctions are flattened
+        assert_eq!(
+            merge_constraints(&ab, &c),
+            And(vec![a.clone(), b.clone(), c.clone()])
+        );
+        assert_eq!(
+            merge_constraints(&c, &ab),
+            And(vec![a.clone(), b.clone(), c.clone()])
+        );
+        assert_eq!(
+            merge_constraints(&ab, &And(vec![c.clone()])),
+            And(vec![a, b, c])
+        );
+    }
+
+    #[test]
+    fn test_with_constraints() {
         let vars = vec![
-            PatternVar::new(
-                "verb",
-                Constraint::UPOS(ConstraintValue::Literal("VERB".to_string())),
-            ),
-            PatternVar::new(
-                "noun",
-                Constraint::UPOS(ConstraintValue::Literal("NOUN".to_string())),
-            ),
+            PatternVar::new("V", upos("VERB")),
+            PatternVar::new("N", upos("NOUN")),
         ];
-
-        let edges = vec![EdgeConstraint {
-            from: "verb".to_string(),
-            to: "noun".to_string(),
+        let edge = |from: &str, to: &str| EdgeConstraint {
+            from: from.to_string(),
+            to: to.to_string(),
             relation: RelationType::Child,
-            label: Some(ConstraintValue::Literal("nsubj".to_string())),
+            label: None,
             negated: false,
-        }];
+        };
+        let pattern = BasePattern::with_constraints(vars, vec![edge("V", "N"), edge("N", "X")]);
 
-        let pattern = BasePattern::with_constraints(vars, edges);
+        // Edges can introduce variables
+        assert_eq!(pattern.var_names, ["V", "N", "X"]);
+        assert_eq!(pattern.var_ids["X"], 2);
+        assert_eq!(pattern.var_constraints[2], Constraint::Any);
 
-        assert_eq!(pattern.var_names, ["verb", "noun"]);
-        assert_eq!(pattern.var_constraints.len(), 2);
-        assert_eq!(pattern.edge_constraints.len(), 1);
-        // TODO: add more assertions
+        let incident: Vec<Vec<_>> = pattern
+            .incident_edges
+            .iter()
+            .map(|edges| {
+                edges
+                    .iter()
+                    .map(|e| match e {
+                        DirectedEdge::In(i) => ("in", *i),
+                        DirectedEdge::Out(i) => ("out", *i),
+                    })
+                    .collect()
+            })
+            .collect();
+        assert_eq!(
+            incident,
+            [
+                vec![("out", 0)],
+                vec![("in", 0), ("out", 1)],
+                vec![("in", 1)]
+            ]
+        );
     }
 }

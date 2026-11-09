@@ -109,21 +109,6 @@ impl Word {
     }
 
     /// All transitive dependents (children, grandchildren, etc.) of this word.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use treesearch::Tree;
-    /// let mut tree = Tree::default();
-    /// tree.add_minimal_word(0, b"runs", b"run", b"VERB", b"_", None, b"root");
-    /// tree.add_minimal_word(1, b"big", b"big", b"ADJ", b"_", Some(2), b"amod");
-    /// tree.add_minimal_word(2, b"dog", b"dog", b"NOUN", b"_", Some(0), b"nsubj");
-    /// tree.compile_tree();
-    ///
-    /// let root = &tree.words[0];
-    /// let descendants = root.descendants(&tree);
-    /// assert_eq!(descendants.len(), 2);
-    /// ```
     pub fn descendants<'a>(&self, tree: &'a Tree) -> Vec<&'a Word> {
         let mut result = Vec::new();
         let mut stack = self.children.clone();
@@ -287,23 +272,6 @@ impl Tree {
     /// Find dependency path from ancestor X to descendant Y.
     /// Returns None if X and Y are the same node or if no path exists.
     /// Returns Some(vec![X, ..., Y]) if Y is a descendant of X.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use treesearch::Tree;
-    /// let mut tree = Tree::default();
-    /// tree.add_minimal_word(0, b"runs", b"run", b"VERB", b"_", None, b"root");
-    /// tree.add_minimal_word(1, b"dog", b"dog", b"NOUN", b"_", Some(0), b"nsubj");
-    /// tree.compile_tree();
-    ///
-    /// let x = &tree.words[0];
-    /// let y = &tree.words[1];
-    /// let path = tree.find_path(x, y).unwrap();
-    /// assert_eq!(path.len(), 2);
-    /// assert_eq!(path[0].id, 0);
-    /// assert_eq!(path[1].id, 1);
-    /// ```
     pub fn find_path<'a>(&'a self, x: &'a Word, y: &'a Word) -> Option<Vec<&'a Word>> {
         // Return None if same node
         if x.id == y.id {
@@ -362,135 +330,55 @@ impl Default for Tree {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_tree_creation() {
-        let mut tree = Tree::default();
-        tree.add_minimal_word(0, b"runs", b"run", b"VERB", b"_", None, b"root");
-        tree.add_minimal_word(1, b"dog", b"dog", b"NOUN", b"_", Some(0), b"nsubj");
-        tree.compile_tree();
-
-        assert_eq!(tree.words.len(), 2);
-        assert_eq!(tree.head_id(1).unwrap(), Some(0));
-        assert_eq!(tree.children_ids(0).unwrap().len(), 1);
-    }
-
-    #[test]
-    fn test_descendants() {
-        // runs(0) -> dog(1) -> big(2)
-        //         -> fast(3)
-        let mut tree = Tree::default();
-        tree.add_minimal_word(0, b"runs", b"run", b"VERB", b"_", None, b"root");
-        tree.add_minimal_word(1, b"dog", b"dog", b"NOUN", b"_", Some(0), b"nsubj");
-        tree.add_minimal_word(2, b"big", b"big", b"ADJ", b"_", Some(1), b"amod");
-        tree.add_minimal_word(3, b"fast", b"fast", b"ADV", b"_", Some(0), b"advmod");
-        tree.compile_tree();
-
-        let mut root_descendants: Vec<WordId> = tree.words[0]
-            .descendants(&tree)
-            .iter()
-            .map(|w| w.id)
-            .collect();
-        root_descendants.sort_unstable();
-        assert_eq!(root_descendants, vec![1, 2, 3]);
-
-        let dog_descendants: Vec<WordId> = tree.words[1]
-            .descendants(&tree)
-            .iter()
-            .map(|w| w.id)
-            .collect();
-        assert_eq!(dog_descendants, vec![2]);
-
-        assert!(tree.words[2].descendants(&tree).is_empty());
-
-        assert_eq!(tree.descendant_ids(1).unwrap(), vec![2]);
-    }
-
-    #[test]
-    fn test_children_by_deprel() {
-        // Test multiple matches
-        let mut tree = Tree::default();
-        tree.add_minimal_word(0, b"and", b"and", b"CCONJ", b"_", None, b"root");
-        tree.add_minimal_word(1, b"cats", b"cat", b"NOUN", b"_", Some(0), b"conj");
-        tree.add_minimal_word(2, b"dogs", b"dog", b"NOUN", b"_", Some(0), b"conj");
-        tree.add_minimal_word(3, b"birds", b"bird", b"NOUN", b"_", Some(0), b"conj");
-        tree.compile_tree();
-
-        let coord = tree.word(0).unwrap();
-        let conjuncts = coord.children_by_deprel(&tree, "conj");
-        assert_eq!(conjuncts.len(), 3);
-
-        // Test single match
-        let mut tree = Tree::default();
-        tree.add_minimal_word(0, b"runs", b"run", b"VERB", b"_", None, b"root");
-        tree.add_minimal_word(1, b"dog", b"dog", b"NOUN", b"_", Some(0), b"nsubj");
-        tree.add_minimal_word(2, b"quickly", b"quickly", b"ADV", b"_", Some(0), b"advmod");
-        tree.compile_tree();
-
-        let verb = tree.word(0).unwrap();
-        let subjects = verb.children_by_deprel(&tree, "nsubj");
-        assert_eq!(subjects.len(), 1);
-
-        // Test no matches
-        let objects = verb.children_by_deprel(&tree, "obj");
-        assert_eq!(objects.len(), 0);
-
-        // Test filtering among mixed children
+    /// runs(0) -nsubj-> dog(1) -amod-> big(4)
+    ///         -obl->   park(2)
+    ///         -obl->   store(3)
+    fn build_tree() -> Tree {
         let mut tree = Tree::default();
         tree.add_minimal_word(0, b"runs", b"run", b"VERB", b"_", None, b"root");
         tree.add_minimal_word(1, b"dog", b"dog", b"NOUN", b"_", Some(0), b"nsubj");
         tree.add_minimal_word(2, b"park", b"park", b"NOUN", b"_", Some(0), b"obl");
         tree.add_minimal_word(3, b"store", b"store", b"NOUN", b"_", Some(0), b"obl");
-        tree.add_minimal_word(4, b"quickly", b"quickly", b"ADV", b"_", Some(0), b"advmod");
+        tree.add_minimal_word(4, b"big", b"big", b"ADJ", b"_", Some(1), b"amod");
         tree.compile_tree();
+        tree
+    }
 
-        let verb = tree.word(0).unwrap();
-        let obliques = verb.children_by_deprel(&tree, "obl");
-        assert_eq!(obliques.len(), 2);
+    #[test]
+    fn test_structure() {
+        let tree = build_tree();
+        assert_eq!(tree.root_id, Some(0));
+        assert_eq!(tree.head_id(0).unwrap(), None);
+        assert_eq!(tree.head_id(4).unwrap(), Some(1));
+        assert_eq!(tree.children_ids(0).unwrap(), [1, 2, 3]);
+        assert!(tree.word(5).is_err());
+        assert!(tree.head_id(5).is_err());
+
+        let by_deprel = |deprel| tree.words[0].children_by_deprel(&tree, deprel).len();
+        assert_eq!(by_deprel("obl"), 2);
+        assert_eq!(by_deprel("nsubj"), 1);
+        assert_eq!(by_deprel("obj"), 0);
+
+        let mut descendants = tree.descendant_ids(0).unwrap();
+        descendants.sort_unstable();
+        assert_eq!(descendants, [1, 2, 3, 4]);
+        assert_eq!(tree.descendant_ids(1).unwrap(), [4]);
+        assert!(tree.descendant_ids(4).unwrap().is_empty());
     }
 
     #[test]
     fn test_find_path() {
-        // Tree structure:
-        //       runs (0)
-        //      /    \
-        //   dog(1)  park(2)
-        //    |        |
-        //  big(3)   the(4)
-        let mut tree = Tree::default();
-        tree.add_minimal_word(0, b"runs", b"run", b"VERB", b"_", None, b"root");
-        tree.add_minimal_word(1, b"dog", b"dog", b"NOUN", b"_", Some(0), b"nsubj");
-        tree.add_minimal_word(2, b"park", b"park", b"NOUN", b"_", Some(0), b"obl");
-        tree.add_minimal_word(3, b"big", b"big", b"ADJ", b"_", Some(1), b"amod");
-        tree.add_minimal_word(4, b"the", b"the", b"DET", b"_", Some(2), b"det");
-        tree.compile_tree();
+        let tree = build_tree();
+        let path = |x: WordId, y: WordId| {
+            tree.find_path(&tree.words[x], &tree.words[y])
+                .map(|p| p.iter().map(|w| w.id).collect::<Vec<_>>())
+        };
 
-        // Direct child: 0 -> 1
-        let path = tree.find_path(&tree.words[0], &tree.words[1]).unwrap();
-        assert_eq!(path.len(), 2);
-        assert_eq!(path[0].id, 0);
-        assert_eq!(path[1].id, 1);
-
-        // Multi-level: 0 -> 1 -> 3
-        let path = tree.find_path(&tree.words[0], &tree.words[3]).unwrap();
-        assert_eq!(path.len(), 3);
-        assert_eq!(path[0].id, 0);
-        assert_eq!(path[1].id, 1);
-        assert_eq!(path[2].id, 3);
-
-        // Different branch: 0 -> 2 -> 4
-        let path = tree.find_path(&tree.words[0], &tree.words[4]).unwrap();
-        assert_eq!(path.len(), 3);
-        assert_eq!(path[0].id, 0);
-        assert_eq!(path[1].id, 2);
-        assert_eq!(path[2].id, 4);
-
-        // No path (siblings)
-        assert!(tree.find_path(&tree.words[1], &tree.words[2]).is_none());
-
-        // No path (reverse direction)
-        assert!(tree.find_path(&tree.words[1], &tree.words[0]).is_none());
-
-        // Same node
-        assert!(tree.find_path(&tree.words[0], &tree.words[0]).is_none());
+        assert_eq!(path(0, 1), Some(vec![0, 1]));
+        assert_eq!(path(0, 4), Some(vec![0, 1, 4]));
+        assert_eq!(path(0, 3), Some(vec![0, 3]));
+        assert_eq!(path(1, 2), None); // siblings
+        assert_eq!(path(1, 0), None); // reverse direction
+        assert_eq!(path(0, 0), None); // same node
     }
 }

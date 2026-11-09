@@ -356,256 +356,171 @@ fn _parse_misc(s: &str) -> Result<Misc, ParseError> {
 mod tests {
     use super::*;
 
-    // TODO: add tests for
-    //   deprels and misc
-
-    #[test]
-    fn test_parse_simple_sentence() {
-        let conllu = r#"# text = The dog runs.
-1	The	the	DET	DT	_	2	det	_	_
-2	dog	dog	NOUN	NN	_	3	nsubj	_	_
-3	runs	run	VERB	VBZ	_	0	root	_	_
-4	.	.	PUNCT	.	_	3	punct	_	_
-
-"#;
-
-        let mut reader = TreeIterator::from_string(conllu);
-        let tree = reader.next().unwrap().unwrap();
-
-        assert_eq!(tree.words.len(), 4);
-        assert_eq!(tree.sentence_text, Some("The dog runs.".to_string()));
-        assert_eq!(tree.root_id, Some(2)); // "runs" is root
-
-        // Check nodes
-        // TODO: fix these
-        // assert_eq!(tree.words[0].form, b"The");
-        // assert_eq!(tree.words[0].lemma, b"the");
-        // assert_eq!(*tree.string_pool.resolve(tree.words[0].upos), b"DET");
-        // assert_eq!(*tree.string_pool.resolve(tree.words[0].deprel), b"det");
-        // assert_eq!(tree.words[2].form, "runs");
-        assert_eq!(tree.words[2].head, None); // root
-        assert_eq!(tree.words[2].children.len(), 2); // dog, . (The is child of dog, not runs)
+    fn parse_one(conllu: &str) -> Result<Tree, ParseError> {
+        TreeIterator::from_string(conllu).next().unwrap()
     }
 
-    /*
-        #[test]
-        fn test_parse_with_features() {
-            let conllu = r#"1	dogs	dog	NOUN	NNS	Number=Plur	2	nsubj	_	_
-2	run	run	VERB	VBP	Number=Plur|Tense=Pres	0	root	_	_
+    /// One root word with the given FEATS and MISC fields
+    fn word_with(feats: &str, misc: &str) -> Result<Tree, ParseError> {
+        parse_one(&format!(
+            "1\tword\tlemma\tX\tX\t{feats}\t0\troot\t_\t{misc}\n"
+        ))
+    }
 
-"#;
+    /// Key/value pairs of a FEATS or MISC field, as strings
+    fn pairs(tree: &Tree, feats: &Features) -> Vec<(String, String)> {
+        let s = |sym| String::from_utf8(tree.string_pool.resolve(sym).to_vec()).unwrap();
+        feats.iter().map(|&(k, v)| (s(k), s(v))).collect()
+    }
 
-            let mut reader = CoNLLUReader::from_string(conllu);
-            let tree = reader.next().unwrap().unwrap();
-
-            assert_eq!(tree.words.len(), 2);
-
-            // Check features - Features is a Vec<(String, String)>, not a HashMap
-            assert!(
-                tree.words[0]
-                    .feats
-                    .iter()
-                    .any(|(k, v)| k == "Number" && v == "Plur")
-            );
-            assert!(
-                tree.words[1]
-                    .feats
-                    .iter()
-                    .any(|(k, v)| k == "Number" && v == "Plur")
-            );
-            assert!(
-                tree.words[1]
-                    .feats
-                    .iter()
-                    .any(|(k, v)| k == "Tense" && v == "Pres")
-            );
-        }
-    */
     #[test]
-    fn test_parse_id() {
+    fn test_parse_sentence() {
+        let conllu = "\n\
+                      # sent_id = s1\n\
+                      # text = The dog runs.\n\
+                      1\tThe\tthe\tDET\tDT\t_\t2\tdet\t_\t_\n\
+                      2-3\tdogruns\t_\t_\t_\t_\t_\t_\t_\t_\n\
+                      2\tdog\tdog\tNOUN\tNN\t_\t3\tnsubj\t_\t_\n\
+                      3\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n\
+                      4\t.\t.\tPUNCT\t.\t_\t3\tpunct\t_\t_\n\
+                      \n\
+                      \n\
+                      1\tCats\tcat\tNOUN\tNNS\t_\t0\troot\t_\t_\n";
+        let trees: Vec<_> = TreeIterator::from_string(conllu)
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(trees.len(), 2);
+
+        let tree = &trees[0];
+        assert_eq!(tree.sentence_text.as_deref(), Some("The dog runs."));
+        assert_eq!(tree.metadata["sent_id"], "s1");
+
+        // The multiword token is skipped
+        let s = |sym| String::from_utf8(tree.string_pool.resolve(sym).to_vec()).unwrap();
+        let words: Vec<_> = tree
+            .words
+            .iter()
+            .map(|w| {
+                (
+                    s(w.form),
+                    s(w.lemma),
+                    s(w.upos),
+                    s(w.xpos),
+                    w.head,
+                    s(w.deprel),
+                )
+            })
+            .collect();
+        let w = |form: &str, lemma: &str, upos: &str, xpos: &str, head, deprel: &str| {
+            (
+                form.into(),
+                lemma.into(),
+                upos.into(),
+                xpos.into(),
+                head,
+                deprel.into(),
+            )
+        };
+        assert_eq!(
+            words,
+            [
+                w("The", "the", "DET", "DT", Some(1), "det"),
+                w("dog", "dog", "NOUN", "NN", Some(2), "nsubj"),
+                w("runs", "run", "VERB", "VBZ", None, "root"),
+                w(".", ".", "PUNCT", ".", Some(2), "punct"),
+            ]
+        );
+        assert_eq!(tree.root_id, Some(2));
+        assert_eq!(tree.words[2].children, [1, 3]);
+    }
+
+    #[test]
+    fn test_parse_feats_and_misc() {
+        let tree = word_with("Case=Nom|Number=Plur", "SpaceAfter=No").unwrap();
+        let word = &tree.words[0];
+        let kv = |k: &str, v: &str| (k.to_string(), v.to_string());
+        assert_eq!(
+            pairs(&tree, &word.feats),
+            [kv("Case", "Nom"), kv("Number", "Plur")]
+        );
+        assert_eq!(pairs(&tree, &word.misc), [kv("SpaceAfter", "No")]);
+
+        let tree = word_with("_", "_").unwrap();
+        assert!(tree.words[0].feats.is_empty());
+        assert!(tree.words[0].misc.is_empty());
+
+        for (feats, misc) in [
+            ("InvalidPair", "_"),
+            ("foo|bar=baz", "_"),
+            ("_", "SpaceAfter"),
+        ] {
+            let err = word_with(feats, misc).unwrap_err().to_string();
+            assert!(err.contains("Invalid FEATS pair"), "{feats} {misc}: {err}");
+        }
+    }
+
+    #[test]
+    fn test_parse_id_and_head() {
         assert_eq!(parse_id(b"1").unwrap(), 1);
         assert_eq!(parse_id(b"42").unwrap(), 42);
-        // Empty nodes are not supported
-        assert!(parse_id(b"2.1").is_err());
-        assert!(parse_id(b"10.5").is_err());
-    }
-
-    #[test]
-    fn test_parse_features() {
-        let conllu = "1\tword\tlemma\tUPOS\tXPOS\tCase=Nom|Number=Plur\t0\troot\t_\t_\n\n";
-        let mut reader = TreeIterator::from_string(conllu);
-        let first = reader.next().unwrap().unwrap();
-        let feats = &first.word(0).unwrap().feats;
-        assert!(feats.iter().any(|(k, v)| first.string_pool.compare_kv(
-            *k,
-            *v,
-            "Case".as_bytes(),
-            "Nom".as_bytes()
-        )));
-
-        assert!(feats.iter().any(|(k, v)| first.string_pool.compare_kv(
-            *k,
-            *v,
-            "Number".as_bytes(),
-            "Plur".as_bytes()
-        )));
-
-        let conllu = "1\tword\tlemma\tUPOS\tXPOS\t_\t0\troot\t_\t_\n\n";
-        let mut reader = TreeIterator::from_string(conllu);
-        let first = reader.next().unwrap().unwrap();
-        let feats = &first.word(0).unwrap().feats;
-        assert!(feats.is_empty());
-
-        let conllu = "1\tword\tlemma\tUPOS\tXPOS\tInvalidPair\t0\troot\t_\t_\n\n";
-        let mut reader = TreeIterator::from_string(conllu);
-        let first = reader.next();
-        assert!(first.unwrap().is_err());
-
-        let conllu = "1\tword\tlemma\tUPOS\tXPOS\tfoo|bar=baz\t0\troot\t_\t_\n\n";
-        let mut reader = TreeIterator::from_string(conllu);
-        let first = reader.next();
-        assert!(first.unwrap().is_err());
-    }
-
-    #[test]
-    fn test_parse_misc() {
-        let conllu = "1\tword\tlemma\tUPOS\tXPOS\tNumber=Plur\t0\troot\t_\tSpaceAfter=No\n\n";
-        let mut reader = TreeIterator::from_string(conllu);
-        let first = reader.next().unwrap().unwrap();
-        let feats = &first.word(0).unwrap().misc;
-        assert!(feats.iter().any(|(k, v)| first.string_pool.compare_kv(
-            *k,
-            *v,
-            "SpaceAfter".as_bytes(),
-            "No".as_bytes()
-        )));
-
-        let conllu = "1\tword\tlemma\tUPOS\tXPOS\tNumber=Plur_\t0\troot\t_\t_\n\n";
-        let mut reader = TreeIterator::from_string(conllu);
-        let first = reader.next().unwrap().unwrap();
-        let feats = &first.word(0).unwrap().misc;
-        assert!(feats.is_empty());
-    }
-
-    #[test]
-    fn test_parse_head() {
         assert_eq!(parse_head(b"0").unwrap(), None);
         assert_eq!(parse_head(b"1").unwrap(), Some(0)); // 1-indexed to 0-indexed
         assert_eq!(parse_head(b"5").unwrap(), Some(4));
-    }
 
-    // Error handling tests
-    #[test]
-    fn test_error_empty_node() {
+        // Empty nodes are not supported
         let err = parse_id(b"2.1").unwrap_err();
         assert!(matches!(err, ParseError::UnsupportedToken { .. }));
         assert!(err.to_string().contains("2.1"));
-    }
 
-    #[test]
-    fn test_error_invalid_token_id() {
         let err = parse_id(b"abc").unwrap_err();
         assert!(matches!(err, ParseError::InvalidTokenId { .. }));
         assert!(err.to_string().contains("abc"));
-    }
 
-    #[test]
-    fn test_error_invalid_head() {
         let err = parse_head(b"xyz").unwrap_err();
         assert!(matches!(err, ParseError::InvalidHead { .. }));
         assert!(err.to_string().contains("xyz"));
     }
 
     #[test]
-    fn test_error_missing_fields() {
-        let conllu = "1\tword\n\n"; // Only 2 fields instead of 10
-        let mut reader = TreeIterator::from_string(conllu);
-        let err = reader.next().unwrap().unwrap_err();
-        // Should be wrapped in LineError with context
-        assert!(matches!(err, ParseError::LineError { .. }));
-        assert!(err.to_string().contains("line 1"));
-    }
+    fn test_line_errors() {
+        let cases = [
+            ("1\tword\n", "Missing field"),
+            (
+                "1\tword\tlemma\tNOUN\tNN\t_\t0\troot\t_\t_\textra\n",
+                "10 fields",
+            ),
+            (
+                "1\tword\tlemma\tNOUN\tNN\t_\t0\troot\t0:root\t_\n",
+                "Extended deprels",
+            ),
+            (
+                "1.1\tword\tlemma\tNOUN\tNN\t_\t0\troot\t_\t_\n",
+                "Empty nodes",
+            ),
+        ];
+        for (conllu, message) in cases {
+            let err = parse_one(conllu).unwrap_err();
+            assert!(
+                matches!(err, ParseError::LineError { line_num: 1, .. }),
+                "{err}"
+            );
+            assert!(err.to_string().contains(message), "{err}");
+        }
 
-    #[test]
-    fn test_error_too_many_fields() {
-        // 11 fields - all valid until we check field count
-        let conllu = "1\tword\tlemma\tNOUN\tNN\t_\t0\troot\t_\t_\textra\n\n";
-        let mut reader = TreeIterator::from_string(conllu);
-        let err = reader.next().unwrap().unwrap_err();
-        assert!(matches!(err, ParseError::LineError { .. }));
-        assert!(err.to_string().contains("10 fields"));
-    }
-
-    #[test]
-    fn test_error_invalid_feats_pair() {
-        let pool = BytestringPool::new();
-        let mut reader = TreeIterator {
-            reader: BufReader::new(std::io::Cursor::new("")),
-            line_num: 0,
-            string_pool: pool,
-        };
-        let err = reader.parse_features(b"InvalidPair").unwrap_err();
-        assert!(matches!(err, ParseError::InvalidFeatsPair { .. }));
-        assert!(err.to_string().contains("InvalidPair"));
-    }
-
-    #[test]
-    fn test_error_unsupported_enhanced_deprels() {
-        let conllu = "1\tword\tlemma\tNOUN\tNN\t_\t2\tnsubj\t2:dep\t_\n\n"; // DEPS field not "_"
-        let mut reader = TreeIterator::from_string(conllu);
-        let err = reader.next().unwrap().unwrap_err();
+        // Errors report the line number and content, and later trees still parse
+        let conllu = "# comment\n\
+                      1\tword\tlemma\tNOUN\tNN\t_\t0\troot\t_\t_\n\
+                      \n\
+                      abc\tinvalid\tlemma\tNOUN\tNN\t_\t0\troot\t_\t_\n\
+                      \n\
+                      1\tword\tlemma\tNOUN\tNN\t_\t0\troot\t_\t_\n";
+        let results: Vec<_> = TreeIterator::from_string(conllu).collect();
+        assert_eq!(results.len(), 3);
+        assert!(results[0].is_ok() && results[2].is_ok());
+        let err = results[1].as_ref().unwrap_err().to_string();
         assert!(
-            err.to_string()
-                .contains("Extended deprels not yet supported")
+            err.contains("line 4") && err.contains("abc\tinvalid"),
+            "{err}"
         );
     }
-
-    #[test]
-    fn test_error_line_context_preserved() {
-        // Test that line number and content are preserved in error messages
-        let conllu = r#"# comment line
-1	word	lemma	NOUN	NN	_	0	root	_	_
-
-abc	invalid	lemma	NOUN	NN	_	0	root	_	_
-
-"#;
-        let mut reader = TreeIterator::from_string(conllu);
-        let first = reader.next(); // Get first valid tree
-        assert!(first.is_some());
-        assert!(first.unwrap().is_ok());
-
-        let second = reader.next(); // Get error from second tree
-        assert!(second.is_some());
-        let err = second.unwrap().unwrap_err();
-
-        let err_str = err.to_string();
-        assert!(err_str.contains("line 4")); // Line number in error
-        assert!(err_str.contains("abc")); // Line content in error
-    }
-
-    /*
-        #[test]
-        fn test_parse_deps() {
-            let deps = parse_deps("2:nsubj|3:obj").unwrap();
-            assert_eq!(deps.len(), 2);
-            assert_eq!(deps[0].head, Some(1)); // 2 -> 1 (0-indexed)
-            assert_eq!(deps[0].deprel, "nsubj");
-            assert_eq!(deps[1].head, Some(2)); // 3 -> 2 (0-indexed)
-            assert_eq!(deps[1].deprel, "obj");
-
-            // Test root attachment
-            let deps = parse_deps("0:root").unwrap();
-            assert_eq!(deps.len(), 1);
-            assert_eq!(deps[0].head, None); // 0 -> None
-            assert_eq!(deps[0].deprel, "root");
-
-            let empty = parse_deps("_").unwrap();
-            assert!(empty.is_empty());
-
-            // Test error cases
-            assert!(parse_deps("InvalidPair").is_err()); // Missing ':'
-            assert!(parse_deps("foo:bar").is_err()); // Non-numeric head
-            assert!(parse_deps("1:nsubj|invalid").is_err()); // One valid, one invalid
-        }
-    */
 }

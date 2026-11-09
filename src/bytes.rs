@@ -165,85 +165,30 @@ pub fn bs_atoi(bytes: &[u8]) -> Option<usize> {
 mod tests {
     use super::*;
 
-    // ===== BytestringPool / ByteInterner Tests =====
-
     #[test]
-    fn test_interner_basic() {
+    fn test_interner() {
         let mut pool = BytestringPool::new();
-        let sym1 = pool.get_or_intern(b"hello");
-        let sym2 = pool.get_or_intern(b"world");
-        let sym3 = pool.get_or_intern(b"hello"); // Same as sym1
+        let strings: [&[u8]; 5] = [
+            b"hello",
+            b"world",
+            b"",
+            "café".as_bytes(),
+            "你好".as_bytes(),
+        ];
+        let syms: Vec<_> = strings.iter().map(|s| pool.get_or_intern(s)).collect();
 
-        assert_eq!(sym1, sym3); // Same string gets same Sym
-        assert_ne!(sym1, sym2); // Different strings get different Syms
-    }
-
-    #[test]
-    fn test_interner_resolve() {
-        let mut pool = BytestringPool::new();
-        let sym = pool.get_or_intern(b"test");
-        let resolved = pool.resolve(sym);
-
-        assert_eq!(*resolved, *b"test");
-    }
-
-    #[test]
-    fn test_interner_empty_string() {
-        let mut pool = BytestringPool::new();
-        let sym1 = pool.get_or_intern(b"");
-        let sym2 = pool.get_or_intern(b"");
-
-        assert_eq!(sym1, sym2);
-        assert_eq!(*pool.resolve(sym1), *b"");
-    }
-
-    #[test]
-    fn test_interner_unicode() {
-        let mut pool = BytestringPool::new();
-        let sym1 = pool.get_or_intern("hello".as_bytes());
-        let sym2 = pool.get_or_intern("café".as_bytes());
-        let sym3 = pool.get_or_intern("你好".as_bytes());
-
-        assert_ne!(sym1, sym2);
-        assert_ne!(sym2, sym3);
-        assert_eq!(*pool.resolve(sym2), *"café".as_bytes());
-        assert_eq!(*pool.resolve(sym3), *"你好".as_bytes());
-    }
-
-    #[test]
-    fn test_interner_multiple_strings() {
-        let mut pool = BytestringPool::new();
-        let strings: Vec<&[u8]> = vec![b"one", b"two", b"three", b"four", b"five"];
-        let mut syms = Vec::new();
-
-        // Intern all strings
-        for s in &strings {
-            syms.push(pool.get_or_intern(s));
+        for (i, (sym, s)) in syms.iter().zip(strings).enumerate() {
+            // Interning is idempotent, and different strings get different symbols
+            assert_eq!(pool.get_or_intern(s), *sym);
+            assert!(syms[i + 1..].iter().all(|other| other != sym));
+            assert_eq!(*pool.resolve(*sym), *s);
         }
 
-        // Verify all are different
-        for i in 0..syms.len() {
-            for j in (i + 1)..syms.len() {
-                assert_ne!(syms[i], syms[j]);
-            }
-        }
-
-        // Verify resolution works
-        for (sym, orig) in syms.iter().zip(strings.iter()) {
-            assert_eq!(*pool.resolve(*sym), **orig);
-        }
-    }
-
-    #[test]
-    fn test_interner_clone() {
-        let mut pool1 = BytestringPool::new();
-        let sym1 = pool1.get_or_intern(b"test");
-
-        let mut pool2 = pool1.clone();
-        let sym2 = pool2.get_or_intern(b"test");
-
-        // Cloned pool shares the same interner (Arc)
-        assert_eq!(sym1, sym2);
+        // Clones share the same interner
+        let mut clone = pool.clone();
+        assert_eq!(clone.get_or_intern(b"hello"), syms[0]);
+        let new = clone.get_or_intern(b"new");
+        assert_eq!(*pool.resolve(new), *b"new");
     }
 
     #[test]
@@ -311,7 +256,7 @@ mod tests {
     // ===== bs_atoi Tests =====
 
     #[test]
-    fn test_atoi_valid() {
+    fn test_atoi() {
         // Valid numbers
         assert_eq!(bs_atoi(b"0"), Some(0));
         assert_eq!(bs_atoi(b"1"), Some(1));
@@ -327,10 +272,7 @@ mod tests {
 
         // Large numbers
         assert_eq!(bs_atoi(b"18446744073709551615"), Some(usize::MAX));
-    }
 
-    #[test]
-    fn test_atoi_invalid() {
         // Letters and mixed
         assert_eq!(bs_atoi(b"abc"), None);
         assert_eq!(bs_atoi(b"12a"), None);

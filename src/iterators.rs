@@ -576,146 +576,172 @@ pub fn load(glob_pattern: &str) -> Result<Treebank, glob::PatternError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compile_query;
+    use std::fs;
+    use tempfile::{TempDir, tempdir};
 
-    const TWO_TREE_CONLLU: &str = r#"# text = The dog runs.
-1	The	the	DET	DT	_	2	det	_	_
-2	dog	dog	NOUN	NN	_	3	nsubj	_	_
-3	runs	run	VERB	VBZ	_	0	root	_	_
+    const VERB_QUERY: &str = r#"MATCH { V [upos="VERB"]; }"#;
 
-# text = Cats sleep.
-1	Cats	cat	NOUN	NNS	_	2	nsubj	_	_
-2	sleep	sleep	VERB	VBP	_	0	root	_	_
+    /// Two trees: "The dog runs." (one verb) and "John saw Mary leave" (two verbs)
+    const TWO_TREES: &str = "1\tThe\tthe\tDET\tDT\t_\t2\tdet\t_\t_\n\
+                             2\tdog\tdog\tNOUN\tNN\t_\t3\tnsubj\t_\t_\n\
+                             3\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n\
+                             \n\
+                             1\tJohn\tJohn\tPROPN\tNNP\t_\t2\tnsubj\t_\t_\n\
+                             2\tsaw\tsee\tVERB\tVBD\t_\t0\troot\t_\t_\n\
+                             3\tMary\tMary\tPROPN\tNNP\t_\t4\tnsubj\t_\t_\n\
+                             4\tleave\tleave\tVERB\tVB\t_\t2\tccomp\t_\t_\n";
 
-"#;
+    fn one_word(lemma: &str) -> String {
+        format!("1\t{lemma}s\t{lemma}\tVERB\tVBZ\t_\t0\troot\t_\t_\n")
+    }
 
-    const THREE_VERB_CONLLU: &str = r#"1	helped	help	VERB	VBD	_	0	root	_	_
-2	us	we	PRON	PRP	_	1	obj	_	_
+    /// Write single-tree files a.conllu, b.conllu, ... (plus a non-matching
+    /// other.txt), one per lemma
+    fn write_files(lemmas: &[&str]) -> (TempDir, Vec<PathBuf>) {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("other.txt"), "ignored").unwrap();
+        let paths = lemmas
+            .iter()
+            .zip('a'..)
+            .map(|(lemma, name)| {
+                let path = dir.path().join(format!("{name}.conllu"));
+                fs::write(&path, one_word(lemma)).unwrap();
+                path
+            })
+            .collect();
+        (dir, paths)
+    }
 
-1	ran	run	VERB	VBD	_	0	root	_	_
-2	quickly	quickly	ADV	RB	_	1	advmod	_	_
-
-1	sleeps	sleep	VERB	VBZ	_	0	root	_	_
-
-"#;
+    fn first_lemma(tree: &Tree) -> String {
+        String::from_utf8(tree.string_pool.resolve(tree.words[0].lemma).to_vec()).unwrap()
+    }
 
     #[test]
-    fn test_treebank_from_string() {
-        let trees: Vec<_> = Treebank::from_string(TWO_TREE_CONLLU)
+    fn test_from_string() {
+        let trees: Vec<_> = Treebank::from_string(TWO_TREES)
             .trees(true)
-            .filter_map(Result::ok)
-            .collect();
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            trees.iter().map(|t| t.words.len()).collect::<Vec<_>>(),
+            [3, 4]
+        );
 
-        assert_eq!(trees.len(), 2);
-        assert_eq!(trees[0].words.len(), 3);
-        assert_eq!(trees[1].words.len(), 2);
-    }
+        // A tree can produce several matches
+        let count = |query| {
+            Treebank::from_string(TWO_TREES)
+                .search(query, true)
+                .unwrap()
+                .map(Result::unwrap)
+                .count()
+        };
+        assert_eq!(count(VERB_QUERY), 3);
+        assert_eq!(
+            count(r#"MATCH { V [lemma="see"]; S []; V -[nsubj]-> S; }"#),
+            1
+        );
+        assert_eq!(count(r#"MATCH { N [upos="ADJ"]; }"#), 0);
 
-    #[test]
-    fn test_search_from_string() {
-        let pattern = compile_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
-        let treebank = Treebank::from_string(THREE_VERB_CONLLU);
-        let matches: Vec<_> = treebank
+        // filter yields each matching tree once
+        let filter = |query| {
+            Treebank::from_string(TWO_TREES)
+                .filter(query, true)
+                .unwrap()
+                .map(|t| t.unwrap().words.len())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(filter(VERB_QUERY), [3, 4]);
+        assert_eq!(filter(r#"MATCH { N [upos="PROPN"]; }"#), [4]);
+        assert!(filter(r#"MATCH { N [upos="ADJ"]; }"#).is_empty());
+
+        // Queries can be strings or compiled patterns
+        let pattern = compile_query(VERB_QUERY).unwrap();
+        let n = Treebank::from_string(TWO_TREES)
             .search(pattern, true)
             .unwrap()
-            .filter_map(Result::ok)
-            .collect();
-
-        assert_eq!(matches.len(), 3);
+            .count();
+        assert_eq!(n, 3);
+        assert!(
+            Treebank::from_string(TWO_TREES)
+                .search("MATCH {", true)
+                .is_err()
+        );
+        assert!(
+            Treebank::from_string(TWO_TREES)
+                .filter("MATCH {", true)
+                .is_err()
+        );
     }
 
     #[test]
-    fn test_search_multiple_matches_per_tree() {
-        let conllu = "1\tsaw\tsee\tVERB\tVBD\t_\t0\troot\t_\t_\n\
-                      2\tJohn\tJohn\tPROPN\tNNP\t_\t1\tobj\t_\t_\n\
-                      3\trunning\trun\tVERB\tVBG\t_\t1\txcomp\t_\t_\n";
+    fn test_files() {
+        let lemmas = ["run", "sleep", "walk"];
+        let (dir, paths) = write_files(&lemmas);
+        let glob = format!("{}/*.conllu", dir.path().display());
 
-        let pattern = compile_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
-        let treebank = Treebank::from_string(conllu);
-        let matches: Vec<_> = treebank
-            .search(pattern, true)
-            .unwrap()
-            .filter_map(Result::ok)
-            .collect();
+        for ordered in [true, false] {
+            for tb in [Treebank::from_paths(paths.clone()), load(&glob).unwrap()] {
+                let mut found: Vec<_> = tb
+                    .clone()
+                    .trees(ordered)
+                    .map(|t| first_lemma(&t.unwrap()))
+                    .collect();
+                // Unordered iteration is complete, but in no particular order
+                if !ordered {
+                    found.sort();
+                }
+                assert_eq!(found, lemmas);
 
-        assert_eq!(matches.len(), 2);
+                let mut found: Vec<_> = tb
+                    .search(VERB_QUERY, ordered)
+                    .unwrap()
+                    .map(|m| first_lemma(&m.unwrap().tree))
+                    .collect();
+                if !ordered {
+                    found.sort();
+                }
+                assert_eq!(found, lemmas);
+            }
+        }
+
+        assert_eq!(Treebank::from_path(&paths[1]).trees(true).count(), 1);
     }
 
     #[test]
-    fn test_search_no_matches() {
-        let conllu = "1\tThe\tthe\tDET\tDT\t_\t2\tdet\t_\t_\n\
-                      2\tdog\tdog\tNOUN\tNN\t_\t0\troot\t_\t_\n";
+    fn test_file_errors() {
+        let (dir, mut paths) = write_files(&["run"]);
+        let bad = dir.path().join("bad.conllu");
+        fs::write(&bad, "1\truns\trun\tVERB\tVBZ\t_\tx\troot\t_\t_\n").unwrap();
+        paths.extend([dir.path().join("missing.conllu"), bad, paths[0].clone()]);
 
-        let pattern = compile_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
-        let treebank = Treebank::from_string(conllu);
-        let matches: Vec<_> = treebank
-            .search(pattern, true)
-            .unwrap()
-            .filter_map(Result::ok)
-            .collect();
+        for ordered in [true, false] {
+            let results: Vec<_> = Treebank::from_paths(paths.clone()).trees(ordered).collect();
+            assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 2);
 
-        assert_eq!(matches.len(), 0);
-    }
-
-    #[test]
-    fn test_search_with_constraints() {
-        let conllu = "1\thelped\thelp\tVERB\tVBD\t_\t0\troot\t_\t_\n\
-                      2\tus\twe\tPRON\tPRP\t_\t1\tobj\t_\t_\n\
-                      3\tto\tto\tPART\tTO\t_\t4\tmark\t_\t_\n\
-                      4\twin\twin\tVERB\tVB\t_\t1\txcomp\t_\t_\n";
-
-        let pattern =
-            compile_query("MATCH { V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 -> V2; }").unwrap();
-        let treebank = Treebank::from_string(conllu);
-        let matches: Vec<_> = treebank
-            .search(pattern, true)
-            .unwrap()
-            .filter_map(Result::ok)
-            .collect();
-
-        assert_eq!(matches.len(), 1);
-    }
-
-    #[test]
-    fn test_filter() {
-        // THREE_VERB_CONLLU has 3 trees, each with one verb
-        let pattern = compile_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
-
-        // All 3 trees match the pattern
-        let trees: Vec<_> = Treebank::from_string(THREE_VERB_CONLLU)
-            .filter(pattern.clone(), true)
-            .unwrap()
-            .filter_map(Result::ok)
-            .collect();
-        assert_eq!(trees.len(), 3);
-
-        // Pattern that matches only some trees (lemma="help")
-        let pattern = compile_query("MATCH { V [lemma=\"help\"]; }").unwrap();
-        let trees: Vec<_> = Treebank::from_string(THREE_VERB_CONLLU)
-            .filter(pattern, true)
-            .unwrap()
-            .filter_map(Result::ok)
-            .collect();
-        assert_eq!(trees.len(), 1);
-
-        // Pattern that matches no trees
-        let pattern = compile_query("MATCH { N [upos=\"NOUN\"]; }").unwrap();
-        let trees: Vec<_> = Treebank::from_string(THREE_VERB_CONLLU)
-            .filter(pattern, true)
-            .unwrap()
-            .filter_map(Result::ok)
-            .collect();
-        assert_eq!(trees.len(), 0);
+            let mut errors: Vec<_> = results
+                .into_iter()
+                .filter_map(|r| r.err().map(|e| e.to_string()))
+                .collect();
+            errors.sort();
+            assert_eq!(errors.len(), 2);
+            assert!(
+                errors[0].contains("bad.conllu: Parse error at line 1"),
+                "{errors:?}"
+            );
+            assert!(errors[1].contains("missing.conllu"), "{errors:?}");
+        }
     }
 
     #[test]
     fn test_progress_and_cancel() {
+        let search = |progress: &Arc<Progress>| {
+            Treebank::from_string(TWO_TREES)
+                .search_with(VERB_QUERY, true, progress.clone())
+                .unwrap()
+        };
+
         let progress = Arc::new(Progress::default());
-        let n = Treebank::from_string(TWO_TREE_CONLLU)
-            .search_with("MATCH { V [upos=\"VERB\"]; }", true, progress.clone())
-            .unwrap()
-            .count();
-        assert_eq!(n, 2);
+        assert_eq!(search(&progress).count(), 3);
         assert_eq!(progress.files_total.load(Ordering::Relaxed), 1);
         assert_eq!(progress.files_done.load(Ordering::Relaxed), 1);
         assert_eq!(progress.trees.load(Ordering::Relaxed), 2);
@@ -723,279 +749,15 @@ mod tests {
 
         // Dropping the iterator before it is exhausted cancels the workers
         let progress = Arc::new(Progress::default());
-        let mut matches = Treebank::from_string(TWO_TREE_CONLLU)
-            .search_with("MATCH { V [upos=\"VERB\"]; }", true, progress.clone())
-            .unwrap();
+        let mut matches = search(&progress);
         assert!(matches.next().is_some());
         drop(matches);
         assert!(progress.is_cancelled());
 
+        // A cancelled search yields nothing
         let progress = Arc::new(Progress::default());
         progress.cancel();
-        let n = Treebank::from_string(TWO_TREE_CONLLU)
-            .search_with("MATCH { V [upos=\"VERB\"]; }", true, progress.clone())
-            .unwrap()
-            .count();
-        assert_eq!(n, 0);
+        assert_eq!(search(&progress).count(), 0);
         assert_eq!(progress.trees.load(Ordering::Relaxed), 0);
-    }
-
-    mod multi_file {
-        use super::*;
-        use std::fs;
-        use std::io::Write;
-        use std::path::PathBuf;
-        use tempfile::{TempDir, tempdir};
-
-        /// Helper to create test files with given content
-        fn create_test_files(contents: &[(&str, &str)]) -> (TempDir, Vec<PathBuf>) {
-            let dir = tempdir().unwrap();
-            let mut paths = Vec::new();
-
-            for (filename, content) in contents {
-                let path = dir.path().join(filename);
-                let mut file = fs::File::create(&path).unwrap();
-                write!(file, "{}", content).unwrap();
-                paths.push(path);
-            }
-
-            (dir, paths)
-        }
-
-        #[test]
-        fn test_treebank_from_paths() {
-            let (_dir, paths) = create_test_files(&[
-                (
-                    "file1.conllu",
-                    "1\tThe\tthe\tDET\tDT\t_\t2\tdet\t_\t_\n2\tdog\tdog\tNOUN\tNN\t_\t0\troot\t_\t_\n",
-                ),
-                (
-                    "file2.conllu",
-                    "1\tCats\tcat\tNOUN\tNNS\t_\t2\tnsubj\t_\t_\n2\tsleep\tsleep\tVERB\tVBP\t_\t0\troot\t_\t_\n",
-                ),
-            ]);
-
-            let results: Vec<_> = Treebank::from_paths(paths)
-                .trees(true)
-                .filter_map(Result::ok)
-                .collect();
-
-            assert_eq!(results.len(), 2);
-            assert_eq!(results[0].words.len(), 2);
-            assert_eq!(results[1].words.len(), 2);
-        }
-
-        #[test]
-        fn test_treebank_from_glob() {
-            let (dir, _paths) = create_test_files(&[
-                (
-                    "test1.conllu",
-                    "1\tThe\tthe\tDET\tDT\t_\t2\tdet\t_\t_\n2\tdog\tdog\tNOUN\tNN\t_\t0\troot\t_\t_\n",
-                ),
-                (
-                    "test2.conllu",
-                    "1\tCats\tcat\tNOUN\tNNS\t_\t2\tnsubj\t_\t_\n2\tsleep\tsleep\tVERB\tVBP\t_\t0\troot\t_\t_\n",
-                ),
-                ("other.txt", "ignored"),
-            ]);
-
-            let pattern = format!("{}/*.conllu", dir.path().display());
-            let results: Vec<_> = Treebank::from_glob(&pattern)
-                .unwrap()
-                .trees(true)
-                .filter_map(Result::ok)
-                .collect();
-
-            assert_eq!(results.len(), 2);
-        }
-
-        #[test]
-        fn test_search_from_paths() {
-            let (_dir, paths) = create_test_files(&[
-                (
-                    "file1.conllu",
-                    "1\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n",
-                ),
-                (
-                    "file2.conllu",
-                    "1\tsleeps\tsleep\tVERB\tVBZ\t_\t0\troot\t_\t_\n",
-                ),
-            ]);
-
-            let pattern = compile_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
-            let treebank = Treebank::from_paths(paths);
-            let results: Vec<_> = treebank
-                .search(pattern, true)
-                .unwrap()
-                .filter_map(Result::ok)
-                .collect();
-
-            assert_eq!(results.len(), 2);
-        }
-
-        #[test]
-        fn test_search_from_glob() {
-            let (dir, _paths) = create_test_files(&[
-                ("a.conllu", "1\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
-                (
-                    "b.conllu",
-                    "1\tsleeps\tsleep\tVERB\tVBZ\t_\t0\troot\t_\t_\n",
-                ),
-            ]);
-
-            let pattern = compile_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
-            let glob_pattern = format!("{}/*.conllu", dir.path().display());
-            let treebank = Treebank::from_glob(&glob_pattern).unwrap();
-            let results: Vec<_> = treebank
-                .search(pattern, true)
-                .unwrap()
-                .filter_map(Result::ok)
-                .collect();
-
-            assert_eq!(results.len(), 2);
-        }
-
-        #[test]
-        fn test_reports_bad_files() {
-            let (dir, mut paths) = create_test_files(&[(
-                "good.conllu",
-                "1\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n",
-            )]);
-
-            let good_file = paths[0].clone();
-            let bad_file = dir.path().join("nonexistent.conllu");
-            paths = vec![good_file.clone(), bad_file, good_file];
-
-            let results: Vec<_> = Treebank::from_paths(paths).trees(true).collect();
-
-            assert_eq!(results.len(), 3);
-            assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 2);
-            assert_eq!(results.iter().filter(|r| r.is_err()).count(), 1);
-        }
-
-        #[test]
-        fn test_parse_error_names_file() {
-            let (_dir, paths) = create_test_files(&[
-                ("good.conllu", "1\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
-                ("bad.conllu", "1\truns\trun\tVERB\tVBZ\t_\tx\troot\t_\t_\n"),
-            ]);
-
-            for ordered in [true, false] {
-                let errors: Vec<_> = Treebank::from_paths(paths.clone())
-                    .trees(ordered)
-                    .filter_map(Result::err)
-                    .collect();
-
-                assert_eq!(errors.len(), 1);
-                let message = errors[0].to_string();
-                assert!(message.contains("bad.conllu: Parse error at line 1"));
-            }
-        }
-
-        #[test]
-        fn test_ordered_iteration_deterministic() {
-            let (_dir, paths) = create_test_files(&[
-                ("a.conllu", "1\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
-                (
-                    "b.conllu",
-                    "1\tsleeps\tsleep\tVERB\tVBZ\t_\t0\troot\t_\t_\n",
-                ),
-                ("c.conllu", "1\twalks\twalk\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
-            ]);
-
-            // Multiple iterations should produce same order
-            let treebank = Treebank::from_paths(paths.clone());
-            let run1: Vec<_> = treebank
-                .clone()
-                .trees(true)
-                .filter_map(Result::ok)
-                .collect();
-            let run2: Vec<_> = treebank
-                .clone()
-                .trees(true)
-                .filter_map(Result::ok)
-                .collect();
-
-            assert_eq!(run1.len(), 3);
-            assert_eq!(run2.len(), 3);
-
-            // Verify same order by comparing lemmas
-            for (t1, t2) in run1.iter().zip(run2.iter()) {
-                assert_eq!(
-                    t1.string_pool.resolve(t1.words[0].lemma),
-                    t2.string_pool.resolve(t2.words[0].lemma)
-                );
-            }
-        }
-
-        #[test]
-        fn test_unordered_iteration_completeness() {
-            let (_dir, paths) = create_test_files(&[
-                ("a.conllu", "1\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
-                (
-                    "b.conllu",
-                    "1\tsleeps\tsleep\tVERB\tVBZ\t_\t0\troot\t_\t_\n",
-                ),
-                ("c.conllu", "1\twalks\twalk\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
-            ]);
-
-            let treebank = Treebank::from_paths(paths);
-            let results: Vec<_> = treebank.trees(false).filter_map(Result::ok).collect();
-
-            // Should still get all trees, just possibly in different order
-            assert_eq!(results.len(), 3);
-
-            // Verify we got all the expected lemmas
-            let mut lemmas: Vec<Vec<u8>> = results
-                .iter()
-                .map(|t| t.string_pool.resolve(t.words[0].lemma).to_vec())
-                .collect();
-            lemmas.sort();
-
-            let expected: Vec<Vec<u8>> = vec![b"run".to_vec(), b"sleep".to_vec(), b"walk".to_vec()];
-            assert_eq!(lemmas, expected);
-        }
-
-        #[test]
-        fn test_search_ordered() {
-            let (_dir, paths) = create_test_files(&[
-                ("a.conllu", "1\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
-                (
-                    "b.conllu",
-                    "1\tsleeps\tsleep\tVERB\tVBZ\t_\t0\troot\t_\t_\n",
-                ),
-            ]);
-
-            let pattern = compile_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
-            let treebank = Treebank::from_paths(paths);
-            let results: Vec<_> = treebank
-                .search(pattern, true)
-                .unwrap()
-                .filter_map(Result::ok)
-                .collect();
-
-            assert_eq!(results.len(), 2);
-        }
-
-        #[test]
-        fn test_search_unordered() {
-            let (_dir, paths) = create_test_files(&[
-                ("a.conllu", "1\truns\trun\tVERB\tVBZ\t_\t0\troot\t_\t_\n"),
-                (
-                    "b.conllu",
-                    "1\tsleeps\tsleep\tVERB\tVBZ\t_\t0\troot\t_\t_\n",
-                ),
-            ]);
-
-            let pattern = compile_query("MATCH { V [upos=\"VERB\"]; }").unwrap();
-            let treebank = Treebank::from_paths(paths);
-            let results: Vec<_> = treebank
-                .search(pattern, false)
-                .unwrap()
-                .filter_map(Result::ok)
-                .collect();
-
-            assert_eq!(results.len(), 2);
-        }
     }
 }

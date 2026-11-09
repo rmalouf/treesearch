@@ -354,981 +354,244 @@ fn compile_precedence_constraint(pair: Pair<Rule>) -> Result<EdgeConstraint, Que
 #[cfg(test)]
 mod tests {
     use super::*;
+    use Constraint::*;
+
+    fn lit(s: &str) -> ConstraintValue {
+        ConstraintValue::Literal(s.to_string())
+    }
+
+    /// Regex value for comparisons (equality only looks at the pattern string)
+    fn re(s: &str) -> ConstraintValue {
+        ConstraintValue::Regex(s.to_string(), Regex::new(s).unwrap())
+    }
+
+    fn not(c: Constraint) -> Constraint {
+        Not(Box::new(c))
+    }
+
+    fn compile_match(body: &str) -> BasePattern {
+        compile_query(&format!("MATCH {{ {body} }}"))
+            .unwrap()
+            .match_pattern
+    }
 
     #[test]
-    fn test_parse_constraints() {
-        let query = "MATCH { Node []; }";
-        let pattern = compile_query(query).unwrap();
+    fn test_parse_node_constraints() {
+        let cases = [
+            ("N []", Any),
+            (r#"V [lemma="run"]"#, Lemma(lit("run"))),
+            (r#"V [upos="VERB"]"#, UPOS(lit("VERB"))),
+            (r#"V [xpos="VBZ"]"#, XPOS(lit("VBZ"))),
+            (r#"V [form="running"]"#, Form(lit("running"))),
+            (r#"V [deprel="nsubj"]"#, DepRel(lit("nsubj"))),
+            (
+                r#"V [feats.Tense="Past"]"#,
+                Feature("Tense".into(), lit("Past")),
+            ),
+            (
+                r#"V [misc.SpaceAfter="No"]"#,
+                Misc("SpaceAfter".into(), lit("No")),
+            ),
+            // Negation
+            (r#"V [lemma!="help"]"#, not(Lemma(lit("help")))),
+            (
+                r#"V [feats.Tense!="Past"]"#,
+                not(Feature("Tense".into(), lit("Past"))),
+            ),
+            // Regexes: stored without the anchors that are added on compilation
+            (r#"V [lemma=/run.*/]"#, Lemma(re("run.*"))),
+            (r#"V [form=/\w+ing/]"#, Form(re(r"\w+ing"))),
+            (
+                r#"V [feats.Tense=/Past|Pres/]"#,
+                Feature("Tense".into(), re("Past|Pres")),
+            ),
+            (r#"V [lemma!=/be.*/]"#, not(Lemma(re("be.*")))),
+            // Boolean combinations
+            (
+                r#"V [lemma="run" & upos!="NOUN"]"#,
+                And(vec![Lemma(lit("run")), not(UPOS(lit("NOUN")))]),
+            ),
+            (
+                r#"V [lemma="be" & feats.Tense=/Past|Pres/]"#,
+                And(vec![
+                    Lemma(lit("be")),
+                    Feature("Tense".into(), re("Past|Pres")),
+                ]),
+            ),
+            (
+                r#"N [upos="NOUN" | upos="PROPN"]"#,
+                Or(vec![UPOS(lit("NOUN")), UPOS(lit("PROPN"))]),
+            ),
+            (
+                // & binds tighter than |
+                r#"V [lemma="be" & upos="VERB" | lemma="have" & upos="AUX"]"#,
+                Or(vec![
+                    And(vec![Lemma(lit("be")), UPOS(lit("VERB"))]),
+                    And(vec![Lemma(lit("have")), UPOS(lit("AUX"))]),
+                ]),
+            ),
+            (
+                r#"N [(upos="NOUN" | upos="PROPN") & deprel="nsubj"]"#,
+                And(vec![
+                    Or(vec![UPOS(lit("NOUN")), UPOS(lit("PROPN"))]),
+                    DepRel(lit("nsubj")),
+                ]),
+            ),
+            // Edges to `_` become constraints on the named end
+            (r#"X []; _ -> X"#, IsChild(None)),
+            (r#"X []; _ !-> X"#, not(IsChild(None))),
+            (
+                r#"X [upos="NOUN"]; _ -[obj]-> X"#,
+                And(vec![UPOS(lit("NOUN")), IsChild(Some(lit("obj")))]),
+            ),
+            (
+                r#"X [upos="NOUN"]; _ -[obj]-> X; _ -/nsubj.*/-> X"#,
+                And(vec![
+                    UPOS(lit("NOUN")),
+                    IsChild(Some(lit("obj"))),
+                    IsChild(Some(re("nsubj.*"))),
+                ]),
+            ),
+            (
+                r#"X [upos="VERB"]; X -[nsubj]-> _"#,
+                And(vec![UPOS(lit("VERB")), HasChild(Some(lit("nsubj")))]),
+            ),
+            (r#"X []; X !-> _"#, not(HasChild(None))),
+            // A labeled edge constrains the target's deprel, unless it is negated
+            (r#"X []; Y []; Y -[obj]-> X"#, DepRel(lit("obj"))),
+            (r#"X []; Y []; Y !-[obj]-> X"#, Any),
+        ];
 
-        assert_eq!(pattern.match_pattern.var_constraints.len(), 1);
-        assert_eq!(*pattern.match_pattern.var_ids.get("Node").unwrap(), 0);
-        assert!(matches!(
-            pattern.match_pattern.var_constraints[0],
-            Constraint::Any
-        ));
-
-        let query = r#"MATCH { Verb [upos="VERB"]; }"#;
-        let pattern = compile_query(query).unwrap();
-
-        assert_eq!(pattern.match_pattern.var_constraints.len(), 1);
-        assert_eq!(*pattern.match_pattern.var_ids.get("Verb").unwrap(), 0);
-        assert_eq!(
-            pattern.match_pattern.var_constraints[0],
-            Constraint::UPOS(ConstraintValue::Literal("VERB".to_string()))
-        );
-
-        let query = r#"MATCH { Help [lemma="help" & upos="VERB"]; }"#;
-        let pattern = compile_query(query).unwrap();
-
-        assert_eq!(pattern.match_pattern.var_constraints.len(), 1);
-        assert_eq!(*pattern.match_pattern.var_ids.get("Help").unwrap(), 0);
-        match &pattern.match_pattern.var_constraints[0] {
-            Constraint::And(constraints) => {
-                assert_eq!(constraints.len(), 2);
-                assert_eq!(
-                    constraints[0],
-                    Constraint::Lemma(ConstraintValue::Literal("help".to_string()))
-                );
-                assert_eq!(
-                    constraints[1],
-                    Constraint::UPOS(ConstraintValue::Literal("VERB".to_string()))
-                );
-            }
-            _ => panic!("Expected And constraint"),
+        // The first declared variable is the one under test
+        for (body, expected) in cases {
+            assert_eq!(compile_match(body).var_constraints[0], expected, "{body}");
         }
     }
 
     #[test]
-    fn test_parse_edge() {
-        let query = r#"MATCH {
-            Help [lemma="help"];
-            To [lemma="to"];
-            Help -[xcomp]-> To;
-        }"#;
-        let pattern = compile_query(query).unwrap();
+    fn test_parse_edges() {
+        use RelationType::*;
+        let cases = [
+            ("A -> B", Child, None, false),
+            ("A -[xcomp]-> B", Child, Some(lit("xcomp")), false),
+            ("A !-> B", Child, None, true),
+            ("A !-[xcomp]-> B", Child, Some(lit("xcomp")), true),
+            ("A -/nsubj.*/-> B", Child, Some(re("nsubj.*")), false),
+            ("A !-/obj|iobj/-> B", Child, Some(re("obj|iobj")), true),
+            ("A << B", Precedes, None, false),
+            ("A < B", ImmediatelyPrecedes, None, false),
+            ("A <3< B", PrecedesWithin(3), None, false),
+            ("A<12<B", PrecedesWithin(12), None, false),
+        ];
 
-        assert_eq!(pattern.match_pattern.var_constraints.len(), 2);
-        assert_eq!(pattern.match_pattern.edge_constraints.len(), 1);
-
-        let edge_constraint = &pattern.match_pattern.edge_constraints[0];
-        assert_eq!(edge_constraint.from, "Help");
-        assert_eq!(edge_constraint.to, "To");
-        assert_eq!(edge_constraint.relation, RelationType::Child);
-        assert_eq!(
-            edge_constraint.label,
-            Some(ConstraintValue::Literal("xcomp".to_string()))
-        );
-    }
-
-    #[test]
-    fn test_parse_unconstrained_edge() {
-        let query = r#"MATCH {
-            Parent [];
-            Child [];
-            Parent -> Child;
-        }"#;
-        let pattern = compile_query(query).unwrap();
-
-        assert_eq!(pattern.match_pattern.var_constraints.len(), 2);
-        assert_eq!(pattern.match_pattern.edge_constraints.len(), 1);
-
-        let edge_constraint = &pattern.match_pattern.edge_constraints[0];
-        assert_eq!(edge_constraint.from, "Parent");
-        assert_eq!(edge_constraint.to, "Child");
-        assert_eq!(edge_constraint.relation, RelationType::Child);
-        assert_eq!(edge_constraint.label, None);
-    }
-
-    #[test]
-    fn test_parse_negative_unlabeled_edge() {
-        let query = r#"MATCH {
-            Help [];
-            To [];
-            Help !-> To;
-        }"#;
-        let pattern = compile_query(query).unwrap();
-
-        assert_eq!(pattern.match_pattern.edge_constraints.len(), 1);
-
-        let edge_constraint = &pattern.match_pattern.edge_constraints[0];
-        assert_eq!(edge_constraint.from, "Help");
-        assert_eq!(edge_constraint.to, "To");
-        assert_eq!(edge_constraint.relation, RelationType::Child);
-        assert_eq!(edge_constraint.label, None);
-        assert!(edge_constraint.negated);
-    }
-
-    #[test]
-    fn test_parse_negative_labeled_edge() {
-        let query = r#"MATCH {
-            Help [lemma="help"];
-            To [lemma="to"];
-            Help !-[xcomp]-> To;
-        }"#;
-        let pattern = compile_query(query).unwrap();
-
-        assert_eq!(pattern.match_pattern.edge_constraints.len(), 1);
-
-        let edge_constraint = &pattern.match_pattern.edge_constraints[0];
-        assert_eq!(edge_constraint.from, "Help");
-        assert_eq!(edge_constraint.to, "To");
-        assert_eq!(edge_constraint.relation, RelationType::Child);
-        assert_eq!(
-            edge_constraint.label,
-            Some(ConstraintValue::Literal("xcomp".to_string()))
-        );
-        assert!(edge_constraint.negated);
-    }
-
-    #[test]
-    fn test_parse_positive_edge_not_negated() {
-        // Verify positive edges have negated=false
-        let query = r#"MATCH {
-            Help [];
-            To [];
-            Help -[xcomp]-> To;
-        }"#;
-        let pattern = compile_query(query).unwrap();
-
-        let edge_constraint = &pattern.match_pattern.edge_constraints[0];
-        assert!(!edge_constraint.negated);
-    }
-
-    #[test]
-    fn test_parse_complex_query() {
-        let query = r#"MATCH {
-            // Find help-to-verb constructions
-            Help [lemma="help"];
-            To [lemma="to"];
-            YHead [];
-
-            Help -[xcomp]-> To;
-            To -[obj]-> YHead;
-        }"#;
-        let pattern = compile_query(query).unwrap();
-
-        assert_eq!(pattern.match_pattern.var_constraints.len(), 3);
-        assert!(pattern.match_pattern.var_ids.contains_key("Help"));
-        assert!(pattern.match_pattern.var_ids.contains_key("To"));
-        assert!(pattern.match_pattern.var_ids.contains_key("YHead"));
-
-        assert_eq!(pattern.match_pattern.edge_constraints.len(), 2);
-        assert_eq!(pattern.match_pattern.edge_constraints[0].from, "Help");
-        assert_eq!(pattern.match_pattern.edge_constraints[0].to, "To");
-        assert_eq!(pattern.match_pattern.edge_constraints[1].from, "To");
-        assert_eq!(pattern.match_pattern.edge_constraints[1].to, "YHead");
-    }
-
-    #[test]
-    fn test_parse_all_constraint_types() {
-        let query = r#"MATCH {
-            N1 [lemma="run"];
-            N2 [upos="VERB"];
-            N3 [form="running"];
-            N4 [deprel="nsubj"];
-        }"#;
-        let pattern = compile_query(query).unwrap();
-
-        assert_eq!(pattern.match_pattern.var_constraints.len(), 4);
-        assert!(
-            pattern
-                .match_pattern
-                .var_constraints
-                .contains(&Constraint::Lemma(ConstraintValue::Literal(
-                    "run".to_string()
-                )))
-        );
-        assert!(
-            pattern
-                .match_pattern
-                .var_constraints
-                .contains(&Constraint::UPOS(ConstraintValue::Literal(
-                    "VERB".to_string()
-                )))
-        );
-        assert!(
-            pattern
-                .match_pattern
-                .var_constraints
-                .contains(&Constraint::Form(ConstraintValue::Literal(
-                    "running".to_string()
-                )))
-        );
-        assert!(
-            pattern
-                .match_pattern
-                .var_constraints
-                .contains(&Constraint::DepRel(ConstraintValue::Literal(
-                    "nsubj".to_string()
-                )))
-        );
-    }
-
-    #[test]
-    fn test_forward_reference_in_edge() {
-        // Edge constraint references a variable defined later in the query
-        let query = r#"MATCH {
-            Help [lemma="help"];
-            Help -> To;
-            To [lemma="to"];
-        }"#;
-        let pattern = compile_query(query).unwrap();
-
-        // Parser accepts this, but should validate that all variables exist
-        assert_eq!(pattern.match_pattern.var_constraints.len(), 2);
-        assert_eq!(pattern.match_pattern.edge_constraints.len(), 1);
-        assert_eq!(pattern.match_pattern.edge_constraints[0].from, "Help");
-        assert_eq!(pattern.match_pattern.edge_constraints[0].to, "To");
-    }
-
-    #[test]
-    fn test_undeclared_var_in_edge() {
-        for query in [
-            "MATCH { Node []; Foo -> Node; }",
-            "MATCH { Node []; Node -> Bar; }",
-            "MATCH { Node []; Node < Bar; }",
-            "MATCH { Node []; } EXCEPT { Node -> Bar; }",
-            "MATCH { Node []; } OPTIONAL { Node -[obj]-> Bar; }",
-        ] {
-            assert!(
-                matches!(compile_query(query), Err(QueryError::UndeclaredVariable(_))),
-                "{query}"
+        for (edge, relation, label, negated) in cases {
+            let pattern = compile_match(&format!("A []; B []; {edge};"));
+            let [e] = &pattern.edge_constraints[..] else {
+                panic!("{edge}: expected one edge constraint");
+            };
+            assert_eq!(
+                (
+                    e.from.as_str(),
+                    e.to.as_str(),
+                    e.relation,
+                    &e.label,
+                    e.negated
+                ),
+                ("A", "B", relation, &label, negated),
+                "{edge}"
             );
         }
     }
 
     #[test]
-    fn test_self_reference_in_edge() {
-        // Edge constraint where a variable references itself
-        let query = r#"MATCH {
-            Node [upos="NOUN"];
-            Node -> Node;
-        }"#;
-        let pattern = compile_query(query).unwrap();
-
-        // This is likely invalid but parser should accept it
-        assert_eq!(pattern.match_pattern.var_constraints.len(), 1);
-        assert_eq!(pattern.match_pattern.edge_constraints.len(), 1);
-        assert_eq!(pattern.match_pattern.edge_constraints[0].from, "Node");
-        assert_eq!(pattern.match_pattern.edge_constraints[0].to, "Node");
-    }
-
-    #[test]
-    fn test_duplicate_variable_definition() {
-        // Same variable with conflicting constraints
-        let query = r#"MATCH {
-            Node [upos="NOUN"];
-            Node [upos="VERB"];
-            Node -> Node;
-        }"#;
-        let pattern = compile_query(query);
-        assert!(matches!(pattern, Err(QueryError::DuplicateVariable(_))));
-    }
-
-    #[test]
-    fn test_parse_precedes() {
-        // Test << (precedes) operator
-        let query = r#"MATCH {
-            First [upos="NOUN"];
-            Second [upos="VERB"];
-            First << Second;
-        }"#;
-        let pattern = compile_query(query).unwrap();
-
-        assert_eq!(pattern.match_pattern.var_constraints.len(), 2);
-        assert_eq!(pattern.match_pattern.edge_constraints.len(), 1);
-
-        let edge_constraint = &pattern.match_pattern.edge_constraints[0];
-        assert_eq!(edge_constraint.from, "First");
-        assert_eq!(edge_constraint.to, "Second");
-        assert_eq!(edge_constraint.relation, RelationType::Precedes);
-        assert_eq!(edge_constraint.label, None);
-    }
-
-    #[test]
-    fn test_parse_immediately_precedes() {
-        // Test < (immediately precedes) operator
-        let query = r#"MATCH {
-            Adj [upos="ADJ"];
-            Noun [upos="NOUN"];
-            Adj < Noun;
-        }"#;
-        let pattern = compile_query(query).unwrap();
-
-        assert_eq!(pattern.match_pattern.var_constraints.len(), 2);
-        assert_eq!(pattern.match_pattern.edge_constraints.len(), 1);
-
-        let edge_constraint = &pattern.match_pattern.edge_constraints[0];
-        assert_eq!(edge_constraint.from, "Adj");
-        assert_eq!(edge_constraint.to, "Noun");
-        assert_eq!(edge_constraint.relation, RelationType::ImmediatelyPrecedes);
-        assert_eq!(edge_constraint.label, None);
-    }
-
-    #[test]
-    fn test_parse_precedes_within() {
-        // Test <n< (precedes within n tokens) operator
-        let query = r#"MATCH {
-            Adj [upos="ADJ"];
-            Noun [upos="NOUN"];
-            Adj <3< Noun;
-        }"#;
-        let pattern = compile_query(query).unwrap();
-
-        let edge_constraint = &pattern.match_pattern.edge_constraints[0];
-        assert_eq!(edge_constraint.from, "Adj");
-        assert_eq!(edge_constraint.to, "Noun");
-        assert_eq!(edge_constraint.relation, RelationType::PrecedesWithin(3));
-        assert_eq!(edge_constraint.label, None);
-
-        // Multi-digit distances, no surrounding whitespace
-        let pattern = compile_query("MATCH { A []; B []; A<12<B; }").unwrap();
-        assert_eq!(
-            pattern.match_pattern.edge_constraints[0].relation,
-            RelationType::PrecedesWithin(12)
+    fn test_parse_query_structure() {
+        let pattern = compile_match(
+            r#"
+            // Variables can be used before they are declared
+            Help [lemma="help"];    # inline comment
+            Help -[xcomp]-> To;
+            To [lemma="to"];
+            To << Y;
+            Y [];
+            _ -[obj]-> Y;           // edges to `_` are not edge constraints
+            _ -> _;                 // and this one is ignored entirely
+            "#,
         );
-    }
 
-    #[test]
-    fn test_parse_precedes_within_invalid() {
-        // Zero distance can never match
-        assert!(matches!(
-            compile_query("MATCH { A []; B []; A <0< B; }"),
-            Err(QueryError::InvalidDistance(_))
-        ));
-        // Distance too large to represent
-        assert!(matches!(
-            compile_query("MATCH { A []; B []; A <99999999999999999999999< B; }"),
-            Err(QueryError::InvalidDistance(_))
-        ));
-        // No whitespace inside the operator
-        assert!(compile_query("MATCH { A []; B []; A < 3 < B; }").is_err());
-        // Distance must be a number
-        assert!(compile_query("MATCH { A []; B []; A <x< B; }").is_err());
-    }
-
-    #[test]
-    fn test_parse_mixed_precedence_and_dependency() {
-        // Test query with both dependency edges and precedence constraints
-        let query = r#"
-MATCH {
-            Verb [upos="VERB"];
-            Subj [upos="NOUN"];
-            Obj [upos="NOUN"];
-            Verb -[nsubj]-> Subj;
-            Verb -[obj]-> Obj;
-            Subj << Verb;
-            Verb << Obj;
-        
-}"#;
-        let pattern = compile_query(query).unwrap();
-
-        assert_eq!(pattern.match_pattern.var_constraints.len(), 3);
-        assert_eq!(pattern.match_pattern.edge_constraints.len(), 4);
-
-        // Check that we have both Child and Precedes relations
-        let has_child = pattern
-            .match_pattern
+        assert_eq!(pattern.var_names, ["Help", "To", "Y"]);
+        let edges: Vec<_> = pattern
             .edge_constraints
             .iter()
-            .any(|e| e.relation == RelationType::Child);
-        let has_precedes = pattern
-            .match_pattern
-            .edge_constraints
-            .iter()
-            .any(|e| e.relation == RelationType::Precedes);
+            .map(|e| (e.from.as_str(), e.to.as_str(), e.relation))
+            .collect();
+        assert_eq!(
+            edges,
+            [
+                ("Help", "To", RelationType::Child),
+                ("To", "Y", RelationType::Precedes)
+            ]
+        );
 
-        assert!(has_child);
-        assert!(has_precedes);
+        assert!(compile_match("_ -> _;").var_names.is_empty());
+        assert!(compile_query(r#"MATCH { V []; } // trailing comment"#).is_ok());
     }
 
     #[test]
-    fn test_parse_precedence_chain() {
-        // Test chained precedence: A < B << C
-        let query = r#"
-MATCH {
-            A [];
-            B [];
-            C [];
-            A < B;
-            B << C;
-        
-}"#;
-        let pattern = compile_query(query).unwrap();
+    fn test_compile_errors() {
+        use QueryError::*;
+        type Check = fn(&QueryError) -> bool;
+        let undeclared: Check = |e| matches!(e, UndeclaredVariable(_));
+        let duplicate_ext: Check = |e| matches!(e, DuplicateExtensionVariable(_));
+        let redeclared: Check = |e| matches!(e, RedeclaredMatchVariable(v) if v == "V");
+        let regex: Check = |e| matches!(e, InvalidRegex(..));
+        let distance: Check = |e| matches!(e, InvalidDistance(_));
+        let syntax: Check = |e| matches!(e, ParseError(_));
 
-        assert_eq!(pattern.match_pattern.var_constraints.len(), 3);
-        assert_eq!(pattern.match_pattern.edge_constraints.len(), 2);
-
-        // Find the immediate precedes constraint
-        let immediate = pattern
-            .match_pattern
-            .edge_constraints
-            .iter()
-            .find(|e| e.relation == RelationType::ImmediatelyPrecedes)
-            .unwrap();
-        assert_eq!(immediate.from, "A");
-        assert_eq!(immediate.to, "B");
-
-        // Find the precedes constraint
-        let precedes = pattern
-            .match_pattern
-            .edge_constraints
-            .iter()
-            .find(|e| e.relation == RelationType::Precedes)
-            .unwrap();
-        assert_eq!(precedes.from, "B");
-        assert_eq!(precedes.to, "C");
-    }
-
-    #[test]
-    fn test_parse_feature_constraint() {
-        let query = r#"MATCH { V [feats.Tense="Past"]; }"#;
-        let pattern = compile_query(query).unwrap();
-
-        assert_eq!(pattern.match_pattern.var_constraints.len(), 1);
-        assert_eq!(*pattern.match_pattern.var_ids.get("V").unwrap(), 0);
-        match &pattern.match_pattern.var_constraints[0] {
-            Constraint::Feature(key, ConstraintValue::Literal(value)) => {
-                assert_eq!(key, "Tense");
-                assert_eq!(value.as_str(), "Past");
-            }
-            _ => panic!("Expected Feature constraint"),
+        let cases: [(&str, Check); 18] = [
+            ("MATCH { Node []; Foo -> Node; }", undeclared),
+            ("MATCH { Node []; Node -> Bar; }", undeclared),
+            ("MATCH { Node []; Node < Bar; }", undeclared),
+            ("MATCH { Node []; } EXCEPT { Node -> Bar; }", undeclared),
+            (
+                "MATCH { Node []; } OPTIONAL { Node -[obj]-> Bar; }",
+                undeclared,
+            ),
+            (r#"MATCH { N [upos="NOUN"]; N [upos="VERB"]; }"#, |e| {
+                matches!(e, DuplicateVariable(_))
+            }),
+            // New variable names must be unique across EXCEPT/OPTIONAL blocks
+            (
+                "MATCH { V []; } EXCEPT { M []; V -> M; } OPTIONAL { M []; V -> M; }",
+                duplicate_ext,
+            ),
+            (
+                "MATCH { V []; } EXCEPT { M []; V -> M; } EXCEPT { M []; V -> M; }",
+                duplicate_ext,
+            ),
+            // ... and can't redeclare MATCH variables
+            ("MATCH { V []; } EXCEPT { V []; }", redeclared),
+            ("MATCH { V []; } OPTIONAL { V []; }", redeclared),
+            ("MATCH { V [lemma=/[unclosed/]; }", regex),
+            ("MATCH { V [upos=/VERB(/]; }", regex),
+            ("MATCH { A []; B []; A -/(/-> B; }", regex),
+            ("MATCH { A []; B []; A <0< B; }", distance),
+            (
+                "MATCH { A []; B []; A <99999999999999999999999< B; }",
+                distance,
+            ),
+            ("MATCH { A []; B []; A < 3 < B; }", syntax),
+            ("MATCH { A []; B []; A <x< B; }", syntax),
+            ("EXCEPT { A []; }", syntax),
+        ];
+        for (query, check) in cases {
+            let err = compile_query(query).unwrap_err();
+            assert!(check(&err), "{query}: {err:?}");
         }
-    }
 
-    #[test]
-    fn test_parse_multiple_features() {
-        let query = r#"MATCH { N [feats.Number="Plur" & feats.Case="Nom"]; }"#;
-        let pattern = compile_query(query).unwrap();
-
-        match &pattern.match_pattern.var_constraints[0] {
-            Constraint::And(constraints) => {
-                assert_eq!(constraints.len(), 2);
-                assert!(constraints.iter().any(|c| matches!(
-                    c, Constraint::Feature(k, ConstraintValue::Literal(v)) if k == "Number" && v == "Plur"
-                )));
-                assert!(constraints.iter().any(|c| matches!(
-                    c, Constraint::Feature(k, ConstraintValue::Literal(v)) if k == "Case" && v == "Nom"
-                )));
-            }
-            _ => panic!("Expected And constraint"),
-        }
-    }
-
-    #[test]
-    fn test_parse_mixed_constraints() {
-        let query = r#"MATCH { V [lemma="be" & feats.Tense="Past"]; }"#;
-        let pattern = compile_query(query).unwrap();
-
-        match &pattern.match_pattern.var_constraints[0] {
-            Constraint::And(constraints) => {
-                assert!(
-                    constraints.contains(&Constraint::Lemma(ConstraintValue::Literal(
-                        "be".to_string()
-                    )))
-                );
-                assert!(constraints.iter().any(|c| matches!(
-                    c, Constraint::Feature(k, ConstraintValue::Literal(v)) if k == "Tense" && v == "Past"
-                )));
-            }
-            _ => panic!("Expected And constraint"),
-        }
-    }
-
-    #[test]
-    fn test_parse_negative_constraint() {
-        let query = r#"MATCH { V [lemma!="help"]; }"#;
-        let pattern = compile_query(query).unwrap();
-
-        match &pattern.match_pattern.var_constraints[0] {
-            Constraint::Not(inner) => match inner.as_ref() {
-                Constraint::Lemma(ConstraintValue::Literal(lemma)) => assert_eq!(lemma, "help"),
-                _ => panic!("Expected Lemma constraint inside Not"),
-            },
-            _ => panic!("Expected Not constraint"),
-        }
-    }
-
-    #[test]
-    fn test_parse_negative_feature() {
-        let query = r#"MATCH { V [feats.Tense!="Past"]; }"#;
-        let pattern = compile_query(query).unwrap();
-
-        match &pattern.match_pattern.var_constraints[0] {
-            Constraint::Not(inner) => match inner.as_ref() {
-                Constraint::Feature(key, ConstraintValue::Literal(value)) => {
-                    assert_eq!(key, "Tense");
-                    assert_eq!(value.as_str(), "Past");
-                }
-                _ => panic!("Expected Feature constraint inside Not"),
-            },
-            _ => panic!("Expected Not constraint"),
-        }
-    }
-
-    #[test]
-    fn test_parse_mixed_positive_negative() {
-        let query = r#"MATCH { V [lemma="run" & upos!="NOUN"]; }"#;
-        let pattern = compile_query(query).unwrap();
-
-        match &pattern.match_pattern.var_constraints[0] {
-            Constraint::And(constraints) => {
-                assert_eq!(constraints.len(), 2);
-                assert!(
-                    constraints.contains(&Constraint::Lemma(ConstraintValue::Literal(
-                        "run".to_string()
-                    )))
-                );
-                assert!(constraints.iter().any(|c| matches!(
-                    c, Constraint::Not(inner) if matches!(inner.as_ref(), Constraint::UPOS(ConstraintValue::Literal(pos)) if pos == "NOUN")
-                )));
-            }
-            _ => panic!("Expected And constraint"),
-        }
-    }
-
-    #[test]
-    fn test_parse_anonymous_incoming_edge() {
-        // Test: _ -[obj]-> X
-        let query = r#"MATCH {
-            X [upos="NOUN"];
-            _ -[obj]-> X;
-        }"#;
-        let pattern = compile_query(query).unwrap();
-
-        assert_eq!(pattern.match_pattern.var_constraints.len(), 1);
-        assert_eq!(pattern.match_pattern.edge_constraints.len(), 0); // Anonymous edges don't create edge constraints
-        assert_eq!(*pattern.match_pattern.var_ids.get("X").unwrap(), 0);
-
-        match &pattern.match_pattern.var_constraints[0] {
-            Constraint::And(constraints) => {
-                assert_eq!(constraints.len(), 2);
-                assert!(
-                    constraints.contains(&Constraint::UPOS(ConstraintValue::Literal(
-                        "NOUN".to_string()
-                    )))
-                );
-                assert!(constraints.iter().any(|c| matches!(
-                    c, Constraint::IsChild(Some(ConstraintValue::Literal(label))) if label == "obj"
-                )));
-            }
-            _ => panic!("Expected And constraint"),
-        }
-    }
-
-    #[test]
-    fn test_parse_anonymous_outgoing_edge() {
-        // Test: X -[nsubj]-> _
-        let query = r#"MATCH {
-            X [upos="VERB"];
-            X -[nsubj]-> _;
-        }"#;
-        let pattern = compile_query(query).unwrap();
-
-        assert_eq!(pattern.match_pattern.var_constraints.len(), 1);
-        assert_eq!(pattern.match_pattern.edge_constraints.len(), 0);
-
-        match &pattern.match_pattern.var_constraints[0] {
-            Constraint::And(constraints) => {
-                assert_eq!(constraints.len(), 2);
-                assert!(
-                    constraints.contains(&Constraint::UPOS(ConstraintValue::Literal(
-                        "VERB".to_string()
-                    )))
-                );
-                assert!(constraints.iter().any(|c| matches!(
-                    c, Constraint::HasChild(Some(ConstraintValue::Literal(label))) if label == "nsubj"
-                )));
-            }
-            _ => panic!("Expected And constraint"),
-        }
-    }
-
-    #[test]
-    fn test_parse_anonymous_both_sides() {
-        // Test: _ -> _ (trivially satisfied, should be ignored)
-        let query = r#"MATCH {
-            _ -> _;
-        }"#;
-        let pattern = compile_query(query).unwrap();
-
-        assert_eq!(pattern.match_pattern.var_constraints.len(), 0);
-        assert_eq!(pattern.match_pattern.edge_constraints.len(), 0);
-    }
-
-    #[test]
-    fn test_parse_anonymous_multiple() {
-        // Test: Multiple anonymous edges on same variable
-        let query = r#"MATCH {
-            X [upos="NOUN"];
-            _ -[obj]-> X;
-            _ -[nsubj]-> X;
-        }"#;
-        let pattern = compile_query(query).unwrap();
-
-        assert_eq!(pattern.match_pattern.var_constraints.len(), 1);
-
-        match &pattern.match_pattern.var_constraints[0] {
-            Constraint::And(constraints) => {
-                assert_eq!(constraints.len(), 3); // UPOS + 2 HasIncomingEdge
-                assert!(
-                    constraints.contains(&Constraint::UPOS(ConstraintValue::Literal(
-                        "NOUN".to_string()
-                    )))
-                );
-                assert!(
-                    constraints
-                        .iter()
-                        .filter(|c| matches!(c, Constraint::IsChild(_)))
-                        .count()
-                        == 2
-                );
-            }
-            _ => panic!("Expected And constraint"),
-        }
-    }
-
-    #[test]
-    fn test_parse_anonymous_no_label() {
-        // Test: _ -> X (no label specified)
-        let query = r#"MATCH {
-            X [];
-            _ -> X;
-        }"#;
-        let pattern = compile_query(query).unwrap();
-
-        assert_eq!(pattern.match_pattern.var_constraints.len(), 1);
-
-        assert!(matches!(
-            &pattern.match_pattern.var_constraints[0],
-            Constraint::IsChild(None)
-        ));
-    }
-
-    #[test]
-    fn test_parse_mixed_anonymous_and_normal() {
-        // Test: Mix of anonymous and normal edges
-        let query = r#"
-MATCH {
-            X [upos="VERB"];
-            Y [upos="NOUN"];
-            _ -[obj]-> X;
-            X -[nsubj]-> Y;
-        
-}"#;
-        let pattern = compile_query(query).unwrap();
-
-        assert_eq!(pattern.match_pattern.var_constraints.len(), 2);
-        assert_eq!(pattern.match_pattern.edge_constraints.len(), 1); // Only X -> Y creates edge constraint
-
-        let x_constraints = &pattern.match_pattern.var_constraints
-            [*pattern.match_pattern.var_ids.get("X").unwrap()];
-        match x_constraints {
-            Constraint::And(constraints) => {
-                assert!(constraints.iter().any(|c| matches!(
-                    c, Constraint::IsChild(Some(ConstraintValue::Literal(label))) if label == "obj"
-                )));
-            }
-            _ => panic!("Expected And constraint for X"),
-        }
-    }
-
-    #[test]
-    fn test_duplicate_extension_variable() {
-        // Same new variable name in multiple EXCEPT/OPTIONAL blocks
-        let query = r#"
-            MATCH { V [upos="VERB"]; }
-            EXCEPT { M [upos="ADV"]; V -[advmod]-> M; }
-            OPTIONAL { M [upos="NOUN"]; V -[obj]-> M; }
-        "#;
-        let pattern = compile_query(query);
-        assert!(matches!(
-            pattern,
-            Err(QueryError::DuplicateExtensionVariable(_))
-        ));
-
-        // Same variable in two EXCEPT blocks
-        let query = r#"
-            MATCH { V [upos="VERB"]; }
-            EXCEPT { M []; V -[advmod]-> M; }
-            EXCEPT { M []; V -[obj]-> M; }
-        "#;
-        let pattern = compile_query(query);
-        assert!(matches!(
-            pattern,
-            Err(QueryError::DuplicateExtensionVariable(_))
-        ));
-    }
-
-    #[test]
-    fn test_redeclared_match_variable() {
+        // MATCH variables can be used in extension block edges
         for block in ["EXCEPT", "OPTIONAL"] {
-            // Redeclaring a MATCH variable is an error
-            let query = format!(r#"MATCH {{ V []; }} {block} {{ V [lemma="be"]; }}"#);
-            assert!(matches!(
-                compile_query(&query),
-                Err(QueryError::RedeclaredMatchVariable(v)) if v == "V"
-            ));
-
-            // Using it in an edge is fine
-            let query = format!(r#"MATCH {{ V []; }} {block} {{ O []; V -[obj]-> O; }}"#);
-            assert!(compile_query(&query).is_ok());
-        }
-    }
-
-    #[test]
-    fn test_parse_comments() {
-        // Inline comment with #
-        let query = r#"
-            MATCH {
-                V [upos="VERB"];  # this is a comment
-            }
-        "#;
-        let pattern = compile_query(query).unwrap();
-        assert_eq!(pattern.match_pattern.var_ids.len(), 1);
-
-        // Full line comment with //
-        let query = r#"
-            MATCH {
-                // find all verbs
-                V [upos="VERB"];
-            }
-        "#;
-        let pattern = compile_query(query).unwrap();
-        assert_eq!(pattern.match_pattern.var_ids.len(), 1);
-
-        // Comment at end of query
-        let query = r#"MATCH { V [upos="VERB"]; } // trailing comment"#;
-        let pattern = compile_query(query).unwrap();
-        assert_eq!(pattern.match_pattern.var_ids.len(), 1);
-    }
-
-    #[test]
-    fn test_parse_regex_constraint() {
-        // Test basic regex (anchors added automatically)
-        let query = r#"MATCH { V [lemma=/run.*/]; }"#;
-        let pattern = compile_query(query).unwrap();
-
-        assert_eq!(pattern.match_pattern.var_constraints.len(), 1);
-        match &pattern.match_pattern.var_constraints[0] {
-            Constraint::Lemma(ConstraintValue::Regex(pattern_str, _)) => {
-                // Pattern string is stored without anchors (anchors are in compiled regex)
-                assert_eq!(pattern_str, "run.*");
-            }
-            _ => panic!("Expected Lemma with Regex constraint"),
-        }
-    }
-
-    #[test]
-    fn test_parse_regex_upos() {
-        // Test regex with alternation
-        let query = r#"MATCH { W [upos=/VERB|AUX/]; }"#;
-        let pattern = compile_query(query).unwrap();
-
-        match &pattern.match_pattern.var_constraints[0] {
-            Constraint::UPOS(ConstraintValue::Regex(pattern_str, _)) => {
-                assert_eq!(pattern_str, "VERB|AUX");
-            }
-            _ => panic!("Expected UPOS with Regex constraint"),
-        }
-    }
-
-    #[test]
-    fn test_parse_regex_with_escapes() {
-        // Test regex with escaped forward slash
-        let query = r#"MATCH { W [form=/\w+ing/]; }"#;
-        let pattern = compile_query(query).unwrap();
-
-        match &pattern.match_pattern.var_constraints[0] {
-            Constraint::Form(ConstraintValue::Regex(pattern_str, _)) => {
-                assert_eq!(pattern_str, r"\w+ing");
-            }
-            _ => panic!("Expected Form with Regex constraint"),
-        }
-    }
-
-    #[test]
-    fn test_parse_mixed_literal_and_regex() {
-        // Test mixing literal and regex constraints
-        let query = r#"MATCH { W [lemma="help" & upos=/VERB|AUX/]; }"#;
-        let pattern = compile_query(query).unwrap();
-
-        match &pattern.match_pattern.var_constraints[0] {
-            Constraint::And(constraints) => {
-                assert_eq!(constraints.len(), 2);
-                assert!(
-                    constraints.contains(&Constraint::Lemma(ConstraintValue::Literal(
-                        "help".to_string()
-                    )))
-                );
-                assert!(constraints.iter().any(|c| matches!(
-                    c, Constraint::UPOS(ConstraintValue::Regex(p, _)) if p == "VERB|AUX"
-                )));
-            }
-            _ => panic!("Expected And constraint"),
-        }
-    }
-
-    #[test]
-    fn test_parse_regex_feature() {
-        // Test regex in feature constraint
-        let query = r#"MATCH { V [feats.Tense=/Past|Pres/]; }"#;
-        let pattern = compile_query(query).unwrap();
-
-        match &pattern.match_pattern.var_constraints[0] {
-            Constraint::Feature(key, ConstraintValue::Regex(pattern_str, _)) => {
-                assert_eq!(key, "Tense");
-                assert_eq!(pattern_str, "Past|Pres");
-            }
-            _ => panic!("Expected Feature with Regex constraint"),
-        }
-    }
-
-    #[test]
-    fn test_parse_negative_regex() {
-        // Test negated regex (anchors added automatically)
-        let query = r#"MATCH { V [lemma!=/be.*/]; }"#;
-        let pattern = compile_query(query).unwrap();
-
-        match &pattern.match_pattern.var_constraints[0] {
-            Constraint::Not(inner) => match inner.as_ref() {
-                Constraint::Lemma(ConstraintValue::Regex(pattern_str, _)) => {
-                    assert_eq!(pattern_str, "be.*");
-                }
-                _ => panic!("Expected Lemma with Regex inside Not"),
-            },
-            _ => panic!("Expected Not constraint"),
-        }
-    }
-
-    #[test]
-    fn test_parse_or_constraint() {
-        let query = r#"MATCH { N [upos="NOUN" | upos="PROPN"]; }"#;
-        let pattern = compile_query(query).unwrap();
-        match &pattern.match_pattern.var_constraints[0] {
-            Constraint::Or(branches) => {
-                assert_eq!(branches.len(), 2);
-                assert!(
-                    branches.contains(&Constraint::UPOS(ConstraintValue::Literal("NOUN".into())))
-                );
-                assert!(
-                    branches.contains(&Constraint::UPOS(ConstraintValue::Literal("PROPN".into())))
-                );
-            }
-            _ => panic!("Expected Or constraint"),
-        }
-    }
-
-    #[test]
-    fn test_parse_or_with_and_precedence() {
-        // (lemma="be" & upos="VERB") | (lemma="have" & upos="AUX")
-        let query = r#"MATCH { V [lemma="be" & upos="VERB" | lemma="have" & upos="AUX"]; }"#;
-        let pattern = compile_query(query).unwrap();
-        match &pattern.match_pattern.var_constraints[0] {
-            Constraint::Or(branches) => {
-                assert_eq!(branches.len(), 2);
-                assert!(matches!(&branches[0], Constraint::And(c) if c.len() == 2));
-                assert!(matches!(&branches[1], Constraint::And(c) if c.len() == 2));
-            }
-            _ => panic!("Expected Or constraint"),
-        }
-    }
-
-    #[test]
-    fn test_parse_single_constraint_no_wrapping() {
-        // Single constraint should not be wrapped in Or or And
-        let query = r#"MATCH { V [upos="VERB"]; }"#;
-        let pattern = compile_query(query).unwrap();
-        assert!(matches!(
-            &pattern.match_pattern.var_constraints[0],
-            Constraint::UPOS(_)
-        ));
-    }
-
-    #[test]
-    fn test_parse_paren_grouping() {
-        // (A | B) & C — parens override default precedence
-        let query = r#"MATCH { N [(upos="NOUN" | upos="PROPN") & deprel="nsubj"]; }"#;
-        let pattern = compile_query(query).unwrap();
-        match &pattern.match_pattern.var_constraints[0] {
-            Constraint::And(parts) => {
-                assert_eq!(parts.len(), 2);
-                assert!(matches!(&parts[0], Constraint::Or(_)));
-                assert!(matches!(&parts[1], Constraint::DepRel(_)));
-            }
-            _ => panic!("Expected And(Or(...), DepRel(...))"),
-        }
-    }
-
-    #[test]
-    fn test_parse_invalid_regex() {
-        // Test that invalid regex patterns are rejected during compilation
-        let query = r#"MATCH { V [lemma=/[unclosed/]; }"#;
-        let result = compile_query(query);
-        assert!(matches!(result, Err(QueryError::InvalidRegex(_, _))));
-
-        // Invalid regex with unbalanced parentheses
-        let query = r#"MATCH { V [upos=/VERB(/]; }"#;
-        let result = compile_query(query);
-        assert!(matches!(result, Err(QueryError::InvalidRegex(_, _))));
-    }
-
-    #[test]
-    fn test_regex_anchor_behavior() {
-        // Test to understand anchor behavior
-        use regex::Regex;
-
-        // Double anchor - Rust regex treats ^^ as ^, so it's redundant
-        let re1 = Regex::new("^^w.*$").unwrap();
-        assert!(re1.is_match("win")); // Matches "win" (^^ is treated as ^)
-
-        // Single anchor
-        let re2 = Regex::new("^w.*$").unwrap();
-        assert!(re2.is_match("win")); // Matches "win"
-
-        // Both are equivalent
-        assert_eq!(re1.is_match("win"), re2.is_match("win"));
-        assert_eq!(re1.is_match("running"), re2.is_match("running"));
-    }
-
-    #[test]
-    fn test_parse_regex_edge() {
-        let query = r#"MATCH { V [upos="VERB"]; N [upos="NOUN"]; V -/nsubj.*/-> N; }"#;
-        let pattern = compile_query(query).unwrap();
-
-        assert_eq!(pattern.match_pattern.edge_constraints.len(), 1);
-        let edge = &pattern.match_pattern.edge_constraints[0];
-        assert_eq!(edge.from, "V");
-        assert_eq!(edge.to, "N");
-        assert!(!edge.negated);
-        assert!(matches!(&edge.label, Some(ConstraintValue::Regex(pat, _)) if pat == "nsubj.*"));
-    }
-
-    #[test]
-    fn test_parse_negated_regex_edge() {
-        let query = r#"MATCH { V [upos="VERB"]; N [upos="NOUN"]; V !-/obj|iobj/-> N; }"#;
-        let pattern = compile_query(query).unwrap();
-
-        assert_eq!(pattern.match_pattern.edge_constraints.len(), 1);
-        let edge = &pattern.match_pattern.edge_constraints[0];
-        assert!(edge.negated);
-        assert!(matches!(&edge.label, Some(ConstraintValue::Regex(pat, _)) if pat == "obj|iobj"));
-    }
-
-    #[test]
-    fn test_parse_anonymous_regex_edge() {
-        let query = r#"MATCH { X [upos="NOUN"]; _ -/nsubj.*/-> X; }"#;
-        let pattern = compile_query(query).unwrap();
-
-        let x_id = *pattern.match_pattern.var_ids.get("X").unwrap();
-        let constraint = &pattern.match_pattern.var_constraints[x_id];
-        match constraint {
-            Constraint::And(constraints) => {
-                assert!(constraints.iter().any(|c| matches!(
-                    c, Constraint::IsChild(Some(ConstraintValue::Regex(pat, _))) if pat == "nsubj.*"
-                )));
-            }
-            _ => panic!("Expected And constraint"),
+            let query = format!("MATCH {{ V []; }} {block} {{ O []; V -[obj]-> O; }}");
+            assert!(compile_query(&query).is_ok(), "{query}");
         }
     }
 }

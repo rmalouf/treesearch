@@ -459,41 +459,54 @@ pub fn search_tree_query(tree: Tree, query: &str) -> Result<Vec<Match>, QueryErr
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::conllu::TreeIterator;
+    use std::collections::BTreeMap;
 
-    macro_rules! hashmap {
-        ( $( $key:expr => $val:expr ),* $(,)? ) => {{
-            ::std::collections::HashMap::from([
-                $( ($key.to_string(), $val), )*
-            ])
-        }};
+    type Solution = BTreeMap<String, WordId>;
+
+    macro_rules! sol {
+        ( $( $key:literal => $val:expr ),* $(,)? ) => {
+            Solution::from([ $( ($key.to_string(), $val), )* ])
+        };
     }
 
-    fn build_test_tree() -> Tree {
+    /// All solutions for `query`, in a canonical order
+    fn solutions(tree: &Tree, query: &str) -> Vec<Solution> {
+        let pattern = compile_query(query).unwrap();
+        let mut sols: Vec<Solution> = find_all_bindings(tree, &pattern)
+            .into_iter()
+            .map(|b| b.into_iter().collect())
+            .collect();
+        sols.sort();
+        sols
+    }
+
+    /// The (sorted) words bound by a single-variable query
+    fn words(tree: &Tree, query: &str) -> Vec<WordId> {
+        solutions(tree, query)
+            .into_iter()
+            .map(|s| {
+                assert_eq!(s.len(), 1, "{query}: {s:?}");
+                s.into_values().next().unwrap()
+            })
+            .collect()
+    }
+
+    /// helped(0) us(1) to(2) win(3)
+    /// helped -obj-> us, helped -xcomp-> win, win -mark-> to
+    fn help_tree() -> Tree {
         let mut tree = Tree::default();
-        tree.add_minimal_word(0, b"helped", b"help", b"VERB", b"_", None, b"root");
-        tree.add_minimal_word(1, b"us", b"we", b"PRON", b"_", Some(0), b"obj");
-        tree.add_minimal_word(2, b"to", b"to", b"PART", b"_", Some(3), b"mark");
-        tree.add_minimal_word(3, b"win", b"win", b"VERB", b"_", Some(0), b"xcomp");
+        tree.add_minimal_word(0, b"helped", b"help", b"VERB", b"VBD", None, b"root");
+        tree.add_minimal_word(1, b"us", b"we", b"PRON", b"PRP", Some(0), b"obj");
+        tree.add_minimal_word(2, b"to", b"to", b"PART", b"TO", Some(3), b"mark");
+        tree.add_minimal_word(3, b"win", b"win", b"VERB", b"VB", Some(0), b"xcomp");
         tree.compile_tree();
         tree
     }
 
-    /// Helper to build a coordination tree
-    /// Structure: b"and" (root) -> b"cats" (conj)
-    ///                         -> b"dogs" (conj)
-    fn build_coord_tree() -> Tree {
-        let mut tree = Tree::default();
-        tree.add_minimal_word(0, b"and", b"and", b"CCONJ", b"_", None, b"root");
-        tree.add_minimal_word(1, b"cats", b"cat", b"NOUN", b"_", Some(0), b"conj");
-        tree.add_minimal_word(2, b"dogs", b"dog", b"NOUN", b"_", Some(0), b"conj");
-        tree.compile_tree();
-        tree
-    }
-
-    /// Helper to build a tree with multiple verbs
-    /// b"saw" (root) -> b"John" (nsubj)
-    ///              -> b"running" (xcomp) -> b"quickly" (advmod)
-    fn build_multi_verb_tree() -> Tree {
+    /// saw(0) John(1) running(2) quickly(3)
+    /// saw -nsubj-> John, saw -xcomp-> running, running -advmod-> quickly
+    fn saw_tree() -> Tree {
         let mut tree = Tree::default();
         tree.add_minimal_word(0, b"saw", b"see", b"VERB", b"_", None, b"root");
         tree.add_minimal_word(1, b"John", b"John", b"PROPN", b"_", Some(0), b"nsubj");
@@ -503,995 +516,349 @@ mod tests {
         tree
     }
 
-    #[test]
-    fn test_search_single_var_constraints() {
-        let tree = build_test_tree();
-
-        // Test lemma constraint - should find one match
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), "MATCH { V [lemma=\"help\"]; }").unwrap();
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings, hashmap! { "V" => 0 });
-
-        // Test upos constraint - should match both verbs
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), "MATCH { V [upos=\"VERB\"]; }").unwrap();
-        assert_eq!(matches.len(), 2);
-        assert_eq!(matches[0].bindings, hashmap! { "V" => 0 });
-        assert_eq!(matches[1].bindings, hashmap! { "V" => 3 });
-
-        // Test form constraint
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), "MATCH { W [form=\"to\"]; }").unwrap();
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings, hashmap! { "W" => 2 });
-
-        // Test deprel constraint
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), "MATCH { X [deprel=\"xcomp\"]; }").unwrap();
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings, hashmap! { "X" => 3});
+    /// was(0) running(1) ,(2) with features and misc
+    fn feature_tree() -> Tree {
+        let conllu = "1\twas\tbe\tVERB\t_\tNumber=Sing|Tense=Past\t0\troot\t_\tSpaceAfter=No\n\
+                      2\trunning\trun\tVERB\t_\tTense=Pres|VerbForm=Part\t1\txcomp\t_\t_\n\
+                      3\t,\t,\tPUNCT\t_\t_\t1\tpunct\t_\t_\n";
+        TreeIterator::from_string(conllu).next().unwrap().unwrap()
     }
 
-    #[test]
-    fn test_search_tree_query_multiple_children() {
-        let tree = build_coord_tree();
-        // Find word with two conj children
-        let matches: Vec<_> = search_tree_query(
-            tree,
-            "MATCH { C [upos=\"CCONJ\"]; N1 []; N2 []; C -[conj]-> N1; C -[conj]-> N2; }",
-        )
-        .unwrap();
-        // Should find both permutations: (and, cats, dogs) and (and, dogs, cats)
-        // Because CSP solver explores all valid assignments
-        assert_eq!(
-            matches.len(),
-            2,
-            "Expected 2 matches but got {}: {:?}",
-            matches.len(),
-            matches
-        );
-        assert!(
-            matches
-                .iter()
-                .map(|m| m.bindings.clone())
-                .collect::<Vec<Bindings>>()
-                .contains(&hashmap! { "C" => 0, "N1" => 1, "N2" => 2 }),
-            "Missing match [0, 1, 2]"
-        );
-        assert!(
-            matches
-                .iter()
-                .map(|m| m.bindings.clone())
-                .collect::<Vec<Bindings>>()
-                .contains(&hashmap! { "C" => 0, "N1" => 2, "N2" => 1 }),
-            "Missing match [0, 2, 1]"
-        );
-    }
-
-    #[test]
-    fn test_search_tree_query_chain() {
-        let tree = build_test_tree();
-        // Find chain: helped -> win -> to (tests forward-checking efficiency)
-        let matches: Vec<_> = search_tree_query(
-            tree,
-            "MATCH { V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; T [lemma=\"to\"]; V1 -> V2; V2 -> T; }",
-        )
-        .unwrap();
-        assert_eq!(matches.len(), 1);
-        assert_eq!(
-            matches[0].bindings,
-            hashmap! { "V1" => 0, "V2" => 3, "T" => 2 }
-        );
-    }
-
-    #[test]
-    fn test_search_tree_query_basic_constraints() {
-        let tree = build_test_tree();
-
-        // No matches - word doesn't exist
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), "MATCH { N [upos=\"NOUN\"]; }").unwrap();
-        assert_eq!(matches.len(), 0);
-
-        // Multiple constraints (AND)
-        let matches: Vec<_> = search_tree_query(
-            tree.clone(),
-            "MATCH { V [lemma=\"help\" & upos=\"VERB\"]; }",
-        )
-        .unwrap();
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings, hashmap! { "V" => 0 });
-
-        // Unconstrained variable - matches all words
-        let matches: Vec<_> = search_tree_query(tree.clone(), "MATCH { X []; }").unwrap();
-        assert_eq!(matches.len(), 4);
-    }
-
-    #[test]
-    fn test_search_tree_query_exhaustive_matching() {
-        let tree = build_coord_tree();
-        // Find all nouns (exhaustive search should find both)
-        let matches: Vec<_> = search_tree_query(tree, "MATCH { N [upos=\"NOUN\"]; }").unwrap();
-        // Should find both "cats" and "dogs"
-        assert_eq!(matches.len(), 2);
-        assert!(
-            matches
-                .iter()
-                .map(|m| m.bindings.clone())
-                .collect::<Vec<Bindings>>()
-                .contains(&hashmap! { "N" => 1 })
-        ); // cats
-        assert!(
-            matches
-                .iter()
-                .map(|m| m.bindings.clone())
-                .collect::<Vec<Bindings>>()
-                .contains(&hashmap! { "N" => 2 })
-        ); // dogs
-    }
-
-    #[test]
-    fn test_search_tree_query_complex_pattern() {
-        let tree = build_multi_verb_tree();
-        // Complex pattern: verb with nsubj and xcomp children
-        let matches: Vec<_> = search_tree_query(
-            tree,
-            "MATCH { V1 [upos=\"VERB\"]; S []; V2 [upos=\"VERB\"]; V1 -[nsubj]-> S; V1 -> V2; }",
-        )
-        .unwrap();
-        // Should match saw -> John + saw -> running
-        assert!(!matches.is_empty());
-        assert!(
-            matches
-                .iter()
-                .map(|m| m.bindings.clone())
-                .collect::<Vec<Bindings>>()
-                .contains(&hashmap! { "V1" => 0, "S" => 1, "V2" => 2 })
-        );
-    }
-
-    #[test]
-    fn test_search_empty_pattern() {
-        let tree = build_test_tree();
-        // Empty pattern has no variables, so returns one empty match
-        let matches: Vec<_> = search_tree_query(tree, "MATCH { }").unwrap();
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings, hashmap! {});
-    }
-
-    #[test]
-    fn test_precedence_operators() {
-        // Tree: "helped" (0) "us" (1) "to" (2) "win" (3)
-        let tree = build_test_tree();
-
-        // Precedes (<<): "helped" << "win" should match (non-adjacent OK)
-        let matches: Vec<_> = search_tree_query(
-            tree.clone(),
-            "MATCH { V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 << V2; }",
-        )
-        .unwrap();
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings, hashmap! { "V1" => 0, "V2" => 3 });
-
-        // Precedes: wrong order should fail
-        let matches: Vec<_> = search_tree_query(
-            tree.clone(),
-            "MATCH { V1 [lemma=\"win\"]; V2 [lemma=\"help\"]; V1 << V2; }",
-        )
-        .unwrap();
-        assert_eq!(matches.len(), 0);
-
-        // Immediately precedes (<): "to" < "win" should match (adjacent)
-        let matches: Vec<_> = search_tree_query(
-            tree.clone(),
-            "MATCH { T [lemma=\"to\"]; V [lemma=\"win\"]; T < V; }",
-        )
-        .unwrap();
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings, hashmap! { "T" => 2, "V" => 3 });
-
-        // Immediately precedes: "helped" < "win" should NOT match (not adjacent)
-        let matches: Vec<_> = search_tree_query(
-            tree,
-            "MATCH { V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 < V2; }",
-        )
-        .unwrap();
-        assert_eq!(matches.len(), 0);
-    }
-
-    #[test]
-    fn test_precedes_within() {
-        // Tree: "helped" (0) "us" (1) "to" (2) "win" (3)
-        let tree = build_test_tree();
-        let query =
-            |n: usize| format!("MATCH {{ V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 <{n}< V2; }}");
-
-        // "helped" and "win" are 3 tokens apart: too far for <2<
-        let matches: Vec<_> = search_tree_query(tree.clone(), &query(2)).unwrap();
-        assert_eq!(matches.len(), 0);
-
-        // Distance is inclusive
-        let matches: Vec<_> = search_tree_query(tree.clone(), &query(3)).unwrap();
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings, hashmap! { "V1" => 0, "V2" => 3 });
-
-        // Larger windows (even beyond the sentence) still match
-        let matches: Vec<_> = search_tree_query(tree.clone(), &query(100)).unwrap();
-        assert_eq!(matches.len(), 1);
-
-        // Order matters: "win" does not precede "helped"
-        let matches: Vec<_> = search_tree_query(
-            tree.clone(),
-            "MATCH { V1 [lemma=\"win\"]; V2 [lemma=\"help\"]; V1 <3< V2; }",
-        )
-        .unwrap();
-        assert_eq!(matches.len(), 0);
-
-        // <1< is the same as <; a word is never within range of itself
-        let within: Vec<_> =
-            search_tree_query(tree.clone(), "MATCH { A []; B []; A <1< B; }").unwrap();
-        let adjacent: Vec<_> =
-            search_tree_query(tree.clone(), "MATCH { A []; B []; A < B; }").unwrap();
-        assert_eq!(within.len(), 3);
-        assert_eq!(within.len(), adjacent.len());
-
-        // All ordered pairs at distance 1 or 2: 3 + 2
-        let matches: Vec<_> = search_tree_query(tree, "MATCH { A []; B []; A <2< B; }").unwrap();
-        assert_eq!(matches.len(), 5);
-    }
-
-    #[test]
-    fn test_mixed_dependency_and_precedence() {
-        // Test combining dependency edges with precedence constraints
-        // Tree: "helped" (0) "us" (1) "to" (2) "win" (3)
-        //       helped -> us (obj), helped -> win (xcomp), win -> to (mark)
-        let tree = build_test_tree();
-
-        // Find: helped -[xcomp]-> win, AND helped << win (in word order)
-        let matches: Vec<_> = search_tree_query(
-            tree,
-            "MATCH { V1 [lemma=\"help\"]; V2 [lemma=\"win\"]; V1 -[xcomp]-> V2; V1 << V2; }",
-        )
-        .unwrap();
-
-        // Should match because both constraints are satisfied
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings, hashmap! { "V1" => 0, "V2" => 3 });
-    }
-
-    #[test]
-    fn test_precedence_blocks_dependency_match() {
-        // Negative test: precedence constraint blocks a valid dependency match
-        // Tree: "helped" (0) "us" (1) "to" (2) "win" (3)
-        //       helped -> win (xcomp)
-        let tree = build_test_tree();
-
-        // Without precedence, dependency edge matches
-        let matches_no_precedence: Vec<_> =
-            search_tree_query(tree.clone(), "MATCH { V1 []; V2 []; V1 -[xcomp]-> V2; }").unwrap();
-        assert_eq!(matches_no_precedence.len(), 1);
-
-        // But if we add a false precedence constraint (win << helped),
-        // the match should fail even though the dependency exists
-        let matches_with_false_precedence: Vec<_> = search_tree_query(
-            tree.clone(),
-            "MATCH { V1 []; V2 []; V1 -[xcomp]-> V2; V2 << V1; }",
-        )
-        .unwrap();
-
-        assert_eq!(
-            matches_with_false_precedence.len(),
-            0,
-            "Expected no matches because V2 (win=3) cannot precede V1 (helped=0)"
-        );
-    }
-
-    #[test]
-    fn test_precedence_with_coord_tree() {
-        // Test precedence constraints on coordination tree
-        // Tree: "and" (0) "cats" (1) "dogs" (2)
-        let tree = build_coord_tree();
-
-        // "and" << "cats" should match (0 precedes 1)
-        let matches: Vec<_> = search_tree_query(
-            tree,
-            "MATCH { C [lemma=\"and\"]; N [lemma=\"cat\"]; C << N; }",
-        )
-        .unwrap();
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings, hashmap! { "C" => 0, "N" => 1 });
-    }
-
-    #[test]
-    fn test_precedence_chain() {
-        // Test chained precedence: A << B << C
-        // Tree: "helped" (0) "us" (1) "to" (2) "win" (3)
-        let tree = build_test_tree();
-
-        // "helped" << "us" << "to" should match
-        let matches: Vec<_> = search_tree_query(
-            tree,
-            "MATCH { A [lemma=\"help\"]; B [lemma=\"we\"]; C [lemma=\"to\"]; A << B; B << C; }",
-        )
-        .unwrap();
-
-        assert_eq!(matches.len(), 1);
-        assert_eq!(
-            matches[0].bindings,
-            hashmap! { "A" => 0, "B" => 1, "C" => 2 }
-        );
-    }
-
-    /// Helper to build a tree with morphological features
-    fn build_feature_tree() -> Tree {
-        use crate::tree::Features;
+    fn one_word_tree() -> Tree {
         let mut tree = Tree::default();
-
-        // Word 0: "was" - lemma=be, Tense=Past, Number=Sing
-        let feats_was: Features = vec![
-            (
-                tree.string_pool.get_or_intern(b"Tense"),
-                tree.string_pool.get_or_intern(b"Past"),
-            ),
-            (
-                tree.string_pool.get_or_intern(b"Number"),
-                tree.string_pool.get_or_intern(b"Sing"),
-            ),
-        ];
-        let misc_was: Features = vec![(
-            tree.string_pool.get_or_intern(b"SpaceAfter"),
-            tree.string_pool.get_or_intern(b"No"),
-        )];
-        tree.add_word(
-            0, 1, b"was", b"be", b"VERB", b"_", feats_was, None, b"root", misc_was,
-        );
-
-        // Word 1: "running" - Tense=Pres, VerbForm=Part
-        let feats_run: Features = vec![
-            (
-                tree.string_pool.get_or_intern(b"Tense"),
-                tree.string_pool.get_or_intern(b"Pres"),
-            ),
-            (
-                tree.string_pool.get_or_intern(b"VerbForm"),
-                tree.string_pool.get_or_intern(b"Part"),
-            ),
-        ];
-        tree.add_word(
-            1,
-            2,
-            b"running",
-            b"run",
-            b"VERB",
-            b"_",
-            feats_run,
-            Some(0),
-            b"xcomp",
-            Features::new(),
-        );
-
-        // Word 2: "," - no features
-        tree.add_word(
-            2,
-            3,
-            b",",
-            b",",
-            b"PUNCT",
-            b"_",
-            Features::new(),
-            Some(0),
-            b"punct",
-            Features::new(),
-        );
-
+        tree.add_minimal_word(0, b"word", b"word", b"NOUN", b"_", None, b"root");
         tree.compile_tree();
         tree
     }
 
     #[test]
-    fn test_feature_constraints() {
-        let tree = build_feature_tree();
+    fn test_node_constraints() {
+        let help = help_tree();
+        let feats = feature_tree();
+        let cases: &[(&Tree, &str, &[WordId])] = &[
+            (&help, r#"V [lemma="help"]"#, &[0]),
+            (&help, r#"V [upos="VERB"]"#, &[0, 3]),
+            (&help, r#"W [form="to"]"#, &[2]),
+            (&help, r#"W [xpos="TO"]"#, &[2]),
+            (&help, r#"X [deprel="xcomp"]"#, &[3]),
+            (&help, r#"N [upos="NOUN"]"#, &[]),
+            (&help, "X []", &[0, 1, 2, 3]),
+            (&help, r#"V [lemma="help" & upos="VERB"]"#, &[0]),
+            (&help, r#"W [upos!="VERB"]"#, &[1, 2]),
+            (&help, r#"W [upos="VERB" & xpos!="VBD"]"#, &[3]),
+            (&help, r#"N [upos="NOUN" | upos="PRON"]"#, &[1]),
+            (&help, r#"N [upos="NOUN" | upos="ADJ"]"#, &[]),
+            // Regexes are anchored around the whole alternation
+            (&help, r#"W [lemma=/w.*/]"#, &[1, 3]),
+            (&help, r#"W [upos=/VERB|PRON/]"#, &[0, 1, 3]),
+            (&help, r#"W [form=/h|w/]"#, &[]),
+            (&help, r#"W [form=/.*el.*/]"#, &[0]),
+            (&help, r#"W [lemma!=/w.*/]"#, &[0, 2]),
+            (&help, r#"V [upos="VERB" & lemma=/h.*/]"#, &[0]),
+            // Edges to `_`
+            (&help, "W []; _ -> W", &[1, 2, 3]),
+            (&help, "W []; _ !-> W", &[0]),
+            (&help, "W []; _ !-[obj]-> W", &[0, 2, 3]),
+            (&help, "W []; _ -/obj|xcomp/-> W", &[1, 3]),
+            (&help, "W []; W -> _", &[0, 3]),
+            (&help, "W []; W -[mark]-> _", &[3]),
+            // Features and misc (keys and values are case-sensitive)
+            (&feats, r#"V [feats.Tense="Past"]"#, &[0]),
+            (
+                &feats,
+                r#"V [feats.Tense="Past" & feats.Number="Sing"]"#,
+                &[0],
+            ),
+            (&feats, r#"V [feats.Tense=/.*/]"#, &[0, 1]),
+            (&feats, r#"V [feats.Tense="Fut"]"#, &[]),
+            (&feats, r#"V [feats.tense="Past"]"#, &[]),
+            (&feats, r#"V [feats.Tense="past"]"#, &[]),
+            (&feats, r#"V [upos="VERB" & feats.Tense!="Past"]"#, &[1]),
+            (&feats, r#"V [misc.SpaceAfter="No"]"#, &[0]),
+            (&feats, r#"V [misc.SpaceAfter="Yes"]"#, &[]),
+        ];
 
-        // Single feature constraint
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), r#"MATCH { V [feats.Tense="Past"]; }"#).unwrap();
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings, hashmap! { "V" => 0 }); // "was"
-
-        // Multiple feature constraints (AND)
-        let matches: Vec<_> = search_tree_query(
-            tree.clone(),
-            r#"MATCH { V [feats.Tense="Past" & feats.Number="Sing"]; }"#,
-        )
-        .unwrap();
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings, hashmap! { "V" => 0 }); // "was"
-
-        // Feature combined with other constraints
-        let matches: Vec<_> = search_tree_query(
-            tree.clone(),
-            r#"MATCH { V [lemma="be" & feats.Tense="Past"]; }"#,
-        )
-        .unwrap();
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings, hashmap! { "V" => 0 });
-
-        // Non-existent feature value
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), r#"MATCH { V [feats.Tense="Fut"]; }"#).unwrap();
-        assert_eq!(matches.len(), 0); // No future tense verbs
-
-        // Word with no features
-        let matches: Vec<_> = search_tree_query(
-            tree.clone(),
-            r#"MATCH { P [upos="PUNCT" & feats.Tense="Past"]; }"#,
-        )
-        .unwrap();
-        assert_eq!(matches.len(), 0); // PUNCT has no Tense feature
-    }
-
-    #[test]
-    fn test_misc_constraints() {
-        let tree = build_feature_tree();
-
-        // Single misc constraint
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), r#"MATCH { V [misc.SpaceAfter="No"]; }"#).unwrap();
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings, hashmap! { "V" => 0 }); // "was"
-
-        // Non-existent misc value
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), r#"MATCH { V [misc.SpaceAfter="Yes"]; }"#).unwrap();
-        assert_eq!(matches.len(), 0);
-    }
-
-    #[test]
-    fn test_feature_case_sensitive() {
-        let tree = build_feature_tree();
-
-        // Correct case
-        let matches =
-            search_tree_query(tree.clone(), r#"MATCH { V [feats.Tense="Past"]; }"#).unwrap();
-        assert_eq!(matches.len(), 1);
-
-        // Wrong key case
-        let matches =
-            search_tree_query(tree.clone(), r#"MATCH { V [feats.tense="Past"]; }"#).unwrap();
-        assert_eq!(matches.len(), 0);
-
-        // Wrong value case
-        let matches =
-            search_tree_query(tree.clone(), r#"MATCH { V [feats.Tense="past"]; }"#).unwrap();
-        assert_eq!(matches.len(), 0);
-    }
-
-    #[test]
-    fn test_negative_constraint() {
-        // Tree: "helped" (0) "us" (1) "to" (2) "win" (3)
-        let tree = build_test_tree();
-
-        // Find all words that are NOT VERBs
-        let matches: Vec<_> = search_tree_query(tree, r#"MATCH { W [upos!="VERB"]; }"#).unwrap();
-        assert_eq!(matches.len(), 2); // us (PRON), to (PART)
-        assert!(
-            matches
-                .iter()
-                .map(|m| m.bindings.clone())
-                .collect::<Vec<Bindings>>()
-                .contains(&hashmap! { "W" => 1 })
-        );
-        assert!(
-            matches
-                .iter()
-                .map(|m| m.bindings.clone())
-                .collect::<Vec<Bindings>>()
-                .contains(&hashmap! { "W" => 2 })
-        );
-    }
-
-    #[test]
-    fn test_negative_feature_constraint() {
-        let tree = build_feature_tree();
-
-        // Find all verbs that are NOT past tense
-        let matches: Vec<_> =
-            search_tree_query(tree, r#"MATCH { V [upos="VERB" & feats.Tense!="Past"]; }"#).unwrap();
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings, hashmap! { "V" => 1 }); // "running" has Tense=Pres
-    }
-
-    #[test]
-    fn test_negative_unlabeled_edge() {
-        // Tree: "helped" (0) -> "us" (1, obj), "win" (3, xcomp) -> "to" (2, mark)
-        let tree = build_test_tree();
-
-        // Find pairs where V does NOT have an edge to T
-        // "helped" has edges to "us" and "win", but not "to"
-        let matches: Vec<_> = search_tree_query(
-            tree.clone(),
-            r#"MATCH { V [upos="VERB"]; T [lemma="to"]; V !-> T; }"#,
-        )
-        .unwrap();
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings, hashmap! { "V" => 0, "T" => 2 }); // helped !-> to
-    }
-
-    #[test]
-    fn test_negative_labeled_edge() {
-        // Tree: "helped" (0) -> "us" (1, obj), "win" (3, xcomp)
-        let tree = build_test_tree();
-
-        // Find verb V and word W where V does NOT have obj edge to W
-        // "helped" has obj to "us" (1), so pairs with W=1 should be excluded
-        // Also, AllDifferent constraint means V != W
-        let matches: Vec<_> =
-            search_tree_query(tree, r#"MATCH { V [lemma="help"]; W []; V !-[obj]-> W; }"#).unwrap();
-
-        // Should match V=0 with W=2, W=3 (not W=1 which is obj, not W=0 due to AllDifferent)
-        assert_eq!(matches.len(), 2);
-        assert!(
-            matches
-                .iter()
-                .map(|m| m.bindings.clone())
-                .collect::<Vec<Bindings>>()
-                .contains(&hashmap! { "V" => 0, "W" => 2 })
-        );
-        assert!(
-            matches
-                .iter()
-                .map(|m| m.bindings.clone())
-                .collect::<Vec<Bindings>>()
-                .contains(&hashmap! { "V" => 0, "W" => 3 })
-        );
-        assert!(
-            !matches
-                .iter()
-                .map(|m| m.bindings.clone())
-                .collect::<Vec<Bindings>>()
-                .contains(&hashmap! { "V" => 0, "W" => 1 })
-        ); // Excluded: obj edge exists
-    }
-
-    #[test]
-    fn test_mixed_positive_and_negative_edges() {
-        // Tree: "helped" (0) -> "us" (1, obj), "win" (3, xcomp)
-        let tree = build_test_tree();
-
-        // Find: V has xcomp to Y, but NOT obj to W
-        // AllDifferent means V, Y, W must all be different
-        let matches: Vec<_> = search_tree_query(
-            tree,
-            r#"MATCH { V []; Y []; W []; V -[xcomp]-> Y; V !-[obj]-> W; }"#,
-        )
-        .unwrap();
-
-        // V=0, Y=3 (helped -[xcomp]-> win)
-        // W can only be 2 (not 0=V, not 3=Y, not 1 which is obj of helped)
-        assert_eq!(matches.len(), 1);
-        assert_eq!(
-            matches[0].bindings,
-            hashmap! { "V" => 0, "Y" => 3, "W" => 2 }
-        );
-    }
-
-    #[test]
-    fn test_negative_edge_with_anonymous_var() {
-        // Tree: "helped" (0) -> "us" (1, obj), "win" (3, xcomp)
-        let tree = build_test_tree();
-
-        // Find words that do NOT have any incoming edges (i.e., root words)
-        let matches: Vec<_> = search_tree_query(tree, r#"MATCH { W []; _ !-> W; }"#).unwrap();
-
-        // Only word 0 (helped) has no incoming edge (it's the root)
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings, hashmap! { "W" => 0 });
-    }
-
-    #[test]
-    fn test_negative_labeled_edge_with_anonymous_var() {
-        // Tree: "helped" (0) -> "us" (1, obj), "win" (3, xcomp) -> "to" (2, mark)
-        let tree = build_test_tree();
-
-        // Find words that are NOT anyone's obj (i.e., deprel != "obj")
-        let matches: Vec<_> = search_tree_query(tree, r#"MATCH { W []; _ !-[obj]-> W; }"#).unwrap();
-
-        // Words 0 (root), 2 (mark), 3 (xcomp) are not obj of anyone
-        assert_eq!(matches.len(), 3);
-        assert!(
-            matches
-                .iter()
-                .map(|m| m.bindings.clone())
-                .collect::<Vec<Bindings>>()
-                .contains(&hashmap! { "W" => 0 })
-        ); // root
-        assert!(
-            matches
-                .iter()
-                .map(|m| m.bindings.clone())
-                .collect::<Vec<Bindings>>()
-                .contains(&hashmap! { "W" => 2 })
-        ); // mark
-        assert!(
-            matches
-                .iter()
-                .map(|m| m.bindings.clone())
-                .collect::<Vec<Bindings>>()
-                .contains(&hashmap! { "W" => 3 })
-        ); // xcomp
-        assert!(
-            !matches
-                .iter()
-                .map(|m| m.bindings.clone())
-                .collect::<Vec<Bindings>>()
-                .contains(&hashmap! { "W" => 1 })
-        ); // us is obj
-    }
-
-    #[test]
-    fn test_negative_edge_no_deprel_constraint() {
-        // Verify that negative labeled edges don't add DepRel constraint
-        let _tree = build_test_tree();
-
-        // Parse pattern with negative labeled edge
-        let pattern = compile_query(r#"MATCH { V []; W []; V !-[obj]-> W; }"#).unwrap();
-
-        // Check that W does not have a DepRel constraint
-        let w_id = *pattern.match_pattern.var_ids.get("W").unwrap();
-        match &pattern.match_pattern.var_constraints[w_id] {
-            Constraint::Any => { /* Expected - no constraint */ }
-            Constraint::And(constraints) => {
-                // Should not contain DepRel constraint
-                assert!(
-                    !constraints
-                        .iter()
-                        .any(|c| matches!(c, Constraint::DepRel(_))),
-                    "Negative edge should not add DepRel constraint"
-                );
-            }
-            other => panic!("Unexpected constraint on W: {:?}", other),
-        }
-    }
-
-    #[test]
-    fn test_except_blocks() {
-        // Tree: saw (VERB) -> John (nsubj), running (xcomp) -> quickly (advmod)
-        let tree = build_multi_verb_tree();
-
-        // Test 1: EXCEPT rejects when condition matches
-        let matches = search_tree_query(
-            tree.clone(),
-            r#"MATCH { V [upos="VERB"]; }
-               EXCEPT { M [upos="ADV"]; V -[advmod]-> M; }"#,
-        )
-        .unwrap();
-        // Should find word 0 ("saw") but not word 2 ("running" with advmod)
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings, hashmap! { "V" => 0 });
-
-        // Test 2: Multiple EXCEPT blocks (ANY semantics)
-        let matches = search_tree_query(
-            tree.clone(),
-            r#"MATCH { V [upos="VERB"]; }
-               EXCEPT { M [upos="ADV"]; V -[advmod]-> M; }
-               EXCEPT { C [upos="VERB"]; V -[xcomp]-> C; }"#,
-        )
-        .unwrap();
-        // Both verbs rejected: saw has xcomp, running has advmod
-        assert_eq!(matches.len(), 0);
-
-        // Test 3: EXCEPT with shared MATCH variable
-        let matches = search_tree_query(
-            tree.clone(),
-            r#"MATCH { V [upos="VERB"]; S [upos="PROPN"]; V -[nsubj]-> S; }
-               EXCEPT { C [upos="VERB"]; V -[xcomp]-> C; }"#,
-        )
-        .unwrap();
-        // saw-John pair rejected because saw has xcomp
-        assert_eq!(matches.len(), 0);
-    }
-
-    #[test]
-    fn test_extension_edges_between_prebound_vars() {
-        // Tree: saw(0) -> John(1, nsubj), running(2, xcomp) -> quickly(3, advmod)
-        // MATCH alone yields (V, W) = (0,1), (0,3), (2,1), (2,3)
-        let tree = build_multi_verb_tree();
-        let pairs = |query: &str| {
-            let mut pairs: Vec<_> = search_tree_query(tree.clone(), query)
-                .unwrap()
-                .into_iter()
-                .map(|m| (m.bindings["V"], m.bindings["W"]))
-                .collect();
-            pairs.sort();
-            pairs
-        };
-        let base = r#"MATCH { V [upos="VERB"]; W [upos=/PROPN|ADV/]; }"#;
-
-        // Unlabeled edge: rejects only pairs where V heads W
-        assert_eq!(
-            pairs(&format!("{base} EXCEPT {{ V -> W; }}")),
-            [(0, 3), (2, 1)]
-        );
-
-        // Precedence: rejects only pairs where W precedes V
-        assert_eq!(
-            pairs(&format!("{base} EXCEPT {{ W < V; }}")),
-            [(0, 1), (0, 3), (2, 3)]
-        );
-
-        // Labeled edge: W's deprel alone isn't enough; V must be W's head.
-        // quickly is an advmod of running, so (0, 3) must survive.
-        assert_eq!(
-            pairs(&format!("{base} EXCEPT {{ V -[advmod]-> W; }}")),
-            [(0, 1), (0, 3), (2, 1)]
-        );
-
-        // Negated edges: "V -> W or W -> V" as a clause over bound variables
-        assert_eq!(
-            pairs(&format!("{base} EXCEPT {{ V !-> W; W !-> V; }}")),
-            [(0, 1), (2, 3)]
-        );
-
-        // OPTIONAL: an edge between pre-bound variables must hold for S to bind
-        let matches = search_tree_query(
-            tree.clone(),
-            r#"MATCH { V [upos="VERB"]; W [upos="ADV"]; }
-               OPTIONAL { S [upos="PROPN"]; V -> W; V -> S; }"#,
-        )
-        .unwrap();
-        assert_eq!(matches.len(), 2);
-        for m in &matches {
-            assert!(
-                !m.bindings.contains_key("S"),
-                "unexpected S in {:?}",
-                m.bindings
+        for (tree, body, expected) in cases {
+            assert_eq!(
+                words(tree, &format!("MATCH {{ {body}; }}")),
+                *expected,
+                "{body}"
             );
         }
     }
 
     #[test]
-    fn test_optional_blocks() {
-        // Tree: saw -> John (nsubj), running (xcomp) -> quickly (advmod)
-        let tree = build_multi_verb_tree();
+    fn test_edges() {
+        let help = help_tree();
 
-        // Test 1: OPTIONAL found - variable present in bindings
-        let matches = search_tree_query(
-            tree.clone(),
-            r#"MATCH { V [lemma="see"]; }
-               OPTIONAL { S [upos="PROPN"]; V -[nsubj]-> S; }"#,
-        )
-        .unwrap();
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings, hashmap! { "V" => 0, "S" => 1 });
-
-        // Test 2: OPTIONAL not found - variable absent from bindings
-        let matches = search_tree_query(
-            tree.clone(),
-            r#"MATCH { V [lemma="run"]; }
-               OPTIONAL { S [upos="PROPN"]; V -[nsubj]-> S; }"#,
-        )
-        .unwrap();
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings, hashmap! { "V" => 2 });
-        assert!(!matches[0].bindings.contains_key("S"));
-
-        // Test 3: Multiple OPTIONAL blocks - cross-product semantics
-        let matches = search_tree_query(
-            tree.clone(),
-            r#"MATCH { V [lemma="see"]; }
-               OPTIONAL { S [upos="PROPN"]; V -[nsubj]-> S; }
-               OPTIONAL { C [upos="VERB"]; V -[xcomp]-> C; }"#,
-        )
-        .unwrap();
-        // Both OPTIONAL blocks match, so we get the cross-product (1 result with both)
-        assert_eq!(matches.len(), 1);
+        // Every assignment is found, including symmetric ones
+        let mut coord = Tree::default();
+        coord.add_minimal_word(0, b"and", b"and", b"CCONJ", b"_", None, b"root");
+        coord.add_minimal_word(1, b"cats", b"cat", b"NOUN", b"_", Some(0), b"conj");
+        coord.add_minimal_word(2, b"dogs", b"dog", b"NOUN", b"_", Some(0), b"conj");
+        coord.compile_tree();
         assert_eq!(
-            matches[0].bindings,
-            hashmap! { "V" => 0, "S" => 1, "C" => 2 }
+            solutions(
+                &coord,
+                "MATCH { C []; N1 []; N2 []; C -[conj]-> N1; C -[conj]-> N2; }"
+            ),
+            [
+                sol! { "C" => 0, "N1" => 1, "N2" => 2 },
+                sol! { "C" => 0, "N1" => 2, "N2" => 1 },
+            ]
+        );
+
+        assert_eq!(
+            solutions(
+                &help,
+                r#"MATCH { V1 [lemma="help"]; V2 []; T []; V1 -> V2; V2 -> T; }"#
+            ),
+            [sol! { "V1" => 0, "V2" => 3, "T" => 2 }]
+        );
+        assert_eq!(
+            solutions(
+                &saw_tree(),
+                r#"MATCH { V1 [upos="VERB"]; S []; V2 [upos="VERB"]; V1 -[nsubj]-> S; V1 -> V2; }"#
+            ),
+            [sol! { "V1" => 0, "S" => 1, "V2" => 2 }]
+        );
+        assert_eq!(
+            solutions(&help, r#"MATCH { V []; O [lemma=/w.*/]; V -[obj]-> O; }"#),
+            [sol! { "V" => 0, "O" => 1 }]
+        );
+
+        // Negated edges (variables are still all-different)
+        assert_eq!(
+            solutions(
+                &help,
+                r#"MATCH { V [upos="VERB"]; T [lemma="to"]; V !-> T; }"#
+            ),
+            [sol! { "V" => 0, "T" => 2 }]
+        );
+        assert_eq!(
+            solutions(&help, r#"MATCH { V [lemma="help"]; W []; V !-[obj]-> W; }"#),
+            [sol! { "V" => 0, "W" => 2 }, sol! { "V" => 0, "W" => 3 }]
+        );
+        assert_eq!(
+            solutions(
+                &help,
+                "MATCH { V []; Y []; W []; V -[xcomp]-> Y; V !-[obj]-> W; }"
+            ),
+            [sol! { "V" => 0, "Y" => 3, "W" => 2 }]
+        );
+
+        // Regex labels
+        assert_eq!(
+            solutions(&help, "MATCH { V []; C []; V -/obj|xcomp/-> C; }"),
+            [sol! { "V" => 0, "C" => 1 }, sol! { "V" => 0, "C" => 3 }]
+        );
+        assert_eq!(
+            solutions(&help, "MATCH { V []; C []; V -/ob|xc/-> C; }"),
+            []
+        );
+        assert_eq!(
+            solutions(&help, "MATCH { V []; C []; V -/x.*/-> C; }"),
+            [sol! { "V" => 0, "C" => 3 }]
+        );
+        assert_eq!(
+            solutions(
+                &help,
+                r#"MATCH { V [lemma="help"]; C []; V !-/obj|xcomp/-> C; }"#
+            ),
+            [sol! { "V" => 0, "C" => 2 }]
+        );
+
+        assert_eq!(
+            solutions(&one_word_tree(), "MATCH { P []; C []; P -> C; }"),
+            []
+        );
+
+        // A pattern with no variables matches once
+        assert_eq!(solutions(&help, "MATCH { }"), [sol! {}]);
+    }
+
+    #[test]
+    fn test_precedence() {
+        let help = help_tree();
+        let pair = |op: &str, a: &str, b: &str| {
+            solutions(
+                &help,
+                &format!(r#"MATCH {{ A [lemma="{a}"]; B [lemma="{b}"]; A {op} B; }}"#),
+            )
+        };
+
+        assert_eq!(pair("<<", "help", "win"), [sol! { "A" => 0, "B" => 3 }]);
+        assert_eq!(pair("<<", "win", "help"), []);
+        assert_eq!(pair("<", "to", "win"), [sol! { "A" => 2, "B" => 3 }]);
+        assert_eq!(pair("<", "help", "win"), []);
+        // <n< is inclusive, and the window may extend past the sentence
+        assert_eq!(pair("<2<", "help", "win"), []);
+        assert_eq!(pair("<3<", "help", "win"), [sol! { "A" => 0, "B" => 3 }]);
+        assert_eq!(pair("<100<", "help", "win"), [sol! { "A" => 0, "B" => 3 }]);
+        assert_eq!(pair("<3<", "win", "help"), []);
+
+        // All ordered pairs at distance 1 (3), or at distance 1 or 2 (3 + 2)
+        let count =
+            |op: &str| solutions(&help, &format!("MATCH {{ A []; B []; A {op} B; }}")).len();
+        assert_eq!(count("<"), 3);
+        assert_eq!(count("<1<"), 3);
+        assert_eq!(count("<2<"), 5);
+        assert_eq!(
+            solutions(&one_word_tree(), "MATCH { A []; B []; A << B; }"),
+            []
+        );
+
+        assert_eq!(
+            solutions(
+                &help,
+                r#"MATCH { A [lemma="help"]; B [lemma="we"]; C [lemma="to"]; A << B; B << C; }"#
+            ),
+            [sol! { "A" => 0, "B" => 1, "C" => 2 }]
+        );
+
+        // Combined with dependency edges
+        assert_eq!(
+            solutions(&help, "MATCH { A []; B []; A -[xcomp]-> B; A << B; }"),
+            [sol! { "A" => 0, "B" => 3 }]
+        );
+        assert_eq!(
+            solutions(&help, "MATCH { A []; B []; A -[xcomp]-> B; B << A; }"),
+            []
         );
     }
 
     #[test]
-    fn test_combined_except_optional() {
-        let tree = build_multi_verb_tree();
+    fn test_except() {
+        let tree = saw_tree();
+        let verbs =
+            |except: &str| words(&tree, &format!(r#"MATCH {{ V [upos="VERB"]; }} {except}"#));
 
-        // Find all verbs, exclude those with advmod, optionally capture subject
-        let matches = search_tree_query(
-            tree.clone(),
-            r#"MATCH { V [upos="VERB"]; }
-               EXCEPT { M [upos="ADV"]; V -[advmod]-> M; }
-               OPTIONAL { S [upos="PROPN"]; V -[nsubj]-> S; }"#,
-        )
-        .unwrap();
-        // Should find only word 0 ("saw"), with subject
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings, hashmap! { "V" => 0, "S" => 1 });
-    }
-
-    #[test]
-    fn test_except_no_rejection() {
-        let tree = build_multi_verb_tree();
-
-        // EXCEPT condition that doesn't match anything - all results should pass through
-        let matches = search_tree_query(
-            tree.clone(),
-            r#"MATCH { V [upos="VERB"]; }
-               EXCEPT { N [upos="NOUN"]; V -[obj]-> N; }"#,
-        )
-        .unwrap();
-        // Both verbs should be found (no NOUNs in tree)
-        assert_eq!(matches.len(), 2);
-        assert!(matches.iter().any(|m| m.bindings == hashmap! { "V" => 0 }));
-        assert!(matches.iter().any(|m| m.bindings == hashmap! { "V" => 2 }));
-    }
-
-    #[test]
-    fn test_except_all_rejected() {
-        let tree = build_multi_verb_tree();
-
-        // EXCEPT condition that matches all MATCH results
-        let matches = search_tree_query(
-            tree.clone(),
-            r#"MATCH { V [upos="VERB"]; }
-               EXCEPT { V -> _; }"#,
-        )
-        .unwrap();
-        // All verbs should be rejected
-        assert_eq!(matches.len(), 0);
-    }
-
-    #[test]
-    fn test_except_complex_pattern() {
-        // Tree: saw -> John (nsubj), running (xcomp) -> quickly (advmod)
-        let tree = build_multi_verb_tree();
-
-        // EXCEPT with multiple constraints and edges
-        let matches = search_tree_query(
-            tree.clone(),
-            r#"MATCH { V [upos="VERB"]; }
-               EXCEPT {
-                   C [upos="VERB"];
-                   M [upos="ADV"];
-                   V -[xcomp]-> C;
-                   C -[advmod]-> M;
-               }"#,
-        )
-        .unwrap();
-        // Only "running" should be found (not "saw", which has xcomp to running which has advmod)
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings, hashmap! { "V" => 2 });
-    }
-
-    #[test]
-    fn test_optional_multiple_matches() {
-        // Create a tree with multiple possible matches for OPTIONAL
-        // Tree: helped -> He (nsubj), us (obj), win (xcomp)
-        let mut tree = Tree::default();
-        tree.add_minimal_word(0, b"helped", b"help", b"VERB", b"_", None, b"root");
-        tree.add_minimal_word(1, b"He", b"he", b"PRON", b"_", Some(0), b"nsubj");
-        tree.add_minimal_word(2, b"us", b"we", b"PRON", b"_", Some(0), b"obj");
-        tree.add_minimal_word(3, b"win", b"win", b"VERB", b"_", Some(0), b"xcomp");
-        tree.compile_tree();
-
-        // Match verb, optionally match any PRON child
-        let matches = search_tree_query(
-            tree,
-            r#"MATCH { V [lemma="help"]; }
-               OPTIONAL { P [upos="PRON"]; V -> P; }"#,
-        )
-        .unwrap();
-
-        // Should get 2 results: one with P=He, one with P=us
-        assert_eq!(matches.len(), 2);
+        assert_eq!(verbs(r#"EXCEPT { M [upos="ADV"]; V -[advmod]-> M; }"#), [0]);
+        assert_eq!(
+            verbs(r#"EXCEPT { N [upos="NOUN"]; V -[obj]-> N; }"#),
+            [0, 2]
+        );
+        assert!(verbs("EXCEPT { V -> _; }").is_empty());
+        // Any EXCEPT block can reject
         assert!(
-            matches
-                .iter()
-                .any(|m| m.bindings == hashmap! { "V" => 0, "P" => 1 })
+            verbs(
+                r#"EXCEPT { M [upos="ADV"]; V -[advmod]-> M; }
+                   EXCEPT { C [upos="VERB"]; V -[xcomp]-> C; }"#
+            )
+            .is_empty()
         );
-        assert!(
-            matches
-                .iter()
-                .any(|m| m.bindings == hashmap! { "V" => 0, "P" => 2 })
+        assert_eq!(
+            verbs(
+                r#"EXCEPT { C [upos="VERB"]; M [upos="ADV"]; V -[xcomp]-> C; C -[advmod]-> M; }"#
+            ),
+            [2]
+        );
+        assert_eq!(
+            solutions(
+                &tree,
+                r#"MATCH { V [upos="VERB"]; S [upos="PROPN"]; V -[nsubj]-> S; }
+                   EXCEPT { C [upos="VERB"]; V -[xcomp]-> C; }"#
+            ),
+            []
         );
     }
 
     #[test]
-    fn test_optional_cross_product_multiple_matches() {
-        // Create a tree where multiple OPTIONALs each have multiple matches
-        // Tree: helped -> He (nsubj), us (obj), quickly (advmod), very (advmod)
+    fn test_optional() {
+        let tree = saw_tree();
+        let subj = r#"OPTIONAL { S [upos="PROPN"]; V -[nsubj]-> S; }"#;
+
+        // Bound when found, absent when not
+        assert_eq!(
+            solutions(&tree, &format!(r#"MATCH {{ V [lemma="see"]; }} {subj}"#)),
+            [sol! { "V" => 0, "S" => 1 }]
+        );
+        assert_eq!(
+            solutions(&tree, &format!(r#"MATCH {{ V [lemma="run"]; }} {subj}"#)),
+            [sol! { "V" => 2 }]
+        );
+
+        // Blocks are independent
+        assert_eq!(
+            solutions(
+                &tree,
+                &format!(
+                    r#"MATCH {{ V [lemma="see"]; }} {subj}
+                       OPTIONAL {{ N [upos="NOUN"]; V -[obj]-> N; }}
+                       OPTIONAL {{ C [upos="VERB"]; V -[xcomp]-> C; }}"#
+                )
+            ),
+            [sol! { "V" => 0, "S" => 1, "C" => 2 }]
+        );
+
+        // Combined with EXCEPT
+        assert_eq!(
+            solutions(
+                &tree,
+                &format!(
+                    r#"MATCH {{ V [upos="VERB"]; }}
+                       EXCEPT {{ M [upos="ADV"]; V -[advmod]-> M; }} {subj}"#
+                )
+            ),
+            [sol! { "V" => 0, "S" => 1 }]
+        );
+
+        // Multiple matches in several blocks give the cross-product
         let mut tree = Tree::default();
         tree.add_minimal_word(0, b"helped", b"help", b"VERB", b"_", None, b"root");
         tree.add_minimal_word(1, b"He", b"he", b"PRON", b"_", Some(0), b"nsubj");
         tree.add_minimal_word(2, b"us", b"we", b"PRON", b"_", Some(0), b"obj");
         tree.add_minimal_word(3, b"quickly", b"quickly", b"ADV", b"_", Some(0), b"advmod");
-        tree.add_minimal_word(4, b"very", b"very", b"ADV", b"_", Some(0), b"advmod");
+        tree.add_minimal_word(4, b"again", b"again", b"ADV", b"_", Some(0), b"advmod");
         tree.compile_tree();
-
-        // Match verb, optionally match PRON and ADV children
-        let matches = search_tree_query(
-            tree,
-            r#"MATCH { V [lemma="help"]; }
-               OPTIONAL { P [upos="PRON"]; V -> P; }
-               OPTIONAL { A [upos="ADV"]; V -> A; }"#,
-        )
-        .unwrap();
-
-        // Cross-product: 2 PRONs × 2 ADVs = 4 results
-        assert_eq!(matches.len(), 4);
-
-        // Verify all combinations exist
-        assert!(
-            matches
-                .iter()
-                .any(|m| m.bindings == hashmap! { "V" => 0, "P" => 1, "A" => 3 })
-        );
-        assert!(
-            matches
-                .iter()
-                .any(|m| m.bindings == hashmap! { "V" => 0, "P" => 1, "A" => 4 })
-        );
-        assert!(
-            matches
-                .iter()
-                .any(|m| m.bindings == hashmap! { "V" => 0, "P" => 2, "A" => 3 })
-        );
-        assert!(
-            matches
-                .iter()
-                .any(|m| m.bindings == hashmap! { "V" => 0, "P" => 2, "A" => 4 })
-        );
-    }
-
-    #[test]
-    fn test_optional_one_matches_one_doesnt() {
-        // Test where one OPTIONAL matches and another doesn't
-        let tree = build_multi_verb_tree();
-
-        let matches = search_tree_query(
-            tree.clone(),
-            r#"MATCH { V [lemma="see"]; }
-               OPTIONAL { S [upos="PROPN"]; V -[nsubj]-> S; }
-               OPTIONAL { N [upos="NOUN"]; V -[obj]-> N; }"#,
-        )
-        .unwrap();
-
-        // First OPTIONAL matches (John), second doesn't (no NOUN obj)
-        // Should get 1 result with S but no N
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings.get("V"), Some(&0));
-        assert_eq!(matches[0].bindings.get("S"), Some(&1));
-        assert!(!matches[0].bindings.contains_key("N"));
-    }
-
-    #[test]
-    fn test_complex_except_optional_interaction() {
-        // Create a more complex tree for testing
-        // Tree: helped -> He (nsubj), them (obj), win (xcomp) -> quickly (advmod)
-        let mut tree = Tree::default();
-        tree.add_minimal_word(0, b"helped", b"help", b"VERB", b"_", None, b"root");
-        tree.add_minimal_word(1, b"He", b"he", b"PRON", b"_", Some(0), b"nsubj");
-        tree.add_minimal_word(2, b"them", b"they", b"PRON", b"_", Some(0), b"obj");
-        tree.add_minimal_word(3, b"win", b"win", b"VERB", b"_", Some(0), b"xcomp");
-        tree.add_minimal_word(4, b"quickly", b"quickly", b"ADV", b"_", Some(3), b"advmod");
-        tree.compile_tree();
-
-        // Find all verbs, except those with advmod, optionally get subject and object
-        let matches = search_tree_query(
-            tree,
-            r#"MATCH { V [upos="VERB"]; }
-               EXCEPT { A [upos="ADV"]; V -[advmod]-> A; }
-               OPTIONAL { S [upos="PRON"]; V -[nsubj]-> S; }
-               OPTIONAL { O [upos="PRON"]; V -[obj]-> O; }"#,
-        )
-        .unwrap();
-
-        // Should find only "helped" (not "win" which has advmod)
-        // With both subject and object
-        assert_eq!(matches.len(), 1);
         assert_eq!(
-            matches[0].bindings,
-            hashmap! { "V" => 0, "S" => 1, "O" => 2 }
+            solutions(
+                &tree,
+                r#"MATCH { V [lemma="help"]; }
+                   OPTIONAL { P [upos="PRON"]; V -> P; }
+                   OPTIONAL { A [upos="ADV"]; V -> A; }"#
+            ),
+            [
+                sol! { "V" => 0, "P" => 1, "A" => 3 },
+                sol! { "V" => 0, "P" => 2, "A" => 3 },
+                sol! { "V" => 0, "P" => 1, "A" => 4 },
+                sol! { "V" => 0, "P" => 2, "A" => 4 },
+            ]
+        );
+    }
+
+    #[test]
+    fn test_extension_edges_between_prebound_vars() {
+        // MATCH alone yields (V, W) = (0,1), (0,3), (2,1), (2,3)
+        let tree = saw_tree();
+        let pairs = |except: &str| -> Vec<(WordId, WordId)> {
+            let query = format!(
+                r#"MATCH {{ V [upos="VERB"]; W [upos=/PROPN|ADV/]; }} EXCEPT {{ {except} }}"#
+            );
+            solutions(&tree, &query)
+                .into_iter()
+                .map(|s| (s["V"], s["W"]))
+                .collect()
+        };
+
+        // Unlabeled edge: rejects only pairs where V heads W
+        assert_eq!(pairs("V -> W;"), [(0, 3), (2, 1)]);
+        // Precedence: rejects only pairs where W immediately precedes V
+        assert_eq!(pairs("W < V;"), [(0, 1), (0, 3), (2, 3)]);
+        // Labeled edge: W's deprel alone isn't enough; V must be W's head.
+        // quickly is an advmod of running, so (0, 3) must survive.
+        assert_eq!(pairs("V -[advmod]-> W;"), [(0, 1), (0, 3), (2, 1)]);
+        // Negated edges: "V -> W or W -> V" as a clause over bound variables
+        assert_eq!(pairs("V !-> W; W !-> V;"), [(0, 1), (2, 3)]);
+
+        // OPTIONAL: an edge between pre-bound variables must hold for S to bind
+        assert_eq!(
+            solutions(
+                &tree,
+                r#"MATCH { V [upos="VERB"]; W [upos="ADV"]; }
+                   OPTIONAL { S [upos="PROPN"]; V -> W; V -> S; }"#
+            ),
+            [sol! { "V" => 0, "W" => 3 }, sol! { "V" => 2, "W" => 3 }]
         );
     }
 
@@ -1499,267 +866,49 @@ mod tests {
     fn test_extension_vars_distinct_from_match_words() {
         // New EXCEPT/OPTIONAL variables never bind a MATCH-bound word, even when
         // the block doesn't mention that MATCH variable
-        let tree = build_multi_verb_tree();
+        let tree = saw_tree();
         let base = r#"MATCH { V [upos="VERB"]; S []; V -[nsubj]-> S; }"#;
 
         // Only one subject, so there's no *other* subject to reject on
-        let matches = search_tree_query(
-            tree.clone(),
-            &format!("{base} EXCEPT {{ X []; V -[nsubj]-> X; }}"),
-        )
-        .unwrap();
-        assert_eq!(matches.len(), 1);
-
+        assert_eq!(
+            solutions(&tree, &format!("{base} EXCEPT {{ X []; V -[nsubj]-> X; }}")),
+            [sol! { "V" => 0, "S" => 1 }]
+        );
         // X ranges over V's dependents other than S
-        let matches = search_tree_query(
-            tree.clone(),
-            &format!("{base} OPTIONAL {{ X []; V -> X; }}"),
-        )
-        .unwrap();
-        assert_eq!(matches.len(), 1);
         assert_eq!(
-            matches[0].bindings,
-            hashmap! { "V" => 0, "S" => 1, "X" => 2 }
+            solutions(&tree, &format!("{base} OPTIONAL {{ X []; V -> X; }}")),
+            [sol! { "V" => 0, "S" => 1, "X" => 2 }]
         );
-    }
-
-    #[test]
-    fn test_except_with_anonymous_edge() {
-        // Tree: helped -> us (obj), win (xcomp)
-        //       win -> to (mark)
-        let tree = build_test_tree();
-
-        // Find verbs, EXCEPT those that have a mark child
-        // "win" has mark child "to", should be excluded
-        // "helped" has no mark child, should be found
-        let matches = search_tree_query(
-            tree.clone(),
-            r#"MATCH { V [upos="VERB"]; }
-               EXCEPT { V -[mark]-> _; }"#,
-        )
-        .unwrap();
-
-        println!(
-            "Matches found: {:?}",
-            matches.iter().map(|m| &m.bindings).collect::<Vec<_>>()
-        );
-
-        // Should find only "helped" (word 0), not "win" (word 3)
-        assert_eq!(
-            matches.len(),
-            1,
-            "Expected 1 match but got {:?}",
-            matches.iter().map(|m| &m.bindings).collect::<Vec<_>>()
-        );
-        assert_eq!(matches[0].bindings, hashmap! { "V" => 0 });
     }
 
     #[test]
     fn test_tree_matches() {
-        // Multiple matches - tree_matches returns true
-        let tree = build_coord_tree();
-        let pattern = compile_query("MATCH { N [upos=\"NOUN\"]; }").unwrap();
-        assert_eq!(find_all_matches(tree.clone(), &pattern).len(), 2);
-        assert!(tree_matches(&tree, &pattern));
+        let tree = saw_tree();
+        let check = |query: &str| {
+            let pattern = compile_query(query).unwrap();
+            let found = tree_matches(&tree, &pattern);
+            assert_eq!(
+                found,
+                !find_all_bindings(&tree, &pattern).is_empty(),
+                "{query}"
+            );
+            found
+        };
 
-        // No matches - tree_matches returns false
-        let tree = build_test_tree();
-        assert!(!tree_matches(&tree, &pattern));
-
-        // With EXCEPT block - still works correctly
-        let tree = build_multi_verb_tree();
-        let pattern = compile_query(
-            r#"MATCH { V [upos="VERB"]; } EXCEPT { M [upos="ADV"]; V -[advmod]-> M; }"#,
-        )
-        .unwrap();
-        assert!(tree_matches(&tree, &pattern));
-    }
-
-    /// Helper to build a tree with xpos values
-    fn build_xpos_tree() -> Tree {
-        let mut tree = Tree::default();
-        tree.add_minimal_word(0, b"The", b"the", b"DET", b"DT", Some(1), b"det");
-        tree.add_minimal_word(1, b"dog", b"dog", b"NOUN", b"NN", Some(2), b"nsubj");
-        tree.add_minimal_word(2, b"runs", b"run", b"VERB", b"VBZ", None, b"root");
-        tree.compile_tree();
-        tree
+        assert!(check(r#"MATCH { V [upos="VERB"]; }"#));
+        assert!(!check(r#"MATCH { N [upos="NOUN"]; }"#));
+        assert!(check(
+            r#"MATCH { V [upos="VERB"]; } EXCEPT { M [upos="ADV"]; V -[advmod]-> M; }"#
+        ));
+        assert!(!check(r#"MATCH { V [upos="VERB"]; } EXCEPT { V -> _; }"#));
     }
 
     #[test]
-    fn test_xpos_constraint() {
-        let tree = build_xpos_tree();
-
-        // Single xpos constraint
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), r#"MATCH { W [xpos="DT"]; }"#).unwrap();
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings, hashmap! { "W" => 0 }); // "The"
-
-        // xpos combined with upos
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), r#"MATCH { W [upos="VERB" & xpos="VBZ"]; }"#).unwrap();
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings, hashmap! { "W" => 2 }); // "runs"
-
-        // xpos with no match
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), r#"MATCH { W [xpos="VBD"]; }"#).unwrap();
-        assert_eq!(matches.len(), 0);
-
-        // Negative xpos constraint
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), r#"MATCH { W [upos="NOUN" & xpos!="NNS"]; }"#).unwrap();
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings, hashmap! { "W" => 1 }); // "dog" has xpos=NN
-    }
-
-    #[test]
-    fn test_single_word_tree() {
-        let mut tree = Tree::default();
-        tree.add_minimal_word(0, b"word", b"word", b"NOUN", b"_", None, b"root");
-        tree.compile_tree();
-
-        // Should find the single word
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), r#"MATCH { W [upos="NOUN"]; }"#).unwrap();
-        assert_eq!(matches.len(), 1);
-
-        // Edge constraint should find nothing (no children)
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), r#"MATCH { P []; C []; P -> C; }"#).unwrap();
-        assert_eq!(matches.len(), 0);
-
-        // Precedence on single word - nothing precedes itself
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), r#"MATCH { A []; B []; A << B; }"#).unwrap();
-        assert_eq!(matches.len(), 0); // AllDifferent means A != B, so no pairs
-    }
-
-    #[test]
-    fn test_regex_constraints() {
-        let tree = build_test_tree();
-        // Tree has: "helped" (lemma: help), "us" (lemma: we), "to" (lemma: to), "win" (lemma: win)
-
-        // Basic regex - match lemmas starting with "w" (anchors added automatically)
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), r#"MATCH { W [lemma=/w.*/]; }"#).unwrap();
-        assert_eq!(matches.len(), 2); // "we" and "win"
-        let word_ids: Vec<_> = matches.iter().map(|m| m.bindings["W"]).collect();
-        assert!(word_ids.contains(&1)); // "us" (lemma: we)
-        assert!(word_ids.contains(&3)); // "win"
-
-        // Regex with alternation - match exactly VERB or PRON
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), r#"MATCH { W [upos=/VERB|PRON/]; }"#).unwrap();
-        assert_eq!(matches.len(), 3); // "helped", "us", "win"
-        let word_ids: Vec<_> = matches.iter().map(|m| m.bindings["W"]).collect();
-        assert!(word_ids.contains(&0)); // helped (VERB)
-        assert!(word_ids.contains(&1)); // us (PRON)
-        assert!(word_ids.contains(&3)); // win (VERB)
-
-        // Anchors apply to the whole alternation, not just the first/last branch
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), r#"MATCH { W [form=/h|w/]; }"#).unwrap();
-        assert!(matches.is_empty());
-
-        // Regex with .* - match words containing "el"
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), r#"MATCH { W [form=/.*el.*/]; }"#).unwrap();
-        assert_eq!(matches.len(), 1); // "helped"
-        assert_eq!(matches[0].bindings["W"], 0);
-
-        // Negated regex - match lemmas NOT starting with "w"
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), r#"MATCH { W [lemma!=/w.*/]; }"#).unwrap();
-        assert_eq!(matches.len(), 2); // "help" and "to"
-        let word_ids: Vec<_> = matches.iter().map(|m| m.bindings["W"]).collect();
-        assert!(word_ids.contains(&0)); // helped (lemma: help)
-        assert!(word_ids.contains(&2)); // to
-
-        // Mixed literal and regex
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), r#"MATCH { V [upos="VERB" & lemma=/h.*/]; }"#).unwrap();
-        assert_eq!(matches.len(), 1); // "helped"
-        assert_eq!(matches[0].bindings["V"], 0);
-
-        // Regex in edge constraints - this tests that deprel constraints work with literals
-        // (regex in edge labels would require grammar changes)
-        let matches: Vec<_> = search_tree_query(
-            tree.clone(),
-            r#"MATCH { V []; O [lemma=/w.*/]; V -[obj]-> O; }"#,
-        )
-        .unwrap();
-        assert_eq!(matches.len(), 1); // helped -> us (lemma: we)
-        assert_eq!(matches[0].bindings["V"], 0);
-        assert_eq!(matches[0].bindings["O"], 1);
-    }
-
-    #[test]
-    fn test_regex_edge_constraints() {
-        let tree = build_test_tree();
-        // Tree: helped(0) -obj-> us(1), win(3) -xcomp-> helped(0), to(2) -mark-> win(3)
-
-        // Regex edge matching obj or xcomp
-        let matches: Vec<_> = search_tree_query(
-            tree.clone(),
-            r#"MATCH { V [upos="VERB"]; C []; V -/obj|xcomp/-> C; }"#,
-        )
-        .unwrap();
-        assert_eq!(matches.len(), 2); // helped->us (obj) and helped->win (xcomp)
-
-        // Alternation is fully anchored: no prefix/suffix matches
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), r#"MATCH { V []; C []; V -/ob|xc/-> C; }"#).unwrap();
-        assert!(matches.is_empty());
-
-        // Regex edge with wildcard
-        let matches: Vec<_> = search_tree_query(
-            tree.clone(),
-            r#"MATCH { V [upos="VERB"]; C []; V -/x.*/-> C; }"#,
-        )
-        .unwrap();
-        assert_eq!(matches.len(), 1); // helped->win (xcomp)
-        assert_eq!(matches[0].bindings["C"], 3);
-
-        // Negated regex edge: V is parent of C but deprel does NOT match obj|xcomp
-        // Use VERB constraint on V to limit combinations
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), r#"MATCH { V []; C []; V -/obj|xcomp/-> C; }"#)
-                .unwrap();
-        // Only helped(0)->us(1, obj) and helped(0)->win(3, xcomp) match
+    fn test_search_tree() {
+        // The public entry points wrap results in `Match`es sharing the tree
+        let matches = search_tree_query(saw_tree(), r#"MATCH { V [upos="VERB"]; }"#).unwrap();
         assert_eq!(matches.len(), 2);
-
-        // Anonymous regex edge
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), r#"MATCH { C []; _ -/obj|xcomp/-> C; }"#).unwrap();
-        assert_eq!(matches.len(), 2); // us (obj) and win (xcomp)
-    }
-
-    #[test]
-    fn test_or_constraint_matches_either() {
-        // build_multi_verb_tree has VERB (saw), PROPN (John), VERB (running), ADV (quickly)
-        let tree = build_multi_verb_tree();
-
-        // NOUN | PROPN should match John (PROPN)
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), r#"MATCH { N [upos="NOUN" | upos="PROPN"]; }"#)
-                .unwrap();
-        assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].bindings["N"], 1); // John is PROPN
-
-        // VERB | AUX should match both verbs
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), r#"MATCH { V [upos="VERB" | upos="AUX"]; }"#).unwrap();
-        assert_eq!(matches.len(), 2);
-    }
-
-    #[test]
-    fn test_or_constraint_no_match() {
-        let tree = build_test_tree(); // VERB, PRON, PART, VERB
-
-        // NOUN | ADJ should not match anything
-        let matches: Vec<_> =
-            search_tree_query(tree.clone(), r#"MATCH { N [upos="NOUN" | upos="ADJ"]; }"#).unwrap();
-        assert_eq!(matches.len(), 0);
+        assert!(Arc::ptr_eq(&matches[0].tree, &matches[1].tree));
+        assert!(search_tree_query(saw_tree(), "MATCH { V [foo=\"x\"]; }").is_err());
     }
 }
