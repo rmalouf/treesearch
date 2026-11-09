@@ -732,6 +732,18 @@ class TestExceptOptional:
         )
         assert len(matches) == 1
 
+    def test_except_edge_between_match_vars(self):
+        """EXCEPT edges between two MATCH variables are actually checked."""
+        conllu = """1\the\the\tPRON\tPRP\t_\t2\tnsubj\t_\t_
+2\tsaw\tsee\tVERB\tVBD\t_\t0\troot\t_\t_
+3\tus\twe\tPRON\tPRP\t_\t2\tobj\t_\t_
+
+"""
+        tb = treesearch.Treebank.from_string(conllu)
+        query = 'MATCH { V [upos="VERB"]; N [upos="PRON"]; } EXCEPT { N < V; }'
+        forms = [tree.word(m["N"]).form for tree, m in tb.search(query)]
+        assert forms == ["us"]
+
     def test_optional_binds_when_present(self):
         """OPTIONAL variable bound when match exists."""
         conllu = """1\tJohn\tJohn\tPROPN\tNNP\t_\t2\tnsubj\t_\t_

@@ -195,6 +195,19 @@ fn solve_with_bindings(
         }
     }
 
+    // Check edges between pre-bound variables. The DFS only checks an edge when it
+    // assigns one of its endpoints, so edges whose endpoints are both pre-bound
+    // would otherwise never be checked.
+    for ec in &pattern.edge_constraints {
+        if let (Some(from), Some(to)) = (
+            assign[pattern.var_ids[&ec.from]],
+            assign[pattern.var_ids[&ec.to]],
+        ) && !satisfies_arc_constraint(tree, from, to, ec)
+        {
+            return Vec::new();
+        }
+    }
+
     // Initialize domains (node consistency)
     let mut domains: Vec<BitFixed<u64>> = vec![BitFixed::new(num_words); pattern.var_names.len()];
     for (var_id, constr) in pattern.var_constraints.iter().enumerate() {
@@ -1177,6 +1190,64 @@ mod tests {
         .unwrap();
         // saw-John pair rejected because saw has xcomp
         assert_eq!(matches.len(), 0);
+    }
+
+    #[test]
+    fn test_extension_edges_between_prebound_vars() {
+        // Tree: saw(0) -> John(1, nsubj), running(2, xcomp) -> quickly(3, advmod)
+        // MATCH alone yields (V, W) = (0,1), (0,3), (2,1), (2,3)
+        let tree = build_multi_verb_tree();
+        let pairs = |query: &str| {
+            let mut pairs: Vec<_> = search_tree_query(tree.clone(), query)
+                .unwrap()
+                .into_iter()
+                .map(|m| (m.bindings["V"], m.bindings["W"]))
+                .collect();
+            pairs.sort();
+            pairs
+        };
+        let base = r#"MATCH { V [upos="VERB"]; W [upos=/PROPN|ADV/]; }"#;
+
+        // Unlabeled edge: rejects only pairs where V heads W
+        assert_eq!(
+            pairs(&format!("{base} EXCEPT {{ V -> W; }}")),
+            [(0, 3), (2, 1)]
+        );
+
+        // Precedence: rejects only pairs where W precedes V
+        assert_eq!(
+            pairs(&format!("{base} EXCEPT {{ W < V; }}")),
+            [(0, 1), (0, 3), (2, 3)]
+        );
+
+        // Labeled edge: W's deprel alone isn't enough; V must be W's head.
+        // quickly is an advmod of running, so (0, 3) must survive.
+        assert_eq!(
+            pairs(&format!("{base} EXCEPT {{ V -[advmod]-> W; }}")),
+            [(0, 1), (0, 3), (2, 1)]
+        );
+
+        // Negated edges: "V -> W or W -> V" as a clause over bound variables
+        assert_eq!(
+            pairs(&format!("{base} EXCEPT {{ V !-> W; W !-> V; }}")),
+            [(0, 1), (2, 3)]
+        );
+
+        // OPTIONAL: an edge between pre-bound variables must hold for S to bind
+        let matches = search_tree_query(
+            tree.clone(),
+            r#"MATCH { V [upos="VERB"]; W [upos="ADV"]; }
+               OPTIONAL { S [upos="PROPN"]; V -> W; V -> S; }"#,
+        )
+        .unwrap();
+        assert_eq!(matches.len(), 2);
+        for m in &matches {
+            assert!(
+                !m.bindings.contains_key("S"),
+                "unexpected S in {:?}",
+                m.bindings
+            );
+        }
     }
 
     #[test]
