@@ -11,7 +11,7 @@ name = "treesearch"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-pyo3 = { version = "0.28", features = ["abi3-py312"], optional = true }
+pyo3 = { version = "0.30", features = ["abi3-py312"], optional = true }
 pest = "2.9"
 pest_derive = "2.9"
 rustc-hash = "2.1"
@@ -24,8 +24,8 @@ thiserror = "2.0"
 crossbeam-channel = "0.5"
 fastbit = "0.11"
 memchr = "2"
-parking_lot = "0.12"
-regex = "1.12"
+parking_lot = "0.13"
+regex = "1.13"
 
 [features]
 default = ["python"]
