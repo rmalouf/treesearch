@@ -50,6 +50,9 @@ pub enum ParseError {
     #[error("Invalid {field} pair (missing '='): {pair}")]
     InvalidPair { field: &'static str, pair: String },
 
+    #[error("Empty {field} item (stray '|')")]
+    EmptyItem { field: &'static str },
+
     #[error("Invalid DEPS pair: {pair}")]
     InvalidDepsPair { pair: String },
 
@@ -182,7 +185,10 @@ impl<R: BufRead> TreeIterator<R> {
         let mut start = 0;
         for pipe_pos in memchr::memchr_iter(b'|', s).chain(std::iter::once(s.len())) {
             let pair = &s[start..pipe_pos];
-            let bare = (field == "MISC" && !pair.is_empty()).then_some((pair, &b""[..]));
+            if pair.is_empty() {
+                return Err(ParseError::EmptyItem { field });
+            }
+            let bare = (field == "MISC").then_some((pair, &b""[..]));
             let Some((k, v)) = bs_split_once(pair, b'=').or(bare) else {
                 return Err(ParseError::InvalidPair {
                     field,
@@ -588,7 +594,8 @@ mod tests {
                 "Invalid FEATS pair (missing '='): InvalidPair",
             ),
             ("foo|bar=baz", "_", "Invalid FEATS pair (missing '='): foo"),
-            ("_", "a||b", "Invalid MISC pair (missing '='): \n"),
+            ("_", "a||b", "Empty MISC item (stray '|')"),
+            ("Case=Nom|", "_", "Empty FEATS item (stray '|')"),
         ] {
             let err = word_with(feats, misc).unwrap_err().to_string();
             assert!(err.contains(message), "{feats} {misc}: {err}");
