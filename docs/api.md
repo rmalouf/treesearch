@@ -125,7 +125,7 @@ A dependency tree (parsed sentence).
 | Property | Type | Description |
 |----------|------|-------------|
 | `sentence_text` | `str \| None` | Reconstructed sentence |
-| `metadata` | `dict[str, str]` | CoNLL-U comments |
+| `metadata` | `dict[str, str]` | CoNLL-U comments (`# key = value`; `# key` maps to `""`) |
 
 ### Methods
 

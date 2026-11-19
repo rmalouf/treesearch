@@ -70,6 +70,9 @@ pub enum ParseError {
 
     #[error("CR line ending (CoNLL-U requires LF)")]
     CarriageReturn,
+
+    #[error("Comment line inside a sentence (comments must precede the word lines)")]
+    CommentInSentence,
 }
 
 const FIELD_NAMES: [&str; 10] = [
@@ -267,6 +270,7 @@ impl<R: BufRead> Iterator for TreeIterator<R> {
         let mut tree = Tree::with_metadata(&self.string_pool, None, HashMap::new());
         let mut buffer: Vec<u8> = Vec::with_capacity(100);
         let mut has_content = false;
+        let mut first_comment: Option<usize> = None;
         // Largest HEAD seen and its line, checked against the sentence length at the end
         let mut max_head: Option<(WordId, usize)> = None;
 
@@ -288,8 +292,8 @@ impl<R: BufRead> Iterator for TreeIterator<R> {
                         line = line.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(line);
                     }
                     if line.is_empty() {
-                        // Blank line = sentence boundary if we have content
-                        if has_content {
+                        // Blank line = sentence boundary if we have content or comments
+                        if has_content || first_comment.is_some() {
                             break;
                         }
                         // Skip leading/multiple blank lines
@@ -299,7 +303,12 @@ impl<R: BufRead> Iterator for TreeIterator<R> {
                     let result = if line.ends_with(b"\r") {
                         Err(ParseError::CarriageReturn)
                     } else if line[0] == b'#' {
-                        parse_comment(line, &mut tree)
+                        if has_content {
+                            Err(ParseError::CommentInSentence)
+                        } else {
+                            first_comment.get_or_insert(self.line_num);
+                            parse_comment(line, &mut tree)
+                        }
                     } else {
                         has_content = true;
                         self.parse_line(&mut tree, line).map(|()| {
@@ -323,9 +332,14 @@ impl<R: BufRead> Iterator for TreeIterator<R> {
             }
         }
 
-        // Return None if we broke on EOF with no content
+        // At EOF with nothing read, we're done; comments alone are an empty sentence
         if !has_content {
-            return None;
+            return first_comment.map(|line_num| {
+                Err(ParseError::LineErrorNoContent {
+                    line_num,
+                    message: "Comment lines with no word lines following".to_string(),
+                })
+            });
         }
 
         let len = tree.words.len();
@@ -344,19 +358,15 @@ impl<R: BufRead> Iterator for TreeIterator<R> {
     }
 }
 
-/// Parse a comment line (starts with #)
+/// Parse a comment line (starts with #): `# key = value`, or `# key` with an empty value
 fn parse_comment(line: &[u8], tree: &mut Tree) -> Result<(), ParseError> {
-    // Check for key = value format
-    let line = str::from_utf8(line)?;
-    if let Some((key, value)) = line[1..].split_once("=") {
-        let key = key.trim();
-        let value = value.trim();
-
-        if key == "text" {
-            tree.sentence_text = Some(value.to_string());
-        } else {
-            tree.metadata.insert(key.to_string(), value.to_string());
-        }
+    let line = str::from_utf8(&line[1..])?;
+    let (key, value) = line.split_once('=').unwrap_or((line, ""));
+    let (key, value) = (key.trim(), value.trim());
+    if key == "text" {
+        tree.sentence_text = Some(value.to_string());
+    } else if !key.is_empty() {
+        tree.metadata.insert(key.to_string(), value.to_string());
     }
     Ok(())
 }
@@ -437,6 +447,8 @@ mod tests {
     #[test]
     fn test_parse_sentence() {
         let conllu = "\n\
+                      # newdoc\n\
+                      #\n\
                       # sent_id = s1\n\
                       # text = The dog runs.\n\
                       1\tThe\tthe\tDET\tDT\t_\t2\tdet\t_\t_\n\
@@ -454,7 +466,12 @@ mod tests {
 
         let tree = &trees[0];
         assert_eq!(tree.sentence_text.as_deref(), Some("The dog runs."));
-        assert_eq!(tree.metadata["sent_id"], "s1");
+        // `# key` with no value is kept; a bare `#` is not
+        let metadata = [("newdoc", ""), ("sent_id", "s1")];
+        assert_eq!(
+            tree.metadata,
+            metadata.map(|(k, v)| (k.to_string(), v.to_string())).into()
+        );
 
         // The multiword token is skipped
         let s = |sym| String::from_utf8(tree.string_pool.resolve(sym).to_vec()).unwrap();
@@ -534,53 +551,81 @@ mod tests {
 
     #[test]
     fn test_line_errors() {
-        let cases: [(&[u8], &str); 18] = [
-            (b"1\tword\n", "Missing field 3"),
-            (b"1\tw\tl\tX\tX\t_\t0\troot\t_\n", "Missing field 10"),
-            (b"1\tw\tl\tX\tX\t_\t0\troot\t_\t_\textra\n", "10 fields"),
+        let cases: [(&[u8], usize, &str); 21] = [
+            (b"1\tword\n", 1, "Missing field 3"),
+            (b"1\tw\tl\tX\tX\t_\t0\troot\t_\n", 1, "Missing field 10"),
+            (b"1\tw\tl\tX\tX\t_\t0\troot\t_\t_\textra\n", 1, "10 fields"),
             (
                 b"1\tw\tl\tX\tX\t_\t0\troot\t0:root\t_\n",
+                1,
                 "Extended deprels",
             ),
             (
                 b"1.1\tw\tl\tX\tX\t_\t0\troot\t_\t_\n",
+                1,
                 "Empty nodes are not supported: 1.1",
             ),
             (
                 b"abc\tw\tl\tX\tX\t_\t0\troot\t_\t_\n",
+                1,
                 "Invalid token ID: abc",
             ),
-            (b"1\tw\tl\tX\tX\t_\txyz\troot\t_\t_\n", "Invalid HEAD: xyz"),
-            (b"\tw\tl\tX\tX\t_\t0\troot\t_\t_\n", "Empty ID field"),
-            (b"1\t\tl\tX\tX\t_\t0\troot\t_\t_\n", "Empty FORM field"),
-            (b"1\tw\tl\tX\tX\t_\t\troot\t_\t_\n", "Empty HEAD field"),
-            (b"1\tw\tl\tX\tX\t_\t0\troot\t_\t\n", "Empty MISC field"),
+            (
+                b"1\tw\tl\tX\tX\t_\txyz\troot\t_\t_\n",
+                1,
+                "Invalid HEAD: xyz",
+            ),
+            (b"\tw\tl\tX\tX\t_\t0\troot\t_\t_\n", 1, "Empty ID field"),
+            (b"1\t\tl\tX\tX\t_\t0\troot\t_\t_\n", 1, "Empty FORM field"),
+            (b"1\tw\tl\tX\tX\t_\t\troot\t_\t_\n", 1, "Empty HEAD field"),
+            (b"1\tw\tl\tX\tX\t_\t0\troot\t_\t\n", 1, "Empty MISC field"),
             (
                 b"2\tw\tl\tX\tX\t_\t0\troot\t_\t_\n",
+                1,
                 "Expected word ID 1, found 2",
             ),
             (
                 b"2-3\tw\t_\t_\t_\t_\t_\t_\t_\t_\n",
+                1,
                 "Expected word ID 1, found 2-3",
             ),
-            (b"1-1\tw\t_\t_\t_\t_\t_\t_\t_\t_\n", "Invalid token ID: 1-1"),
+            (
+                b"1-1\tw\t_\t_\t_\t_\t_\t_\t_\t_\n",
+                1,
+                "Invalid token ID: 1-1",
+            ),
             (
                 b"abc-\tw\t_\t_\t_\t_\t_\t_\t_\t_\n",
+                1,
                 "Invalid token ID: abc-",
             ),
             (
                 b"1\tw\tl\tX\tX\t_\t2\tdep\t_\t_\n",
+                1,
                 "HEAD 2 is out of range (sentence has 1 words)",
             ),
-            (b"1\tw\tl\tX\tX\t_\t0\troot\t_\t_\r\n", "CR line ending"),
+            (b"1\tw\tl\tX\tX\t_\t0\troot\t_\t_\r\n", 1, "CR line ending"),
             (
                 b"# text = \xff\n1\tw\tl\tX\tX\t_\t0\troot\t_\t_\n",
+                1,
                 "invalid utf-8",
             ),
+            (
+                b"1\tw\tl\tX\tX\t_\t0\troot\t_\t_\n# x = y\n",
+                2,
+                "Comment line inside a sentence",
+            ),
+            (
+                b"# sent_id = a\n\n1\tw\tl\tX\tX\t_\t0\troot\t_\t_\n",
+                1,
+                "Comment lines with no word lines",
+            ),
+            (b"\n# newdoc\n", 2, "Comment lines with no word lines"),
         ];
-        for (conllu, message) in cases {
+        for (conllu, line_num, message) in cases {
             let err = parse_one(conllu).unwrap_err().to_string();
-            assert!(err.starts_with("Parse error at line 1:"), "{err}");
+            let location = format!("Parse error at line {line_num}:");
+            assert!(err.starts_with(&location), "{err}");
             assert!(err.contains(message), "{err}");
         }
 
