@@ -19,9 +19,6 @@ pub struct Dep {
     pub deprel: Sym,
 }
 
-/// Miscellaneous annotations (MISC field)
-pub type Misc = HashMap<String, String>;
-
 /// A word in a dependency tree
 #[derive(Debug, Clone)]
 pub struct Word {

@@ -7,7 +7,7 @@
 //! CoNLL-U format: https://universaldependencies.org/format.html
 
 use crate::bytes::{BytestringPool, bs_atoi, bs_split_once};
-use crate::tree::{Dep, Features, Misc, TokenId, Tree, WordId};
+use crate::tree::{Dep, Features, TokenId, Tree, WordId};
 use flate2::read::GzDecoder;
 use std::collections::HashMap;
 use std::fs::File;
@@ -47,8 +47,8 @@ pub enum ParseError {
     #[error("Expected 10 fields, found more than 10")]
     TooManyFields,
 
-    #[error("Invalid FEATS pair (missing '='): {pair}")]
-    InvalidFeatsPair { pair: String },
+    #[error("Invalid {field} pair (missing '='): {pair}")]
+    InvalidPair { field: &'static str, pair: String },
 
     #[error("Invalid DEPS pair: {pair}")]
     InvalidDepsPair { pair: String },
@@ -61,9 +61,6 @@ pub enum ParseError {
 
     #[error("Invalid HEAD: {head}")]
     InvalidHead { head: String },
-
-    #[error("Invalid MISC pair (missing '='): {pair}")]
-    InvalidMiscPair { pair: String },
 }
 
 /// CoNLL-U reader that iterates over sentences
@@ -114,12 +111,12 @@ impl<R: BufRead> TreeIterator<R> {
         }
 
         let token_id = parse_id(token_id_field)?;
-        let feats = self.parse_features(feats_field)?;
+        let feats = self.parse_features(feats_field, "FEATS")?;
         let head = parse_head(head_field)?;
         if deps_field != b"_" {
             return Err(ParseError::UnsupportedExtendedDeprels);
         }
-        let misc = self.parse_features(misc_field)?;
+        let misc = self.parse_features(misc_field, "MISC")?;
 
         tree.add_word(
             word_id, token_id, form, lemma, upos, xpos, feats, head, deprel, misc,
@@ -127,8 +124,8 @@ impl<R: BufRead> TreeIterator<R> {
         Ok(())
     }
 
-    /// Parse FEATS field (key=value|key=value)
-    fn parse_features(&mut self, s: &[u8]) -> Result<Features, ParseError> {
+    /// Parse a FEATS or MISC field (key=value|key=value)
+    fn parse_features(&mut self, s: &[u8], field: &'static str) -> Result<Features, ParseError> {
         if s == b"_" {
             return Ok(Features::new());
         }
@@ -138,7 +135,8 @@ impl<R: BufRead> TreeIterator<R> {
         for pipe_pos in memchr::memchr_iter(b'|', s).chain(std::iter::once(s.len())) {
             let pair = &s[start..pipe_pos];
             let Some((k, v)) = bs_split_once(pair, b'=') else {
-                return Err(ParseError::InvalidFeatsPair {
+                return Err(ParseError::InvalidPair {
+                    field,
                     pair: str::from_utf8(pair)?.to_string(),
                 });
             };
@@ -335,24 +333,6 @@ fn parse_head(s: &[u8]) -> Result<Option<WordId>, ParseError> {
     }
 }
 
-/// Parse MISC field (key=value|key=value)
-fn _parse_misc(s: &str) -> Result<Misc, ParseError> {
-    if s == "_" {
-        return Ok(Misc::new());
-    }
-
-    let mut misc = Misc::new();
-    for pair in s.split('|') {
-        let Some((k, v)) = pair.split_once('=') else {
-            return Err(ParseError::InvalidMiscPair {
-                pair: pair.to_string(),
-            });
-        };
-        misc.insert(k.to_string(), v.to_string());
-    }
-    Ok(misc)
-}
-
 /// Test helper: one tree from rows of "form lemma upos xpos head deprel"
 /// (HEAD is 1-based as in CoNLL-U, 0 for the root)
 #[cfg(test)]
@@ -469,13 +449,21 @@ mod tests {
         assert!(tree.words[0].feats.is_empty());
         assert!(tree.words[0].misc.is_empty());
 
-        for (feats, misc) in [
-            ("InvalidPair", "_"),
-            ("foo|bar=baz", "_"),
-            ("_", "SpaceAfter"),
+        for (feats, misc, message) in [
+            (
+                "InvalidPair",
+                "_",
+                "Invalid FEATS pair (missing '='): InvalidPair",
+            ),
+            ("foo|bar=baz", "_", "Invalid FEATS pair (missing '='): foo"),
+            (
+                "_",
+                "SpaceAfter",
+                "Invalid MISC pair (missing '='): SpaceAfter",
+            ),
         ] {
             let err = word_with(feats, misc).unwrap_err().to_string();
-            assert!(err.contains("Invalid FEATS pair"), "{feats} {misc}: {err}");
+            assert!(err.contains(message), "{feats} {misc}: {err}");
         }
     }
 
