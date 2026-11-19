@@ -101,7 +101,7 @@ MATCH {
 
 ## Data Format
 
-Reads treebanks in [CoNLL-U format](https://universaldependencies.org/format.html). Supports plain text (`.conllu`), gzip-compressed (`.conllu.gz`), and zstd-compressed files (`.conllu.zst`) with automatic decompression.
+Reads treebanks in [CoNLL-U format](https://universaldependencies.org/format.html). Supports plain text (`.conllu`), gzip-compressed (`.conllu.gz`), and zstd-compressed files (`.conllu.zst`) with automatic decompression. Queries match the basic dependency tree (HEAD and DEPREL); enhanced dependencies (DEPS) and empty nodes (`5.1`) are ignored.
 
 ## Documentation
 

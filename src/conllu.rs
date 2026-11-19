@@ -1,8 +1,9 @@
 //! CoNLL-U file parsing
 //!
 //! Parses CoNLL-U format files into Tree structures.
-//! Supports all CoNLL-U features including multiword tokens, empty nodes,
-//! enhanced dependencies, and sentence metadata.
+//! Multiword tokens, empty nodes and enhanced dependencies (DEPS) are checked
+//! for well-formed IDs where relevant and otherwise ignored: trees hold the
+//! basic dependency tree and sentence metadata.
 //!
 //! CoNLL-U format: https://universaldependencies.org/format.html
 
@@ -41,9 +42,6 @@ pub enum ParseError {
     #[error("Missing field {field_num}")]
     MissingField { field_num: usize },
 
-    #[error("Extended deprels not yet supported")]
-    UnsupportedExtendedDeprels,
-
     #[error("Expected 10 fields, found more than 10")]
     TooManyFields,
 
@@ -56,8 +54,8 @@ pub enum ParseError {
     #[error("Invalid DEPS pair: {pair}")]
     InvalidDepsPair { pair: String },
 
-    #[error("Empty nodes are not supported: {token_id}")]
-    UnsupportedToken { token_id: String },
+    #[error("Empty node {token_id} out of place (expected {after}.N)")]
+    MisplacedEmptyNode { token_id: String, after: TokenId },
 
     #[error("Invalid token ID: {token_id}")]
     InvalidTokenId { token_id: String },
@@ -93,7 +91,8 @@ pub struct TreeIterator<R: BufRead> {
 }
 
 impl<R: BufRead> TreeIterator<R> {
-    /// Parse a word line into `tree`; multiword-token lines are checked and skipped
+    /// Parse a word line into `tree`; multiword-token and empty-node lines are checked and
+    /// skipped, and DEPS is ignored
     fn parse_line(&mut self, tree: &mut Tree, line: &[u8]) -> Result<(), ParseError> {
         // Split into exactly 10 tab-separated fields
         let mut fields: [&[u8]; 10] = [&[]; 10];
@@ -115,7 +114,18 @@ impl<R: BufRead> TreeIterator<R> {
                 field: FIELD_NAMES[i],
             });
         }
-        let [id, form, lemma, upos, xpos, feats, head, deprel, deps, misc] = fields;
+        let [
+            id,
+            form,
+            lemma,
+            upos,
+            xpos,
+            feats,
+            head,
+            deprel,
+            _deps,
+            misc,
+        ] = fields;
 
         let word_id = tree.words.len();
         let expected = word_id + 1;
@@ -140,15 +150,36 @@ impl<R: BufRead> TreeIterator<R> {
             };
         }
 
-        let token_id = parse_id(id)?;
+        // Empty node (e.g., "5.1"): must follow the last word read
+        if let Some((after, n)) = bs_split_once(id, b'.') {
+            let token_id = || str::from_utf8(id).map(str::to_string);
+            return match (bs_atoi(after), bs_atoi(n)) {
+                (Some(after), Some(n)) if n >= 1 => {
+                    if after == word_id {
+                        Ok(())
+                    } else {
+                        Err(ParseError::MisplacedEmptyNode {
+                            token_id: token_id()?,
+                            after: word_id,
+                        })
+                    }
+                }
+                _ => Err(ParseError::InvalidTokenId {
+                    token_id: token_id()?,
+                }),
+            };
+        }
+
+        let Some(token_id) = bs_atoi(id) else {
+            return Err(ParseError::InvalidTokenId {
+                token_id: str::from_utf8(id)?.to_string(),
+            });
+        };
         if token_id != expected {
             return Err(unexpected());
         }
         let feats = self.parse_features(feats, "FEATS")?;
         let head = parse_head(head)?;
-        if deps != b"_" {
-            return Err(ParseError::UnsupportedExtendedDeprels);
-        }
         let misc = self.parse_features(misc, "MISC")?;
 
         tree.add_word(
@@ -421,23 +452,6 @@ fn parse_comment(line: &[u8], tree: &mut Tree) -> Result<(), ParseError> {
     Ok(())
 }
 
-/// Parse ID field (single integer; multiword tokens are handled by the caller)
-fn parse_id(s: &[u8]) -> Result<TokenId, ParseError> {
-    // Check for empty nodes (containing '.')
-    if s.contains(&b'.') {
-        return Err(ParseError::UnsupportedToken {
-            token_id: str::from_utf8(s)?.to_string(),
-        });
-    }
-
-    let Some(id) = bs_atoi(s) else {
-        return Err(ParseError::InvalidTokenId {
-            token_id: str::from_utf8(s)?.to_string(),
-        });
-    };
-    Ok(id)
-}
-
 /// Parse HEAD field (0 for the root, else a 1-based word ID)
 fn parse_head(s: &[u8]) -> Result<Option<WordId>, ParseError> {
     match bs_atoi(s) {
@@ -604,19 +618,24 @@ mod tests {
 
     #[test]
     fn test_line_errors() {
-        let cases: [(&[u8], usize, &str); 25] = [
+        let cases: [(&[u8], usize, &str); 26] = [
             (b"1\tword\n", 1, "Missing field 3"),
             (b"1\tw\tl\tX\tX\t_\t0\troot\t_\n", 1, "Missing field 10"),
             (b"1\tw\tl\tX\tX\t_\t0\troot\t_\t_\textra\n", 1, "10 fields"),
             (
-                b"1\tw\tl\tX\tX\t_\t0\troot\t0:root\t_\n",
+                b"1.1\tw\tl\tX\tX\t_\t_\t_\t_\t_\n",
                 1,
-                "Extended deprels",
+                "Empty node 1.1 out of place (expected 0.N)",
             ),
             (
-                b"1.1\tw\tl\tX\tX\t_\t0\troot\t_\t_\n",
+                b"0.0\tw\tl\tX\tX\t_\t_\t_\t_\t_\n",
                 1,
-                "Empty nodes are not supported: 1.1",
+                "Invalid token ID: 0.0",
+            ),
+            (
+                b"0.x\tw\tl\tX\tX\t_\t_\t_\t_\t_\n",
+                1,
+                "Invalid token ID: 0.x",
             ),
             (
                 b"abc\tw\tl\tX\tX\t_\t0\troot\t_\t_\n",
@@ -718,6 +737,22 @@ mod tests {
         );
         let next = results[2].as_ref().unwrap();
         assert_eq!(*next.string_pool.resolve(next.words[0].form), *b"next");
+    }
+
+    #[test]
+    fn test_enhanced_layer_ignored() {
+        // Empty nodes and DEPS are skipped; the basic tree is unchanged
+        let conllu = "0.1\tsaid\tsay\tVERB\t_\t_\t_\t_\t2:parataxis\t_\n\
+                      1\tSue\tSue\tPROPN\t_\t_\t2\tnsubj\t2:nsubj\t_\n\
+                      2\tlikes\tlike\tVERB\t_\t_\t0\troot\t0:root\t_\n\
+                      3\tcoffee\tcoffee\tNOUN\t_\t_\t2\tobj\t2:obj\t_\n\
+                      4\tand\tand\tCCONJ\t_\t_\t5\tcc\t5.1:cc\t_\n\
+                      5\tBill\tBill\tPROPN\t_\t_\t2\tconj\t5.1:nsubj\t_\n\
+                      5.1\tlikes\tlike\tVERB\t_\t_\t_\t_\t2:conj\tCopyOf=2\n\
+                      6\ttea\ttea\tNOUN\t_\t_\t5\torphan\t5.1:obj\t_\n";
+        let tree = parse_one(conllu.as_bytes()).unwrap();
+        let heads: Vec<_> = tree.words.iter().map(|w| w.head).collect();
+        assert_eq!(heads, [Some(1), None, Some(1), Some(4), Some(1), Some(4)]);
     }
 
     #[test]

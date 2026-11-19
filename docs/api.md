@@ -14,6 +14,8 @@ tb = ts.load(["a.conllu", "b.conllu"])
 
 A source containing `*`, `?`, or `[` is expanded as a glob pattern; matching files are sorted, so results are reproducible. Anything else is a literal file path. Files are opened lazily: a missing file raises `OSError` when the treebank is iterated, while a glob that matches nothing gives an empty treebank. Raises `ValueError` for a malformed glob pattern and `TypeError` for other kinds of source.
 
+Only the basic dependency tree (HEAD and DEPREL) is read: enhanced dependencies (DEPS) and empty nodes (`5.1`) are ignored.
+
 ### from_string(text) → Treebank
 
 Create a treebank from a CoNLL-U string.
