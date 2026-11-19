@@ -177,6 +177,11 @@ def test_from_file(tmp_path):
     for path in [plain, compressed, str(plain)]:
         assert [len(t) for t in treesearch.Treebank.from_file(path).trees()] == [6]
 
+    # Every member of a concatenated gzip file is read
+    multi = tmp_path / "multi.conllu.gz"
+    multi.write_bytes(gzip.compress(SAMPLE.encode()) * 2)
+    assert [len(t) for t in treesearch.Treebank.from_file(multi).trees()] == [6, 6]
+
 
 def test_load(corpus_dir):
     glob = f"{corpus_dir}/*.conllu"

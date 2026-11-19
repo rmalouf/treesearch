@@ -8,7 +8,7 @@
 
 use crate::bytes::{BytestringPool, bs_atoi, bs_split_once};
 use crate::tree::{Dep, Features, TokenId, Tree, WordId};
-use flate2::read::GzDecoder;
+use flate2::read::MultiGzDecoder;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
@@ -61,7 +61,20 @@ pub enum ParseError {
 
     #[error("Invalid HEAD: {head}")]
     InvalidHead { head: String },
+
+    #[error("Empty {field} field")]
+    EmptyField { field: &'static str },
+
+    #[error("Expected word ID {expected}, found {found}")]
+    UnexpectedId { expected: TokenId, found: String },
+
+    #[error("CR line ending (CoNLL-U requires LF)")]
+    CarriageReturn,
 }
+
+const FIELD_NAMES: [&str; 10] = [
+    "ID", "FORM", "LEMMA", "UPOS", "XPOS", "FEATS", "HEAD", "DEPREL", "DEPS", "MISC",
+];
 
 /// CoNLL-U reader that iterates over sentences
 pub struct TreeIterator<R: BufRead> {
@@ -71,57 +84,85 @@ pub struct TreeIterator<R: BufRead> {
 }
 
 impl<R: BufRead> TreeIterator<R> {
-    /// Parse a single CoNLL-U line into a Word
-    /// Skips multiword tokens (not yet supported), errors on empty nodes
-    fn parse_line(
-        &mut self,
-        tree: &mut Tree,
-        line: &[u8],
-        word_id: WordId,
-    ) -> Result<(), ParseError> {
-        // Find the 9 tab positions that delimit 10 fields.
-        let mut tabs = [0usize; 9];
+    /// Parse a word line into `tree`; multiword-token lines are checked and skipped
+    fn parse_line(&mut self, tree: &mut Tree, line: &[u8]) -> Result<(), ParseError> {
+        // Split into exactly 10 tab-separated fields
+        let mut fields: [&[u8]; 10] = [&[]; 10];
         let mut n = 0;
-        for pos in memchr::memchr_iter(b'\t', line) {
-            if n == 9 {
+        let mut start = 0;
+        for end in memchr::memchr_iter(b'\t', line).chain([line.len()]) {
+            if n == 10 {
                 return Err(ParseError::TooManyFields);
             }
-            tabs[n] = pos;
+            fields[n] = &line[start..end];
             n += 1;
+            start = end + 1;
         }
-        if n != 9 {
-            // n tabs delimit n + 1 fields, so the first missing one is field n + 2
-            return Err(ParseError::MissingField { field_num: n + 2 });
+        if n != 10 {
+            return Err(ParseError::MissingField { field_num: n + 1 });
+        }
+        if let Some(i) = fields.iter().position(|f| f.is_empty()) {
+            return Err(ParseError::EmptyField {
+                field: FIELD_NAMES[i],
+            });
+        }
+        let [id, form, lemma, upos, xpos, feats, head, deprel, deps, misc] = fields;
+
+        let word_id = tree.words.len();
+        let expected = word_id + 1;
+        let unexpected = || ParseError::UnexpectedId {
+            expected,
+            found: String::from_utf8_lossy(id).into_owned(),
+        };
+
+        // Multiword token (e.g., "1-2"): must start at the next word ID
+        if let Some((first, last)) = bs_split_once(id, b'-') {
+            return match (bs_atoi(first), bs_atoi(last)) {
+                (Some(first), Some(last)) if first < last => {
+                    if first == expected {
+                        Ok(())
+                    } else {
+                        Err(unexpected())
+                    }
+                }
+                _ => Err(ParseError::InvalidTokenId {
+                    token_id: str::from_utf8(id)?.to_string(),
+                }),
+            };
         }
 
-        let token_id_field = &line[..tabs[0]];
-        let form = &line[tabs[0] + 1..tabs[1]];
-        let lemma = &line[tabs[1] + 1..tabs[2]];
-        let upos = &line[tabs[2] + 1..tabs[3]];
-        let xpos = &line[tabs[3] + 1..tabs[4]];
-        let feats_field = &line[tabs[4] + 1..tabs[5]];
-        let head_field = &line[tabs[5] + 1..tabs[6]];
-        let deprel = &line[tabs[6] + 1..tabs[7]];
-        let deps_field = &line[tabs[7] + 1..tabs[8]];
-        let misc_field = &line[tabs[8] + 1..];
-
-        // Skip multiword tokens (e.g., "1-2")
-        if memchr::memchr(b'-', token_id_field).is_some() {
-            return Ok(());
+        let token_id = parse_id(id)?;
+        if token_id != expected {
+            return Err(unexpected());
         }
-
-        let token_id = parse_id(token_id_field)?;
-        let feats = self.parse_features(feats_field, "FEATS")?;
-        let head = parse_head(head_field)?;
-        if deps_field != b"_" {
+        let feats = self.parse_features(feats, "FEATS")?;
+        let head = parse_head(head)?;
+        if deps != b"_" {
             return Err(ParseError::UnsupportedExtendedDeprels);
         }
-        let misc = self.parse_features(misc_field, "MISC")?;
+        let misc = self.parse_features(misc, "MISC")?;
 
         tree.add_word(
             word_id, token_id, form, lemma, upos, xpos, feats, head, deprel, misc,
         );
         Ok(())
+    }
+
+    /// After a line error, skip to the end of the sentence so the next one parses cleanly
+    fn skip_sentence(&mut self) {
+        let mut buffer = Vec::new();
+        loop {
+            buffer.clear();
+            match self.reader.read_until(b'\n', &mut buffer) {
+                Ok(0) | Err(_) => return,
+                Ok(_) => {
+                    self.line_num += 1;
+                    if buffer == b"\n" {
+                        return;
+                    }
+                }
+            }
+        }
     }
 
     /// Parse a FEATS or MISC field (key=value|key=value)
@@ -191,7 +232,7 @@ impl TreeIterator<BufReader<Box<dyn Read + Send>>> {
         // Peek at the magic bytes to detect compression format
         let buf = reader.fill_buf()?;
         let reader: Box<dyn Read + Send> = if buf.starts_with(&[0x1f, 0x8b]) {
-            Box::new(GzDecoder::new(reader))
+            Box::new(MultiGzDecoder::new(reader))
         } else if buf.starts_with(&[0x28, 0xB5, 0x2F, 0xFD]) {
             Box::new(ZstdDecoder::new(reader)?)
         } else {
@@ -224,9 +265,10 @@ impl<R: BufRead> Iterator for TreeIterator<R> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut tree = Tree::with_metadata(&self.string_pool, None, HashMap::new());
-        let mut word_id: WordId = 0;
         let mut buffer: Vec<u8> = Vec::with_capacity(100);
         let mut has_content = false;
+        // Largest HEAD seen and its line, checked against the sentence length at the end
+        let mut max_head: Option<(WordId, usize)> = None;
 
         // Read lines until we hit a blank line (sentence boundary) or EOF
         loop {
@@ -241,7 +283,10 @@ impl<R: BufRead> Iterator for TreeIterator<R> {
                 Ok(_) => {
                     // Optimization: read_until includes '\n' at end, use O(1) suffix check
                     // instead of O(n) scan through entire buffer
-                    let line = buffer.strip_suffix(b"\n").unwrap_or(&buffer);
+                    let mut line = buffer.strip_suffix(b"\n").unwrap_or(&buffer);
+                    if self.line_num == 1 {
+                        line = line.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(line);
+                    }
                     if line.is_empty() {
                         // Blank line = sentence boundary if we have content
                         if has_content {
@@ -251,22 +296,28 @@ impl<R: BufRead> Iterator for TreeIterator<R> {
                         continue;
                     }
 
-                    if buffer[0] == b'#' {
-                        // Comment/metadata line
-                        parse_comment(line, &mut tree);
+                    let result = if line.ends_with(b"\r") {
+                        Err(ParseError::CarriageReturn)
+                    } else if line[0] == b'#' {
+                        parse_comment(line, &mut tree)
                     } else {
-                        // Regular token line - parse immediately
                         has_content = true;
-                        if let Err(e) = self.parse_line(&mut tree, line, word_id) {
-                            // Wrap error with line context
-                            let enriched_error = ParseError::LineError {
-                                line_num: self.line_num,
-                                line_content: String::from_utf8_lossy(line).to_string(),
-                                message: e.to_string(),
-                            };
-                            return Some(Err(enriched_error));
-                        }
-                        word_id += 1;
+                        self.parse_line(&mut tree, line).map(|()| {
+                            if let Some(head) = tree.words.last().and_then(|w| w.head)
+                                && max_head.is_none_or(|(max, _)| head > max)
+                            {
+                                max_head = Some((head, self.line_num));
+                            }
+                        })
+                    };
+                    if let Err(e) = result {
+                        let error = ParseError::LineError {
+                            line_num: self.line_num,
+                            line_content: String::from_utf8_lossy(line).to_string(),
+                            message: e.to_string(),
+                        };
+                        self.skip_sentence();
+                        return Some(Err(error));
                     }
                 }
             }
@@ -277,18 +328,26 @@ impl<R: BufRead> Iterator for TreeIterator<R> {
             return None;
         }
 
-        // Compile tree
+        let len = tree.words.len();
+        if let Some((head, line_num)) = max_head.filter(|&(head, _)| head >= len) {
+            return Some(Err(ParseError::LineErrorNoContent {
+                line_num,
+                message: format!(
+                    "HEAD {} is out of range (sentence has {len} words)",
+                    head + 1
+                ),
+            }));
+        }
+
         tree.compile_tree();
         Some(Ok(tree))
     }
 }
 
 /// Parse a comment line (starts with #)
-fn parse_comment(line: &[u8], tree: &mut Tree) {
-    // TODO: deal with bytestring stuff here
-
+fn parse_comment(line: &[u8], tree: &mut Tree) -> Result<(), ParseError> {
     // Check for key = value format
-    let line = str::from_utf8(line).unwrap().to_string();
+    let line = str::from_utf8(line)?;
     if let Some((key, value)) = line[1..].split_once("=") {
         let key = key.trim();
         let value = value.trim();
@@ -299,9 +358,10 @@ fn parse_comment(line: &[u8], tree: &mut Tree) {
             tree.metadata.insert(key.to_string(), value.to_string());
         }
     }
+    Ok(())
 }
 
-/// Parse ID field (single integer only)
+/// Parse ID field (single integer; multiword tokens are handled by the caller)
 fn parse_id(s: &[u8]) -> Result<TokenId, ParseError> {
     // Check for empty nodes (containing '.')
     if s.contains(&b'.') {
@@ -318,18 +378,16 @@ fn parse_id(s: &[u8]) -> Result<TokenId, ParseError> {
     Ok(id)
 }
 
-/// Parse HEAD field (0 or integer)
+/// Parse HEAD field (0 or `_` for the root, else a 1-based word ID)
 fn parse_head(s: &[u8]) -> Result<Option<WordId>, ParseError> {
-    if s == b"0" || s == b"_" {
-        Ok(None) // Root word
-    } else {
-        let Some(head) = bs_atoi(s) else {
-            return Err(ParseError::InvalidHead {
-                head: str::from_utf8(s)?.to_string(),
-            });
-        };
+    match bs_atoi(s) {
+        Some(0) => Ok(None),
         // HEAD is 1-indexed in CoNLL-U, convert to 0-indexed WordIds
-        Ok(Some(head - 1))
+        Some(head) => Ok(Some(head - 1)),
+        None if s == b"_" => Ok(None),
+        None => Err(ParseError::InvalidHead {
+            head: str::from_utf8(s)?.to_string(),
+        }),
     }
 }
 
@@ -356,15 +414,18 @@ pub(crate) fn tree_from_rows(rows: &[&str]) -> Tree {
 mod tests {
     use super::*;
 
-    fn parse_one(conllu: &str) -> Result<Tree, ParseError> {
-        TreeIterator::from_string(conllu).next().unwrap()
+    fn parse_one(conllu: &[u8]) -> Result<Tree, ParseError> {
+        let mut trees = TreeIterator {
+            reader: conllu,
+            line_num: 0,
+            string_pool: BytestringPool::new(),
+        };
+        trees.next().unwrap()
     }
 
     /// One root word with the given FEATS and MISC fields
     fn word_with(feats: &str, misc: &str) -> Result<Tree, ParseError> {
-        parse_one(&format!(
-            "1\tword\tlemma\tX\tX\t{feats}\t0\troot\t_\t{misc}\n"
-        ))
+        parse_one(format!("1\tword\tlemma\tX\tX\t{feats}\t0\troot\t_\t{misc}\n").as_bytes())
     }
 
     /// Key/value pairs of a FEATS or MISC field, as strings
@@ -430,6 +491,10 @@ mod tests {
                 w(".", ".", "PUNCT", ".", Some(2), "punct"),
             ]
         );
+        assert_eq!(
+            tree.words.iter().map(|w| w.id).collect::<Vec<_>>(),
+            [0, 1, 2, 3]
+        );
         assert_eq!(tree.root_id, Some(2));
         assert_eq!(tree.words[2].children, [1, 3]);
     }
@@ -469,64 +534,87 @@ mod tests {
 
     #[test]
     fn test_line_errors() {
-        let cases = [
-            ("1\tword\n", "Missing field 3"),
+        let cases: [(&[u8], &str); 18] = [
+            (b"1\tword\n", "Missing field 3"),
+            (b"1\tw\tl\tX\tX\t_\t0\troot\t_\n", "Missing field 10"),
+            (b"1\tw\tl\tX\tX\t_\t0\troot\t_\t_\textra\n", "10 fields"),
             (
-                "1\tword\tlemma\tNOUN\tNN\t_\t0\troot\t_\n",
-                "Missing field 10",
-            ),
-            (
-                "1\tword\tlemma\tNOUN\tNN\t_\t0\troot\t_\t_\textra\n",
-                "10 fields",
-            ),
-            (
-                "1\tword\tlemma\tNOUN\tNN\t_\t0\troot\t0:root\t_\n",
+                b"1\tw\tl\tX\tX\t_\t0\troot\t0:root\t_\n",
                 "Extended deprels",
             ),
             (
-                "1.1\tword\tlemma\tNOUN\tNN\t_\t0\troot\t_\t_\n",
+                b"1.1\tw\tl\tX\tX\t_\t0\troot\t_\t_\n",
                 "Empty nodes are not supported: 1.1",
             ),
             (
-                "abc\tword\tlemma\tNOUN\tNN\t_\t0\troot\t_\t_\n",
+                b"abc\tw\tl\tX\tX\t_\t0\troot\t_\t_\n",
                 "Invalid token ID: abc",
             ),
+            (b"1\tw\tl\tX\tX\t_\txyz\troot\t_\t_\n", "Invalid HEAD: xyz"),
+            (b"\tw\tl\tX\tX\t_\t0\troot\t_\t_\n", "Empty ID field"),
+            (b"1\t\tl\tX\tX\t_\t0\troot\t_\t_\n", "Empty FORM field"),
+            (b"1\tw\tl\tX\tX\t_\t\troot\t_\t_\n", "Empty HEAD field"),
+            (b"1\tw\tl\tX\tX\t_\t0\troot\t_\t\n", "Empty MISC field"),
             (
-                "1\tword\tlemma\tNOUN\tNN\t_\txyz\troot\t_\t_\n",
-                "Invalid HEAD: xyz",
+                b"2\tw\tl\tX\tX\t_\t0\troot\t_\t_\n",
+                "Expected word ID 1, found 2",
             ),
             (
-                "\tword\tlemma\tNOUN\tNN\t_\t0\troot\t_\t_\n",
-                "Invalid token ID",
+                b"2-3\tw\t_\t_\t_\t_\t_\t_\t_\t_\n",
+                "Expected word ID 1, found 2-3",
+            ),
+            (b"1-1\tw\t_\t_\t_\t_\t_\t_\t_\t_\n", "Invalid token ID: 1-1"),
+            (
+                b"abc-\tw\t_\t_\t_\t_\t_\t_\t_\t_\n",
+                "Invalid token ID: abc-",
             ),
             (
-                "1\tword\tlemma\tNOUN\tNN\t_\t\troot\t_\t_\n",
-                "Invalid HEAD",
+                b"1\tw\tl\tX\tX\t_\t2\tdep\t_\t_\n",
+                "HEAD 2 is out of range (sentence has 1 words)",
+            ),
+            (b"1\tw\tl\tX\tX\t_\t0\troot\t_\t_\r\n", "CR line ending"),
+            (
+                b"# text = \xff\n1\tw\tl\tX\tX\t_\t0\troot\t_\t_\n",
+                "invalid utf-8",
             ),
         ];
         for (conllu, message) in cases {
-            let err = parse_one(conllu).unwrap_err();
-            assert!(
-                matches!(err, ParseError::LineError { line_num: 1, .. }),
-                "{err}"
-            );
-            assert!(err.to_string().contains(message), "{err}");
+            let err = parse_one(conllu).unwrap_err().to_string();
+            assert!(err.starts_with("Parse error at line 1:"), "{err}");
+            assert!(err.contains(message), "{err}");
         }
 
-        // Errors report the line number and content, and later trees still parse
+        // Errors report the line number and content, and the rest of the bad
+        // sentence is skipped so later trees still parse
         let conllu = "# comment\n\
                       1\tword\tlemma\tNOUN\tNN\t_\t0\troot\t_\t_\n\
                       \n\
+                      1\tword\tlemma\tNOUN\tNN\t_\t0\troot\t_\t_\n\
                       abc\tinvalid\tlemma\tNOUN\tNN\t_\t0\troot\t_\t_\n\
+                      3\tword\tlemma\tNOUN\tNN\t_\t1\tdep\t_\t_\n\
                       \n\
-                      1\tword\tlemma\tNOUN\tNN\t_\t0\troot\t_\t_\n";
+                      1\tnext\tlemma\tNOUN\tNN\t_\t0\troot\t_\t_\n";
         let results: Vec<_> = TreeIterator::from_string(conllu).collect();
         assert_eq!(results.len(), 3);
         assert!(results[0].is_ok() && results[2].is_ok());
         let err = results[1].as_ref().unwrap_err().to_string();
         assert!(
-            err.contains("line 4") && err.contains("abc\tinvalid"),
+            err.contains("line 5") && err.contains("abc\tinvalid"),
             "{err}"
         );
+        let next = results[2].as_ref().unwrap();
+        assert_eq!(*next.string_pool.resolve(next.words[0].form), *b"next");
+    }
+
+    #[test]
+    fn test_lenient_input() {
+        // A leading UTF-8 BOM is skipped, and HEAD 00 is the root like HEAD 0
+        for conllu in [
+            &b"\xEF\xBB\xBF1\tw\tl\tX\tX\t_\t0\troot\t_\t_\n"[..],
+            b"1\tw\tl\tX\tX\t_\t00\troot\t_\t_\n",
+        ] {
+            let tree = parse_one(conllu).unwrap();
+            assert_eq!(tree.root_id, Some(0));
+        }
     }
 }
