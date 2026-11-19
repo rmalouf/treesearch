@@ -673,14 +673,16 @@ mod treesearch {
                 .map(|item| item?.extract::<PyTree>().map_err(PyErr::from))
                 .collect::<PyResult<_>>()?,
         };
-        let results: Vec<_> = trees
-            .into_iter()
-            .flat_map(|tree| {
-                find_all_bindings(&tree.inner, &pattern)
-                    .into_iter()
-                    .map(move |bindings| Ok((Arc::clone(&tree.inner), bindings)))
-            })
-            .collect();
+        let results: Vec<_> = source.py().detach(|| {
+            trees
+                .into_iter()
+                .flat_map(|tree| {
+                    find_all_bindings(&tree.inner, &pattern)
+                        .into_iter()
+                        .map(move |bindings| Ok((Arc::clone(&tree.inner), bindings)))
+                })
+                .collect()
+        });
 
         Ok(PyMatchIterator {
             inner: Box::new(results.into_iter()),
