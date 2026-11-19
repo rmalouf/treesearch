@@ -171,7 +171,8 @@ impl<R: BufRead> TreeIterator<R> {
         }
     }
 
-    /// Parse a FEATS or MISC field (key=value|key=value)
+    /// Parse a FEATS or MISC field (key=value|key=value); a MISC item without `=` gets an
+    /// empty value
     fn parse_features(&mut self, s: &[u8], field: &'static str) -> Result<Features, ParseError> {
         if s == b"_" {
             return Ok(Features::new());
@@ -181,7 +182,8 @@ impl<R: BufRead> TreeIterator<R> {
         let mut start = 0;
         for pipe_pos in memchr::memchr_iter(b'|', s).chain(std::iter::once(s.len())) {
             let pair = &s[start..pipe_pos];
-            let Some((k, v)) = bs_split_once(pair, b'=') else {
+            let bare = (field == "MISC" && !pair.is_empty()).then_some((pair, &b""[..]));
+            let Some((k, v)) = bs_split_once(pair, b'=').or(bare) else {
                 return Err(ParseError::InvalidPair {
                     field,
                     pair: str::from_utf8(pair)?.to_string(),
@@ -568,6 +570,13 @@ mod tests {
         );
         assert_eq!(pairs(&tree, &word.misc), [kv("SpaceAfter", "No")]);
 
+        // MISC items need not be key=value pairs
+        let tree = word_with("_", "SpaceAfter|Gloss=dog").unwrap();
+        assert_eq!(
+            pairs(&tree, &tree.words[0].misc),
+            [kv("SpaceAfter", ""), kv("Gloss", "dog")]
+        );
+
         let tree = word_with("_", "_").unwrap();
         assert!(tree.words[0].feats.is_empty());
         assert!(tree.words[0].misc.is_empty());
@@ -579,11 +588,7 @@ mod tests {
                 "Invalid FEATS pair (missing '='): InvalidPair",
             ),
             ("foo|bar=baz", "_", "Invalid FEATS pair (missing '='): foo"),
-            (
-                "_",
-                "SpaceAfter",
-                "Invalid MISC pair (missing '='): SpaceAfter",
-            ),
+            ("_", "a||b", "Invalid MISC pair (missing '='): \n"),
         ] {
             let err = word_with(feats, misc).unwrap_err().to_string();
             assert!(err.contains(message), "{feats} {misc}: {err}");

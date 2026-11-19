@@ -155,7 +155,7 @@ A single word in a tree.
 | `children_ids` | `list[int]` | Child word IDs |
 | `descendant_ids` | `list[int]` | IDs of all transitive dependents |
 | `feats` | `dict[str, str]` | Morphological features |
-| `misc` | `dict[str, str]` | Miscellaneous annotations |
+| `misc` | `dict[str, str]` | Miscellaneous annotations (an item without `=` maps to `""`) |
 
 ### Methods
 
