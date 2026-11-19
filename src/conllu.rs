@@ -73,6 +73,9 @@ pub enum ParseError {
 
     #[error("Comment line inside a sentence (comments must precede the word lines)")]
     CommentInSentence,
+
+    #[error("Second root word (first root at line {first})")]
+    MultipleRoots { first: usize },
 }
 
 const FIELD_NAMES: [&str; 10] = [
@@ -273,6 +276,8 @@ impl<R: BufRead> Iterator for TreeIterator<R> {
         let mut first_comment: Option<usize> = None;
         // Largest HEAD seen and its line, checked against the sentence length at the end
         let mut max_head: Option<(WordId, usize)> = None;
+        let mut first_word_line: Option<usize> = None;
+        let mut root_line: Option<usize> = None;
 
         // Read lines until we hit a blank line (sentence boundary) or EOF
         loop {
@@ -311,12 +316,26 @@ impl<R: BufRead> Iterator for TreeIterator<R> {
                         }
                     } else {
                         has_content = true;
-                        self.parse_line(&mut tree, line).map(|()| {
-                            if let Some(head) = tree.words.last().and_then(|w| w.head)
-                                && max_head.is_none_or(|(max, _)| head > max)
-                            {
-                                max_head = Some((head, self.line_num));
+                        first_word_line.get_or_insert(self.line_num);
+                        let n_words = tree.words.len();
+                        self.parse_line(&mut tree, line).and_then(|()| {
+                            // Multiword-token lines add no word
+                            if tree.words.len() == n_words {
+                                return Ok(());
                             }
+                            match tree.words[n_words].head {
+                                None => match root_line {
+                                    Some(first) => {
+                                        return Err(ParseError::MultipleRoots { first });
+                                    }
+                                    None => root_line = Some(self.line_num),
+                                },
+                                Some(head) if max_head.is_none_or(|(max, _)| head > max) => {
+                                    max_head = Some((head, self.line_num));
+                                }
+                                Some(_) => {}
+                            }
+                            Ok(())
                         })
                     };
                     if let Err(e) = result {
@@ -353,7 +372,30 @@ impl<R: BufRead> Iterator for TreeIterator<R> {
             }));
         }
 
+        let sentence_error = |message: String| {
+            Some(Err(ParseError::LineErrorNoContent {
+                line_num: first_word_line.unwrap_or(self.line_num),
+                message,
+            }))
+        };
+        if root_line.is_none() {
+            return sentence_error("No root word (no word has HEAD 0)".to_string());
+        }
+
         tree.compile_tree();
+        // With one root and in-range heads, a word the root can't reach is on a cycle
+        let mut reached = vec![false; len];
+        let mut stack = Vec::from_iter(tree.root_id);
+        while let Some(id) = stack.pop() {
+            reached[id] = true;
+            stack.extend(&tree.words[id].children);
+        }
+        if let Some(id) = reached.iter().position(|&r| !r) {
+            return sentence_error(format!(
+                "HEAD links form a cycle (word {} does not reach the root)",
+                tree.words[id].token_id
+            ));
+        }
         Some(Ok(tree))
     }
 }
@@ -388,13 +430,12 @@ fn parse_id(s: &[u8]) -> Result<TokenId, ParseError> {
     Ok(id)
 }
 
-/// Parse HEAD field (0 or `_` for the root, else a 1-based word ID)
+/// Parse HEAD field (0 for the root, else a 1-based word ID)
 fn parse_head(s: &[u8]) -> Result<Option<WordId>, ParseError> {
     match bs_atoi(s) {
         Some(0) => Ok(None),
         // HEAD is 1-indexed in CoNLL-U, convert to 0-indexed WordIds
         Some(head) => Ok(Some(head - 1)),
-        None if s == b"_" => Ok(None),
         None => Err(ParseError::InvalidHead {
             head: str::from_utf8(s)?.to_string(),
         }),
@@ -551,7 +592,7 @@ mod tests {
 
     #[test]
     fn test_line_errors() {
-        let cases: [(&[u8], usize, &str); 21] = [
+        let cases: [(&[u8], usize, &str); 25] = [
             (b"1\tword\n", 1, "Missing field 3"),
             (b"1\tw\tl\tX\tX\t_\t0\troot\t_\n", 1, "Missing field 10"),
             (b"1\tw\tl\tX\tX\t_\t0\troot\t_\t_\textra\n", 1, "10 fields"),
@@ -621,6 +662,22 @@ mod tests {
                 "Comment lines with no word lines",
             ),
             (b"\n# newdoc\n", 2, "Comment lines with no word lines"),
+            (b"1\tw\tl\tX\tX\t_\t_\troot\t_\t_\n", 1, "Invalid HEAD: _"),
+            (
+                b"1\ta\tl\tX\tX\t_\t0\troot\t_\t_\n2\tb\tl\tX\tX\t_\t0\troot\t_\t_\n",
+                2,
+                "Second root word (first root at line 1)",
+            ),
+            (
+                b"# x = y\n1\ta\tl\tX\tX\t_\t2\tdep\t_\t_\n2\tb\tl\tX\tX\t_\t1\tdep\t_\t_\n",
+                2,
+                "No root word",
+            ),
+            (
+                b"1\ta\tl\tX\tX\t_\t0\troot\t_\t_\n2\tb\tl\tX\tX\t_\t3\tdep\t_\t_\n3\tc\tl\tX\tX\t_\t2\tdep\t_\t_\n",
+                1,
+                "HEAD links form a cycle (word 2 does not reach the root)",
+            ),
         ];
         for (conllu, line_num, message) in cases {
             let err = parse_one(conllu).unwrap_err().to_string();
