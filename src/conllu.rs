@@ -502,6 +502,14 @@ mod tests {
                 "1.1\tword\tlemma\tNOUN\tNN\t_\t0\troot\t_\t_\n",
                 "Empty nodes",
             ),
+            (
+                "\tword\tlemma\tNOUN\tNN\t_\t0\troot\t_\t_\n",
+                "Invalid token ID",
+            ),
+            (
+                "1\tword\tlemma\tNOUN\tNN\t_\t\troot\t_\t_\n",
+                "Invalid HEAD",
+            ),
         ];
         for (conllu, message) in cases {
             let err = parse_one(conllu).unwrap_err();

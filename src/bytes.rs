@@ -138,9 +138,8 @@ pub fn bs_split_once(bytes: &[u8], delim: u8) -> Option<(&[u8], &[u8])> {
 pub fn bs_atoi(bytes: &[u8]) -> Option<usize> {
     let mut n: usize = 0;
 
-    // Fast path: empty slice -> Some(0)? (You can change this if you prefer None.)
     if bytes.is_empty() {
-        return Some(0);
+        return None;
     }
 
     for &b in bytes {
@@ -263,8 +262,7 @@ mod tests {
         assert_eq!(bs_atoi(b"42"), Some(42));
         assert_eq!(bs_atoi(b"123456"), Some(123456));
 
-        // Empty string returns Some(0)
-        assert_eq!(bs_atoi(b""), Some(0));
+        assert_eq!(bs_atoi(b""), None);
 
         // Leading zeros
         assert_eq!(bs_atoi(b"007"), Some(7));
