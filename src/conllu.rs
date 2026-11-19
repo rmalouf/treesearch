@@ -353,6 +353,25 @@ fn _parse_misc(s: &str) -> Result<Misc, ParseError> {
     Ok(misc)
 }
 
+/// Test helper: one tree from rows of "form lemma upos xpos head deprel"
+/// (HEAD is 1-based as in CoNLL-U, 0 for the root)
+#[cfg(test)]
+pub(crate) fn tree_from_rows(rows: &[&str]) -> Tree {
+    let conllu: String = rows
+        .iter()
+        .zip(1..)
+        .map(|(row, id)| {
+            let [form, lemma, upos, xpos, head, deprel] =
+                row.split_whitespace().collect::<Vec<_>>()[..]
+            else {
+                panic!("bad row: {row}");
+            };
+            format!("{id}\t{form}\t{lemma}\t{upos}\t{xpos}\t_\t{head}\t{deprel}\t_\t_\n")
+        })
+        .collect();
+    TreeIterator::from_string(&conllu).next().unwrap().unwrap()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -461,28 +480,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_id_and_head() {
-        assert_eq!(parse_id(b"1").unwrap(), 1);
-        assert_eq!(parse_id(b"42").unwrap(), 42);
-        assert_eq!(parse_head(b"0").unwrap(), None);
-        assert_eq!(parse_head(b"1").unwrap(), Some(0)); // 1-indexed to 0-indexed
-        assert_eq!(parse_head(b"5").unwrap(), Some(4));
-
-        // Empty nodes are not supported
-        let err = parse_id(b"2.1").unwrap_err();
-        assert!(matches!(err, ParseError::UnsupportedToken { .. }));
-        assert!(err.to_string().contains("2.1"));
-
-        let err = parse_id(b"abc").unwrap_err();
-        assert!(matches!(err, ParseError::InvalidTokenId { .. }));
-        assert!(err.to_string().contains("abc"));
-
-        let err = parse_head(b"xyz").unwrap_err();
-        assert!(matches!(err, ParseError::InvalidHead { .. }));
-        assert!(err.to_string().contains("xyz"));
-    }
-
-    #[test]
     fn test_line_errors() {
         let cases = [
             ("1\tword\n", "Missing field 3"),
@@ -500,7 +497,15 @@ mod tests {
             ),
             (
                 "1.1\tword\tlemma\tNOUN\tNN\t_\t0\troot\t_\t_\n",
-                "Empty nodes",
+                "Empty nodes are not supported: 1.1",
+            ),
+            (
+                "abc\tword\tlemma\tNOUN\tNN\t_\t0\troot\t_\t_\n",
+                "Invalid token ID: abc",
+            ),
+            (
+                "1\tword\tlemma\tNOUN\tNN\t_\txyz\troot\t_\t_\n",
+                "Invalid HEAD: xyz",
             ),
             (
                 "\tword\tlemma\tNOUN\tNN\t_\t0\troot\t_\t_\n",

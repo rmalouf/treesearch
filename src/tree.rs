@@ -39,30 +39,6 @@ pub struct Word {
 }
 
 impl Word {
-    pub fn new_minimal(
-        id: WordId,
-        form: Sym,
-        lemma: Sym,
-        upos: Sym,
-        xpos: Sym,
-        head: Option<WordId>,
-        deprel: Sym,
-    ) -> Self {
-        Self {
-            id,
-            token_id: id,
-            form,
-            lemma,
-            upos,
-            xpos,
-            feats: Features::new(),
-            head,
-            deprel,
-            misc: Features::new(),
-            children: Vec::new(),
-        }
-    }
-
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: WordId,
@@ -154,28 +130,6 @@ impl Tree {
             metadata,
             string_pool: string_pool.clone(),
         }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn add_minimal_word(
-        &mut self,
-        id: WordId,
-        form: &[u8],
-        lemma: &[u8],
-        upos: &[u8],
-        xpos: &[u8],
-        head: Option<WordId>,
-        deprel: &[u8],
-    ) {
-        let form_sym = self.string_pool.get_or_intern(form);
-        let lemma_sym = self.string_pool.get_or_intern(lemma);
-        let upos_sym = self.string_pool.get_or_intern(upos);
-        let xpos_sym = self.string_pool.get_or_intern(xpos);
-        let deprel_sym = self.string_pool.get_or_intern(deprel);
-        let word = Word::new_minimal(
-            id, form_sym, lemma_sym, upos_sym, xpos_sym, head, deprel_sym,
-        );
-        self.words.push(word);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -329,19 +283,19 @@ impl Default for Tree {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::conllu::tree_from_rows;
 
     /// runs(0) -nsubj-> dog(1) -amod-> big(4)
     ///         -obl->   park(2)
     ///         -obl->   store(3)
     fn build_tree() -> Tree {
-        let mut tree = Tree::default();
-        tree.add_minimal_word(0, b"runs", b"run", b"VERB", b"_", None, b"root");
-        tree.add_minimal_word(1, b"dog", b"dog", b"NOUN", b"_", Some(0), b"nsubj");
-        tree.add_minimal_word(2, b"park", b"park", b"NOUN", b"_", Some(0), b"obl");
-        tree.add_minimal_word(3, b"store", b"store", b"NOUN", b"_", Some(0), b"obl");
-        tree.add_minimal_word(4, b"big", b"big", b"ADJ", b"_", Some(1), b"amod");
-        tree.compile_tree();
-        tree
+        tree_from_rows(&[
+            "runs  run   VERB _ 0 root",
+            "dog   dog   NOUN _ 1 nsubj",
+            "park  park  NOUN _ 1 obl",
+            "store store NOUN _ 1 obl",
+            "big   big   ADJ  _ 2 amod",
+        ])
     }
 
     #[test]

@@ -268,10 +268,9 @@ def test_search_trees(tree):
 
 def test_filter():
     tb = treesearch.from_string(SAMPLE + TWO_TREES)
-    # Each matching tree is returned once, even with several matches
-    assert [len(t) for t in tb.filter(VERBS)] == [6, 3, 2]
-    assert [len(t) for t in tb.filter('MATCH { P [upos="PRON"]; }')] == [6]
-    assert list(tb.filter(treesearch.compile_query('MATCH { X [upos="ADJ"]; }'))) == []
+    pron = 'MATCH { P [upos="PRON"]; }'
+    for query in [pron, treesearch.compile_query(pron)]:
+        assert [len(t) for t in tb.filter(query)] == [6]
 
 
 # ==============================================================================

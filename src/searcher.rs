@@ -459,7 +459,7 @@ pub fn search_tree_query(tree: Tree, query: &str) -> Result<Vec<Match>, QueryErr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::conllu::TreeIterator;
+    use crate::conllu::{TreeIterator, tree_from_rows};
     use std::collections::BTreeMap;
 
     type Solution = BTreeMap<String, WordId>;
@@ -495,25 +495,23 @@ mod tests {
     /// helped(0) us(1) to(2) win(3)
     /// helped -obj-> us, helped -xcomp-> win, win -mark-> to
     fn help_tree() -> Tree {
-        let mut tree = Tree::default();
-        tree.add_minimal_word(0, b"helped", b"help", b"VERB", b"VBD", None, b"root");
-        tree.add_minimal_word(1, b"us", b"we", b"PRON", b"PRP", Some(0), b"obj");
-        tree.add_minimal_word(2, b"to", b"to", b"PART", b"TO", Some(3), b"mark");
-        tree.add_minimal_word(3, b"win", b"win", b"VERB", b"VB", Some(0), b"xcomp");
-        tree.compile_tree();
-        tree
+        tree_from_rows(&[
+            "helped help VERB VBD 0 root",
+            "us     we   PRON PRP 1 obj",
+            "to     to   PART TO  4 mark",
+            "win    win  VERB VB  1 xcomp",
+        ])
     }
 
     /// saw(0) John(1) running(2) quickly(3)
     /// saw -nsubj-> John, saw -xcomp-> running, running -advmod-> quickly
     fn saw_tree() -> Tree {
-        let mut tree = Tree::default();
-        tree.add_minimal_word(0, b"saw", b"see", b"VERB", b"_", None, b"root");
-        tree.add_minimal_word(1, b"John", b"John", b"PROPN", b"_", Some(0), b"nsubj");
-        tree.add_minimal_word(2, b"running", b"run", b"VERB", b"_", Some(0), b"xcomp");
-        tree.add_minimal_word(3, b"quickly", b"quickly", b"ADV", b"_", Some(2), b"advmod");
-        tree.compile_tree();
-        tree
+        tree_from_rows(&[
+            "saw     see     VERB  _ 0 root",
+            "John    John    PROPN _ 1 nsubj",
+            "running run     VERB  _ 1 xcomp",
+            "quickly quickly ADV   _ 3 advmod",
+        ])
     }
 
     /// was(0) running(1) ,(2) with features and misc
@@ -525,10 +523,7 @@ mod tests {
     }
 
     fn one_word_tree() -> Tree {
-        let mut tree = Tree::default();
-        tree.add_minimal_word(0, b"word", b"word", b"NOUN", b"_", None, b"root");
-        tree.compile_tree();
-        tree
+        tree_from_rows(&["word word NOUN _ 0 root"])
     }
 
     #[test]
@@ -592,11 +587,11 @@ mod tests {
         let help = help_tree();
 
         // Every assignment is found, including symmetric ones
-        let mut coord = Tree::default();
-        coord.add_minimal_word(0, b"and", b"and", b"CCONJ", b"_", None, b"root");
-        coord.add_minimal_word(1, b"cats", b"cat", b"NOUN", b"_", Some(0), b"conj");
-        coord.add_minimal_word(2, b"dogs", b"dog", b"NOUN", b"_", Some(0), b"conj");
-        coord.compile_tree();
+        let coord = tree_from_rows(&[
+            "and  and CCONJ _ 0 root",
+            "cats cat NOUN  _ 1 conj",
+            "dogs dog NOUN  _ 1 conj",
+        ]);
         assert_eq!(
             solutions(
                 &coord,
@@ -804,13 +799,13 @@ mod tests {
         );
 
         // Multiple matches in several blocks give the cross-product
-        let mut tree = Tree::default();
-        tree.add_minimal_word(0, b"helped", b"help", b"VERB", b"_", None, b"root");
-        tree.add_minimal_word(1, b"He", b"he", b"PRON", b"_", Some(0), b"nsubj");
-        tree.add_minimal_word(2, b"us", b"we", b"PRON", b"_", Some(0), b"obj");
-        tree.add_minimal_word(3, b"quickly", b"quickly", b"ADV", b"_", Some(0), b"advmod");
-        tree.add_minimal_word(4, b"again", b"again", b"ADV", b"_", Some(0), b"advmod");
-        tree.compile_tree();
+        let tree = tree_from_rows(&[
+            "helped  help    VERB _ 0 root",
+            "He      he      PRON _ 1 nsubj",
+            "us      we      PRON _ 1 obj",
+            "quickly quickly ADV  _ 1 advmod",
+            "again   again   ADV  _ 1 advmod",
+        ]);
         assert_eq!(
             solutions(
                 &tree,

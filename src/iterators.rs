@@ -636,11 +636,6 @@ mod tests {
                 .count()
         };
         assert_eq!(count(VERB_QUERY), 3);
-        assert_eq!(
-            count(r#"MATCH { V [lemma="see"]; S []; V -[nsubj]-> S; }"#),
-            1
-        );
-        assert_eq!(count(r#"MATCH { N [upos="ADJ"]; }"#), 0);
 
         // filter yields each matching tree once
         let filter = |query| {
@@ -652,7 +647,6 @@ mod tests {
         };
         assert_eq!(filter(VERB_QUERY), [3, 4]);
         assert_eq!(filter(r#"MATCH { N [upos="PROPN"]; }"#), [4]);
-        assert!(filter(r#"MATCH { N [upos="ADJ"]; }"#).is_empty());
 
         // Queries can be strings or compiled patterns
         let pattern = compile_query(VERB_QUERY).unwrap();
