@@ -246,7 +246,7 @@ mod treesearch {
             self.id
         }
 
-        /// Token ID from CoNLL-U (1-based).
+        /// CoNLL-U word ID (1-based).
         #[getter]
         fn token_id(&self) -> usize {
             self.word().token_id

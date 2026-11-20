@@ -25,4 +25,4 @@ pub use searcher::{
     Bindings, Match, find_all_bindings, find_all_matches, search_tree, search_tree_query,
     tree_matches,
 };
-pub use tree::{Features, TokenId, Tree, Word, WordId};
+pub use tree::{Features, Tree, Word, WordId};

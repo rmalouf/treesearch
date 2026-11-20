@@ -66,7 +66,7 @@ class Word:
 
     @property
     def token_id(self) -> int:
-        """Token ID from CoNLL-U (1-based)."""
+        """CoNLL-U word ID (1-based)."""
 
     @property
     def form(self) -> str:

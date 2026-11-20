@@ -8,7 +8,7 @@
 //! CoNLL-U format: https://universaldependencies.org/format.html
 
 use crate::bytes::{BytestringPool, Sym, bs_atoi, bs_split_once};
-use crate::tree::{Dep, Features, TokenId, Tree, WordId};
+use crate::tree::{Dep, Features, NodeId, Tree, WordId};
 use flate2::read::MultiGzDecoder;
 use std::collections::HashMap;
 use std::fs::File;
@@ -17,8 +17,8 @@ use std::path::Path;
 use thiserror::Error;
 use zstd::stream::read::Decoder as ZstdDecoder;
 
-/// A CoNLL-U node ID: (N, 0) for word N, (N, M) for empty node N.M
-type ConlluId = (TokenId, u16);
+/// A CoNLL-U ID: (N, 0) for word N, (N, M) for empty node N.M
+type ConlluId = (usize, usize);
 
 /// Error during CoNLL-U parsing
 #[derive(Debug, Error)]
@@ -51,11 +51,11 @@ pub enum ParseError {
     #[error("Invalid DEPS pair: {pair}")]
     InvalidDepsPair { pair: String },
 
-    #[error("Empty node {token_id} out of place (expected {expected})")]
-    MisplacedEmptyNode { token_id: String, expected: String },
+    #[error("Empty node {id} out of place (expected {expected})")]
+    MisplacedEmptyNode { id: String, expected: String },
 
-    #[error("Invalid token ID: {token_id}")]
-    InvalidTokenId { token_id: String },
+    #[error("Invalid ID: {id}")]
+    InvalidId { id: String },
 
     #[error("Invalid HEAD: {head}")]
     InvalidHead { head: String },
@@ -64,7 +64,7 @@ pub enum ParseError {
     EmptyField { field: &'static str },
 
     #[error("Expected word ID {expected}, found {found}")]
-    UnexpectedId { expected: TokenId, found: String },
+    UnexpectedId { expected: usize, found: String },
 
     #[error("Comment line inside a sentence (comments must precede the word lines)")]
     CommentInSentence,
@@ -144,15 +144,15 @@ impl<R: BufRead> TreeIterator<R> {
                         })
                     }
                 }
-                _ => Err(ParseError::InvalidTokenId {
-                    token_id: String::from_utf8_lossy(id).into_owned(),
+                _ => Err(ParseError::InvalidId {
+                    id: String::from_utf8_lossy(id).into_owned(),
                 }),
             };
         }
 
         let Some(node) = parse_conllu_id(id) else {
-            return Err(ParseError::InvalidTokenId {
-                token_id: String::from_utf8_lossy(id).into_owned(),
+            return Err(ParseError::InvalidId {
+                id: String::from_utf8_lossy(id).into_owned(),
             });
         };
         let (head, deprel) = if node.1 == 0 {
@@ -166,15 +166,15 @@ impl<R: BufRead> TreeIterator<R> {
         } else {
             // Empty node (e.g., "5.1"): numbered from 1 after the last word read; it has no
             // basic HEAD or DEPREL
-            let m = tree
-                .empty_nodes
-                .last()
-                .filter(|w| w.token_id == word_id)
-                .map_or(1, |w| w.empty_index.saturating_add(1));
-            if node != (word_id, m) {
+            let after = tree.empty_nodes.iter().rev();
+            let expected = (
+                word_id,
+                1 + after.take_while(|w| w.token_id == word_id).count(),
+            );
+            if node != expected {
                 return Err(ParseError::MisplacedEmptyNode {
-                    token_id: String::from_utf8_lossy(id).into_owned(),
-                    expected: format!("{word_id}.{m}"),
+                    id: String::from_utf8_lossy(id).into_owned(),
+                    expected: format_id(expected),
                 });
             }
             (None, &b"_"[..])
@@ -184,7 +184,16 @@ impl<R: BufRead> TreeIterator<R> {
         self.parse_deps(node, deps)?;
 
         tree.add_word(
-            node.0, node.1, form, lemma, upos, xpos, feats, head, deprel, misc,
+            node.0,
+            node.1 != 0,
+            form,
+            lemma,
+            upos,
+            xpos,
+            feats,
+            head,
+            deprel,
+            misc,
         );
         Ok(())
     }
@@ -397,24 +406,17 @@ impl<R: BufRead> Iterator for TreeIterator<R> {
         for dep in &self.pending_deps {
             let head = match dep.head {
                 (0, 0) => None,
-                (token_id, m) => match tree.node_id(token_id, m) {
+                id => match node_id(&tree, id) {
                     Some(head) => Some(head),
                     None => {
-                        let head = if m == 0 {
-                            token_id.to_string()
-                        } else {
-                            format!("{token_id}.{m}")
-                        };
                         return Some(Err(ParseError::LineErrorNoContent {
                             line_num: dep.line_num,
-                            message: format!("DEPS head {head} does not exist"),
+                            message: format!("DEPS head {} does not exist", format_id(id)),
                         }));
                     }
                 },
             };
-            let node = tree
-                .node_id(dep.node.0, dep.node.1)
-                .expect("DEPS dependent is a node of the tree");
+            let node = node_id(&tree, dep.node).expect("DEPS dependent is a node of the tree");
             tree.node_mut(node).enhanced_heads.push(Dep {
                 head,
                 deprel: dep.deprel,
@@ -456,11 +458,27 @@ fn parse_comment(line: &[u8], tree: &mut Tree) -> Result<(), ParseError> {
 fn parse_conllu_id(s: &[u8]) -> Option<ConlluId> {
     match bs_split_once(s, b'.') {
         None => Some((bs_atoi(s)?, 0)),
-        Some((n, m)) => {
-            let m = u16::try_from(bs_atoi(m)?).ok().filter(|&m| m >= 1)?;
-            Some((bs_atoi(n)?, m))
-        }
+        Some((n, m)) => Some((bs_atoi(n)?, bs_atoi(m).filter(|&m| m >= 1)?)),
     }
+}
+
+fn format_id((n, m): ConlluId) -> String {
+    if m == 0 {
+        n.to_string()
+    } else {
+        format!("{n}.{m}")
+    }
+}
+
+/// NodeId of a CoNLL-U ID in `tree`; the empty nodes N.1, N.2, ... are consecutive in
+/// `tree.empty_nodes`
+fn node_id(tree: &Tree, (n, m): ConlluId) -> Option<NodeId> {
+    if m == 0 {
+        return (1..=tree.words.len()).contains(&n).then(|| n - 1);
+    }
+    let i = tree.empty_nodes.partition_point(|w| w.token_id < n) + m - 1;
+    let node = tree.empty_nodes.get(i)?;
+    (node.token_id == n).then(|| tree.words.len() + i)
 }
 
 /// Parse HEAD field (0 for the root, else a 1-based word ID)
@@ -665,19 +683,25 @@ mod tests {
                 "DEPS head 1.1 does not exist",
             ),
             (
+                b"1\ta\tl\tX\tX\t_\t0\troot\t0:root\t_\n1.1\tx\tl\tX\tX\t_\t_\t_\t_\t_\n\
+                  2\tb\tl\tX\tX\t_\t1\tdep\t1.2:dep\t_\n2.1\ty\tl\tX\tX\t_\t_\t_\t_\t_\n",
+                3,
+                "DEPS head 1.2 does not exist",
+            ),
+            (
                 b"0.0\tw\tl\tX\tX\t_\t_\t_\t_\t_\n",
                 1,
-                "Invalid token ID: 0.0",
+                "Invalid ID: 0.0",
             ),
             (
                 b"0.x\tw\tl\tX\tX\t_\t_\t_\t_\t_\n",
                 1,
-                "Invalid token ID: 0.x",
+                "Invalid ID: 0.x",
             ),
             (
                 b"abc\tw\tl\tX\tX\t_\t0\troot\t_\t_\n",
                 1,
-                "Invalid token ID: abc",
+                "Invalid ID: abc",
             ),
             (
                 b"1\tw\tl\tX\tX\t_\txyz\troot\t_\t_\n",
@@ -701,12 +725,12 @@ mod tests {
             (
                 b"1-1\tw\t_\t_\t_\t_\t_\t_\t_\t_\n",
                 1,
-                "Invalid token ID: 1-1",
+                "Invalid ID: 1-1",
             ),
             (
                 b"abc-\tw\t_\t_\t_\t_\t_\t_\t_\t_\n",
                 1,
-                "Invalid token ID: abc-",
+                "Invalid ID: abc-",
             ),
             (
                 b"1\tw\tl\tX\tX\t_\t2\tdep\t_\t_\n",
@@ -797,19 +821,10 @@ mod tests {
         let empty: Vec<_> = tree
             .empty_nodes
             .iter()
-            .map(|w| {
-                (
-                    w.id,
-                    w.token_id,
-                    w.empty_index,
-                    s(w.form),
-                    w.head,
-                    s(w.deprel),
-                )
-            })
+            .map(|w| (w.id, w.token_id, s(w.form), w.head, s(w.deprel)))
             .collect();
-        let e = |id, token_id, m, form: &str| (id, token_id, m, form.into(), None, "_".into());
-        assert_eq!(empty, [e(6, 0, 1, "said"), e(7, 5, 1, "likes")]);
+        let e = |id, token_id, form: &str| (id, token_id, form.into(), None, "_".into());
+        assert_eq!(empty, [e(6, 0, "said"), e(7, 5, "likes")]);
 
         // Arcs per node as "head:deprel" (incoming) and "dependent:deprel" (outgoing)
         let arcs: Vec<_> = (0..tree.num_nodes())
@@ -843,6 +858,36 @@ mod tests {
             ]
         );
         assert!(tree.node(8).is_err());
+    }
+
+    #[test]
+    fn test_deps_heads_in_empty_node_runs() {
+        // N.M is the Mth of the empty nodes after word N
+        let conllu = "1\ta\tl\tX\t_\t_\t0\troot\t0:root\t_\n\
+                      1.1\tx\tl\tX\t_\t_\t_\t_\t1:dep\t_\n\
+                      1.2\ty\tl\tX\t_\t_\t_\t_\t1.1:dep\t_\n\
+                      2\tb\tl\tX\t_\t_\t1\tdep\t1.2:dep|2.1:dep\t_\n\
+                      2.1\tz\tl\tX\t_\t_\t_\t_\t1.1:dep\t_\n";
+        let tree = parse_one(conllu.as_bytes()).unwrap();
+        let heads: Vec<_> = (0..tree.num_nodes())
+            .map(|id| {
+                let node = tree.node(id).unwrap();
+                node.enhanced_heads
+                    .iter()
+                    .map(|d| d.head)
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        assert_eq!(
+            heads,
+            [
+                vec![None],
+                vec![Some(3), Some(4)],
+                vec![Some(0)],
+                vec![Some(2)],
+                vec![Some(2)],
+            ]
+        );
     }
 
     #[test]

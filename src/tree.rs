@@ -6,9 +6,6 @@ use std::collections::HashMap;
 /// Word index in tree (0-based)
 pub type WordId = usize;
 
-/// Token ID from CoNLL-U (1-based)
-pub type TokenId = usize;
-
 /// Morphological features (key=value pairs)
 pub type Features = Vec<(Sym, Sym)>;
 
@@ -27,9 +24,8 @@ pub struct Dep {
 #[derive(Debug, Clone)]
 pub struct Word {
     pub id: NodeId,
-    pub token_id: TokenId,
-    /// M of an empty node N.M (whose `token_id` is N); 0 for basic words
-    pub empty_index: u16,
+    /// CoNLL-U word ID (1-based); N for an empty node N.M
+    pub token_id: usize,
     pub form: Sym,
     pub lemma: Sym,
     pub upos: Sym,
@@ -49,8 +45,7 @@ impl Word {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: NodeId,
-        token_id: TokenId,
-        empty_index: u16,
+        token_id: usize,
         form: Sym,
         lemma: Sym,
         upos: Sym,
@@ -63,7 +58,6 @@ impl Word {
         Self {
             id,
             token_id,
-            empty_index,
             form,
             lemma,
             upos,
@@ -147,12 +141,12 @@ impl Tree {
         }
     }
 
-    /// Add a basic word, or an empty node if `empty_index` is non-zero
+    /// Add a basic word, or an empty node after word `token_id` if `empty`
     #[allow(clippy::too_many_arguments)]
     pub fn add_word(
         &mut self,
-        token_id: TokenId,
-        empty_index: u16,
+        token_id: usize,
+        empty: bool,
         form: &[u8],
         lemma: &[u8],
         upos: &[u8],
@@ -168,16 +162,15 @@ impl Tree {
         let xpos_sym = self.string_pool.get_or_intern(xpos);
         let deprel_sym = self.string_pool.get_or_intern(deprel);
 
-        let nodes = if empty_index == 0 {
-            &mut self.words
-        } else {
+        let nodes = if empty {
             &mut self.empty_nodes
+        } else {
+            &mut self.words
         };
         // Empty nodes get their ids in compile_tree, once the number of words is known
         let word = Word::new(
             nodes.len(),
             token_id,
-            empty_index,
             form_sym,
             lemma_sym,
             upos_sym,
@@ -241,20 +234,6 @@ impl Tree {
             &mut self.words[id]
         } else {
             &mut self.empty_nodes[id - n]
-        }
-    }
-
-    /// NodeId of the CoNLL-U ID `token_id` (or `token_id.empty_index` for an empty node)
-    pub fn node_id(&self, token_id: TokenId, empty_index: u16) -> Option<NodeId> {
-        if empty_index == 0 {
-            (1..=self.words.len())
-                .contains(&token_id)
-                .then(|| token_id - 1)
-        } else {
-            self.empty_nodes
-                .binary_search_by_key(&(token_id, empty_index), |w| (w.token_id, w.empty_index))
-                .ok()
-                .map(|i| self.words.len() + i)
         }
     }
 
