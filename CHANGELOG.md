@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - CoNLL-U parse errors name the file they came from
 - CoNLL-U: accept CRLF line endings, empty DEPS/MISC, stray `|` and FEATS items without `=`
+- CoNLL-U: enhanced dependencies (DEPS) and empty nodes are parsed and checked
 
 ### Fixed
 - CoNLL-U "Missing field" errors named the last field present instead of the first one missing

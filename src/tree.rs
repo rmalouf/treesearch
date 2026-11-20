@@ -12,18 +12,24 @@ pub type TokenId = usize;
 /// Morphological features (key=value pairs)
 pub type Features = Vec<(Sym, Sym)>;
 
-/// Enhanced dependency (DEPS field)
+/// Node in the enhanced graph: a WordId for basic words (< `words.len()`), then empty nodes
+/// (`words.len() + i` is `empty_nodes[i]`)
+pub type NodeId = usize;
+
+/// Enhanced dependency arc (DEPS field); `head` is None for `0:root`
 #[derive(Debug, Clone, PartialEq)]
 pub struct Dep {
-    pub head: Option<WordId>,
+    pub head: Option<NodeId>,
     pub deprel: Sym,
 }
 
 /// A word in a dependency tree
 #[derive(Debug, Clone)]
 pub struct Word {
-    pub id: WordId,
+    pub id: NodeId,
     pub token_id: TokenId,
+    /// M of an empty node N.M (whose `token_id` is N); 0 for basic words
+    pub empty_index: u16,
     pub form: Sym,
     pub lemma: Sym,
     pub upos: Sym,
@@ -33,13 +39,18 @@ pub struct Word {
     pub deprel: Sym,
     pub misc: Features,
     pub children: Vec<WordId>,
+    /// Incoming enhanced arcs (DEPS)
+    pub enhanced_heads: Vec<Dep>,
+    /// Outgoing enhanced arcs: (dependent, deprel)
+    pub enhanced_children: Vec<(NodeId, Sym)>,
 }
 
 impl Word {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        id: WordId,
+        id: NodeId,
         token_id: TokenId,
+        empty_index: u16,
         form: Sym,
         lemma: Sym,
         upos: Sym,
@@ -52,6 +63,7 @@ impl Word {
         Self {
             id,
             token_id,
+            empty_index,
             form,
             lemma,
             upos,
@@ -61,6 +73,8 @@ impl Word {
             deprel,
             misc,
             children: Vec::new(),
+            enhanced_heads: Vec::new(),
+            enhanced_children: Vec::new(),
         }
     }
 
@@ -98,6 +112,8 @@ impl Word {
 #[derive(Debug, Clone)]
 pub struct Tree {
     pub words: Vec<Word>,
+    /// Empty nodes (CoNLL-U IDs like 5.1), in file order; only the enhanced graph uses them
+    pub empty_nodes: Vec<Word>,
     pub root_id: Option<WordId>,
     pub sentence_text: Option<String>,
     pub metadata: HashMap<String, String>,
@@ -108,6 +124,7 @@ impl Tree {
     pub fn new(string_pool: &BytestringPool) -> Self {
         Self {
             words: Vec::with_capacity(25),
+            empty_nodes: Vec::new(),
             root_id: None,
             sentence_text: None,
             metadata: HashMap::new(),
@@ -122,6 +139,7 @@ impl Tree {
     ) -> Self {
         Self {
             words: Vec::with_capacity(50),
+            empty_nodes: Vec::new(),
             root_id: None,
             sentence_text,
             metadata,
@@ -129,11 +147,12 @@ impl Tree {
         }
     }
 
+    /// Add a basic word, or an empty node if `empty_index` is non-zero
     #[allow(clippy::too_many_arguments)]
     pub fn add_word(
         &mut self,
-        word_id: WordId,
         token_id: TokenId,
+        empty_index: u16,
         form: &[u8],
         lemma: &[u8],
         upos: &[u8],
@@ -149,21 +168,93 @@ impl Tree {
         let xpos_sym = self.string_pool.get_or_intern(xpos);
         let deprel_sym = self.string_pool.get_or_intern(deprel);
 
+        let nodes = if empty_index == 0 {
+            &mut self.words
+        } else {
+            &mut self.empty_nodes
+        };
+        // Empty nodes get their ids in compile_tree, once the number of words is known
         let word = Word::new(
-            word_id, token_id, form_sym, lemma_sym, upos_sym, xpos_sym, feats, head, deprel_sym,
+            nodes.len(),
+            token_id,
+            empty_index,
+            form_sym,
+            lemma_sym,
+            upos_sym,
+            xpos_sym,
+            feats,
+            head,
+            deprel_sym,
             misc,
         );
-        self.words.push(word);
+        nodes.push(word);
     }
 
-    /// Fill in children
+    /// Number empty nodes and fill in children, root and enhanced children
     pub fn compile_tree(&mut self) {
-        for word_id in 0..self.words.len() {
+        let n = self.words.len();
+        for (i, node) in self.empty_nodes.iter_mut().enumerate() {
+            node.id = n + i;
+        }
+        for word_id in 0..n {
             if let Some(head) = self.words[word_id].head {
                 self.words[head].children.push(word_id);
             } else {
                 self.root_id = Some(word_id);
             }
+        }
+        for id in 0..self.num_nodes() {
+            for i in 0..self.node_mut(id).enhanced_heads.len() {
+                let Dep { head, deprel } = self.node_mut(id).enhanced_heads[i];
+                if let Some(head) = head {
+                    self.node_mut(head).enhanced_children.push((id, deprel));
+                }
+            }
+        }
+    }
+
+    /// Words and empty nodes
+    pub fn num_nodes(&self) -> usize {
+        self.words.len() + self.empty_nodes.len()
+    }
+
+    /// Word or empty node by NodeId
+    pub fn node(&self, id: NodeId) -> Result<&Word, String> {
+        let n = self.words.len();
+        let node = if id < n {
+            self.words.get(id)
+        } else {
+            self.empty_nodes.get(id - n)
+        };
+        node.ok_or_else(|| {
+            format!(
+                "Node with id {id} does not exist (tree has {} nodes)",
+                self.num_nodes()
+            )
+        })
+    }
+
+    /// Mutable word or empty node by NodeId (panics if out of range)
+    pub fn node_mut(&mut self, id: NodeId) -> &mut Word {
+        let n = self.words.len();
+        if id < n {
+            &mut self.words[id]
+        } else {
+            &mut self.empty_nodes[id - n]
+        }
+    }
+
+    /// NodeId of the CoNLL-U ID `token_id` (or `token_id.empty_index` for an empty node)
+    pub fn node_id(&self, token_id: TokenId, empty_index: u16) -> Option<NodeId> {
+        if empty_index == 0 {
+            (1..=self.words.len())
+                .contains(&token_id)
+                .then(|| token_id - 1)
+        } else {
+            self.empty_nodes
+                .binary_search_by_key(&(token_id, empty_index), |w| (w.token_id, w.empty_index))
+                .ok()
+                .map(|i| self.words.len() + i)
         }
     }
 
