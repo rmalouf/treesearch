@@ -85,7 +85,6 @@ impl<R: BufRead> TreeIterator<R> {
     /// Parse a word line into `tree`; multiword-token and empty-node lines are checked and
     /// skipped, and DEPS is ignored
     fn parse_line(&mut self, tree: &mut Tree, line: &[u8]) -> Result<(), ParseError> {
-        // Split into exactly 10 tab-separated fields
         let mut fields: [&[u8]; 10] = [&[]; 10];
         let mut n = 0;
         let mut start = 0;
