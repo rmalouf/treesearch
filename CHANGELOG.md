@@ -9,11 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - CoNLL-U parse errors name the file they came from
+- CoNLL-U: accept CRLF line endings, empty DEPS/MISC, stray `|` and FEATS items without `=`
 
 ### Fixed
 - CoNLL-U "Missing field" errors named the last field present instead of the first one missing
 - CoNLL-U: an empty ID or HEAD field is a parse error (an empty HEAD used to crash the parser)
-- CoNLL-U: a bad MISC pair was reported as a bad FEATS pair
 
 ## [0.3.1] - 2026-10-08
 
